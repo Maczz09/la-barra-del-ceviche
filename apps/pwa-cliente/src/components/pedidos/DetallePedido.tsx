@@ -10,10 +10,14 @@ interface DetallePedidoProps {
   pedido: PedidoVM;
   onClose: () => void;
   onAvanzar: (p: PedidoVM) => void;
+  onAnularItem: (itemId: string) => void;
   actionLoading: string | null;
   online: boolean;
   now: number;
 }
+
+/** No tiene sentido anular un ítem ya entregado o ya anulado. */
+const NO_ANULABLE = new Set(['ENTREGADO', 'CANCELADO', 'RECHAZADO_SIN_STOCK']);
 
 function flowStepCls(i: number, curIdx: number): string {
   if (i < curIdx) return 'done';
@@ -21,7 +25,7 @@ function flowStepCls(i: number, curIdx: number): string {
   return '';
 }
 
-export function DetallePedido({ pedido: p, onClose, onAvanzar, actionLoading, online, now }: Readonly<DetallePedidoProps>) {
+export function DetallePedido({ pedido: p, onClose, onAvanzar, onAnularItem, actionLoading, online, now }: Readonly<DetallePedidoProps>) {
   const meta = CANAL_META[p.canal];
   const Ic = Icons[meta.ic];
   const nextLabel = nextLabelFor(p);
@@ -73,16 +77,32 @@ export function DetallePedido({ pedido: p, onClose, onAvanzar, actionLoading, on
             Ítems · {elapsedLabel(p.createdAt, now)}
           </div>
           <div className="panel" style={{ padding: '4px 14px' }}>
-            {p.items.map((it) => (
-              <div className="dish-line" key={it.id} style={{ alignItems: 'flex-start' }}>
-                <span className="dish-q">{it.cantidad}</span>
-                <div style={{ flex: 1 }}>
-                  <span style={{ fontWeight: 600 }}>{it.nombre}</span>
-                  {it.notas && <div className="cmd-line-mods" style={{ marginTop: 2 }}><Icons.Note s={11} /> {it.notas}</div>}
+            {p.items.map((it) => {
+              const anulado = it.estado === 'CANCELADO';
+              return (
+                <div className="dish-line" key={it.id} style={{ alignItems: 'flex-start', opacity: anulado ? 0.6 : undefined }}>
+                  <span className="dish-q">{it.cantidad}</span>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontWeight: 600, textDecoration: anulado ? 'line-through' : undefined }}>{it.nombre}</span>
+                    {anulado
+                      ? <div className="cmd-line-mods" style={{ marginTop: 2, color: 'var(--danger)' }}><Icons.Alert s={11} /> Anulado</div>
+                      : it.notas && <div className="cmd-line-mods" style={{ marginTop: 2 }}><Icons.Note s={11} /> {it.notas}</div>}
+                  </div>
+                  <span className="mono muted">{fmt(it.subtotal)}</span>
+                  {!NO_ANULABLE.has(it.estado) && (
+                    <button
+                      className="icon-btn"
+                      title="Anular ítem"
+                      aria-label={`Anular ${it.cantidad}× ${it.nombre}`}
+                      disabled={!online}
+                      onClick={() => onAnularItem(it.id)}
+                    >
+                      <Icons.Close s={14} />
+                    </button>
+                  )}
                 </div>
-                <span className="mono muted">{fmt(it.subtotal)}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
         <div className="modal-foot" style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>

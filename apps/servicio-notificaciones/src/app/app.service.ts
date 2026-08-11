@@ -107,6 +107,9 @@ export class AppService {
       const d = data as Record<string, unknown>;
       if (pattern.includes('pedido.creado') || pattern.includes('creado')) return this.formatPedidoCreado(d);
       if (pattern.includes('pedido.actualizado') || pattern.includes('actualizado')) return this.formatPedidoActualizado(d);
+      if (pattern.includes('pedido.item_anulado')) {
+        return `El mesero anuló el ítem "${this.texto(d['productoNombre'], 'un plato')}" — cocina debe descartarlo.`;
+      }
       if (pattern.includes('reserva.cancelada')) {
         return `La reserva a nombre de ${this.texto(d['clienteNombre'], 'Cliente')} ha sido cancelada.`;
       }

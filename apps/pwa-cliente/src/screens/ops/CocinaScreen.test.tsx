@@ -11,6 +11,8 @@ import type { PedidoVM } from '../../types/pedido.types';
 vi.mock('../../hooks/useOnlineStatus');
 vi.mock('../../hooks/useNow', () => ({ useNow: () => Date.now() }));
 vi.mock('../../hooks/queries/usePedidosQuery');
+vi.mock('../../components/ui/ToastProvider', () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock('../../services/socket.service', () => ({ onPedidoUpdate: () => () => {} }));
 vi.mock('../../components/cocina/TicketCard', () => ({
   Metric: (props: any) => <div data-testid="metric">{props.k}: {props.v}</div>,
   TicketCard: (props: any) => (

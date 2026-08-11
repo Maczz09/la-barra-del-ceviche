@@ -4,6 +4,7 @@ import {
   PedidoCreadoPayload,
   PedidoActualizadoPayload,
   PedidoListoPayload,
+  PedidoItemAnuladoPayload,
   TicketGeneradoPayload,
   CuentaAbiertaPayload,
   CuentaCerradaPayload,
@@ -54,6 +55,14 @@ export class AppController {
     @Ctx() ctx: RmqContext,
   ) {
     await this.handleEvent(RoutingKeys.PedidoListo, payload, ctx);
+  }
+
+  @EventPattern(RoutingKeys.PedidoItemAnulado)
+  async handlePedidoItemAnulado(
+    @Payload() payload: PedidoItemAnuladoPayload,
+    @Ctx() ctx: RmqContext,
+  ) {
+    await this.handleEvent(RoutingKeys.PedidoItemAnulado, payload, ctx);
   }
 
   @EventPattern(RoutingKeys.TicketGenerado)

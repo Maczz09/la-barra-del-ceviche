@@ -16,6 +16,7 @@ const TITULOS_POR_EVENTO: Record<string, string> = {
   'pedido.creado': 'Nuevo pedido',
   'pedido.listo': 'Pedido listo',
   'pedido.actualizado': 'Pedido actualizado',
+  'pedido.item_anulado': 'Ítem anulado',
   'cuenta.abierta': 'Cuenta abierta',
   'cuenta.cerrada': 'Cuenta cerrada',
   'pago.registrado': 'Pago registrado',
@@ -182,6 +183,14 @@ function buildPedidoCopy(pattern: string, data: UnknownRecord | null): Notificat
       contenido: estadoLabel
         ? `El pedido de ${destino} cambió a ${estadoLabel}.`
         : `El pedido de ${destino} fue actualizado.`,
+    };
+  }
+
+  if (pattern === 'pedido.item_anulado') {
+    const producto = numberLabel(data?.productoNombre) ?? 'un plato';
+    return {
+      titulo: 'Ítem anulado',
+      contenido: numero ? `Mesero anuló "${producto}" (Mesa ${numero}).` : `Mesero anuló "${producto}".`,
     };
   }
 

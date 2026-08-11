@@ -19,6 +19,17 @@ const BASE_URL = env['VITE_API_BASE_URL'] ?? 'http://localhost:8000';
 const WS_PATH = env['VITE_WS_PATH'] ?? '/notificaciones/socket.io';
 
 let socket: Socket | null = null;
+
+// Suscriptores a eventos crudos de pedidoUpdate, para pantallas que necesitan
+// reaccionar a un patrón específico (ej. toast flotante de "ítem anulado" en
+// Cocina) sin acoplarse a la lógica genérica de invalidación de abajo.
+type PedidoUpdateListener = (evento: NotificacionEvento) => void;
+const pedidoUpdateListeners = new Set<PedidoUpdateListener>();
+export function onPedidoUpdate(fn: PedidoUpdateListener): () => void {
+  pedidoUpdateListeners.add(fn);
+  return () => pedidoUpdateListeners.delete(fn);
+}
+
 const pendingInvalidations = new Set<string>();
 let invalidationTimer: ReturnType<typeof setTimeout> | null = null;
 const INVALIDATION_DEBOUNCE_MS = 300;
@@ -125,6 +136,7 @@ export const socketService = {
       socket.on('pedidoUpdate', (evento: NotificacionEvento) => {
         pushSocketNotification(evento);
         scheduleInvalidate(evento?.pattern);
+        pedidoUpdateListeners.forEach((fn) => fn(evento));
       });
 
       socket.on('auth:error', () => {

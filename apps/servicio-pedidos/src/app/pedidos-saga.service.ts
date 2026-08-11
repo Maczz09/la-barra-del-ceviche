@@ -5,8 +5,10 @@ import {
   ActualizarEstadoItemCommand,
   PedidoEstado,
   EstadoItem,
+  ItemArea,
   RoutingKeys,
   StockInsuficientePayload,
+  PedidoItemAnuladoPayload,
 } from '@org/contracts';
 import { getOrCreateCounter, OperableLog } from '@org/observabilidad';
 import { PrismaService } from '../prisma/prisma.service';
@@ -66,10 +68,12 @@ export class PedidosSagaService {
   private derivarEstadoPedido(
     estadosRaw: string[],
   ): PedidoEstado | null {
-    // Los ítems rechazados por falta de stock no participan en la derivación de
-    // producción ("cocina manda"): un ítem fantasma no debe impedir que el resto
-    // del pedido avance a LISTO.
-    const estados = estadosRaw.filter((e) => e !== EstadoItem.RechazadoSinStock);
+    // Los ítems rechazados por falta de stock o anulados no participan en la
+    // derivación de producción ("cocina manda"): ni un ítem fantasma ni uno
+    // anulado deben impedir que el resto del pedido avance a LISTO.
+    const estados = estadosRaw.filter(
+      (e) => e !== EstadoItem.RechazadoSinStock && e !== EstadoItem.Cancelado,
+    );
     if (estados.length === 0) return null;
     const todosListos = estados.every(
       (e) => e === EstadoItem.Listo || e === EstadoItem.Entregado,
@@ -86,7 +90,7 @@ export class PedidosSagaService {
     items: Array<{ estado: string; precioUnitario: number | { toNumber(): number }; cantidad: number }>,
   ): number {
     return items
-      .filter((item) => item.estado !== EstadoItem.RechazadoSinStock)
+      .filter((item) => item.estado !== EstadoItem.RechazadoSinStock && item.estado !== EstadoItem.Cancelado)
       .reduce((total, item) => {
         const precio = typeof item.precioUnitario === 'number'
           ? item.precioUnitario
@@ -183,11 +187,21 @@ export class PedidosSagaService {
       const cambiaAListo =
         enProduccion && derivado === PedidoEstado.Listo && estadoActual !== PedidoEstado.Listo;
 
-      if (enProduccion && derivado && derivado !== estadoActual) {
+      // Un ítem anulado ya no debe cobrarse — recalculamos el total cobrable
+      // del pedido en el mismo movimiento (mismo criterio que la compensación
+      // de stock insuficiente).
+      const seAnuloItem = command.estado === EstadoItem.Cancelado;
+      const nuevoTotal = seAnuloItem ? this.recalcularTotalCobrable(pedidoActual.items) : null;
+
+      const dataUpdate: { estado?: PedidoEstado; total?: number } = {};
+      if (enProduccion && derivado && derivado !== estadoActual) dataUpdate.estado = derivado;
+      if (nuevoTotal !== null) dataUpdate.total = nuevoTotal;
+
+      if (Object.keys(dataUpdate).length > 0) {
           pedidoFinal =
           (await prisma.pedido.update({
             where: { id: pedidoId },
-            data: { estado: derivado },
+            data: dataUpdate,
             include: { items: true },
           })) ?? pedidoActual;
       }
@@ -197,6 +211,21 @@ export class PedidosSagaService {
         outboxData.push({
           routingKey: RoutingKeys.PedidoListo,
           payload: JSON.stringify({ pedidoId, mesaId: pedidoFinal.mesaId }),
+          status: 'PENDING',
+        });
+      }
+      // Aviso a cocina (KDS): solo si el ítem anulado era de área COCINA (un
+      // plato, no una bebida de barra) — para que no sigan preparándolo.
+      if (seAnuloItem && item.area === ItemArea.Cocina) {
+        const payload: PedidoItemAnuladoPayload = {
+          pedidoId,
+          itemId: item.id,
+          productoNombre: item.nombre,
+          mesaId: pedidoFinal.mesaId,
+        };
+        outboxData.push({
+          routingKey: RoutingKeys.PedidoItemAnulado,
+          payload: JSON.stringify(payload),
           status: 'PENDING',
         });
       }

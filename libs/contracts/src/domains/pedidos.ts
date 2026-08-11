@@ -36,7 +36,9 @@ export type ItemArea = (typeof ItemArea)[keyof typeof ItemArea];
 
 /**
  * Estados válidos de un ítem individual (producción en cocina).
- * Subconjunto de PedidoEstado: un ítem nunca está PAGADO ni CANCELADO.
+ * Subconjunto de PedidoEstado: un ítem nunca está PAGADO. CANCELADO sí
+ * aplica a nivel de ítem (T-anular-item): el mesero anula un plato/bebida
+ * puntual sin cancelar el resto del pedido.
  */
 export const EstadoItem = {
   Pendiente: 'PENDIENTE',
@@ -45,6 +47,8 @@ export const EstadoItem = {
   Entregado: 'ENTREGADO',
   /** El ítem no pudo descontarse del stock real (compensación de saga). */
   RechazadoSinStock: 'RECHAZADO_SIN_STOCK',
+  /** El mesero anuló el ítem a pedido del cliente (ya no se prepara ni se cobra). */
+  Cancelado: 'CANCELADO',
 } as const;
 
 export type EstadoItem = (typeof EstadoItem)[keyof typeof EstadoItem];
@@ -264,4 +268,18 @@ export class PedidoActualizadoPayload {
   @Type(() => PedidoDto)
   @ValidateNested()
   pedido: PedidoDto;
+}
+
+/** Aviso a cocina (KDS): un mesero anuló un ítem de área COCINA a pedido
+ * del cliente — items de BAR no lo emiten, cocina no necesita saberlo. */
+export class PedidoItemAnuladoPayload {
+  @IsString()
+  pedidoId: string;
+  @IsString()
+  itemId: string;
+  @IsString()
+  productoNombre: string;
+  @IsOptional()
+  @IsString()
+  mesaId?: string | null;
 }

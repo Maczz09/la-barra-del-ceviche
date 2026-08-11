@@ -71,16 +71,19 @@ export function TicketCard({ p, items, col, now, online, onAdvance, onRegress, o
       <div className="kds-items" style={{ marginTop: 12 }}>
         {items.map((it) => {
           const next = NEXT_ITEM[it.estado];
+          const anulado = it.estado === 'CANCELADO';
           return (
-            <div key={it.id} className={`kds-item ${it.estado === 'LISTO' ? 'done' : ''}`} style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div key={it.id} className={`kds-item ${it.estado === 'LISTO' ? 'done' : ''}`} style={{ justifyContent: 'space-between', alignItems: 'flex-start', opacity: anulado ? 0.6 : undefined }}>
               <div style={{ display: 'flex', gap: 9, minWidth: 0 }}>
                 <span className="q">{it.cantidad}×</span>
                 <div style={{ minWidth: 0 }}>
-                  <span className="nm">{it.nombre}</span>
-                  {it.notas && <div className="note"><Icons.Note s={12} /> {it.notas}</div>}
+                  <span className="nm" style={anulado ? { textDecoration: 'line-through' } : undefined}>{it.nombre}</span>
+                  {anulado
+                    ? <div className="note" style={{ color: 'var(--danger)' }}><Icons.Alert s={12} /> Anulado por mesero</div>
+                    : it.notas && <div className="note"><Icons.Note s={12} /> {it.notas}</div>}
                 </div>
               </div>
-              {col.estado === 'LISTO' ? (
+              {!anulado && (col.estado === 'LISTO' ? (
                 <button
                   className="btn btn-ghost kds-item-btn"
                   disabled={!online}
@@ -100,7 +103,7 @@ export function TicketCard({ p, items, col, now, online, onAdvance, onRegress, o
                 >
                   {next === 'EN_PREPARACION' ? <Icons.Play s={16} /> : <Icons.Check s={16} />}
                 </button>
-              )}
+              ))}
             </div>
           );
         })}

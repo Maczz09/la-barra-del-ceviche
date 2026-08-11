@@ -10,6 +10,7 @@ import type { PedidoVM } from '../../types/pedido.types';
 vi.mock('../../hooks/useOnlineStatus');
 vi.mock('../../hooks/useNow', () => ({ useNow: () => Date.now() }));
 vi.mock('../../hooks/queries/usePedidosQuery');
+vi.mock('../../components/ui/ToastProvider', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock('../../components/comandero/Comandero', () => ({
   Comandero: (props: any) => (
     <div data-testid="comandero">
@@ -25,7 +26,7 @@ describe('PedidosScreen', () => {
     (useOnlineStatus as any).mockReturnValue(true);
     (usePedidosQuery as any).mockReturnValue({
       pedidos: [], nextCursor: null, loading: false, loadingMore: false, error: null,
-      fetch: vi.fn(), fetchMore: vi.fn(), avanzarEstado: vi.fn()
+      fetch: vi.fn(), fetchMore: vi.fn(), avanzarEstado: vi.fn(), avanzarItem: vi.fn()
     });
   });
 

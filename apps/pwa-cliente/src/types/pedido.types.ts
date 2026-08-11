@@ -33,6 +33,7 @@ export const EstadoItem = {
   EnPreparacion: 'EN_PREPARACION',
   Listo: 'LISTO',
   Entregado: 'ENTREGADO',
+  Cancelado: 'CANCELADO',
 } as const satisfies Record<string, ContractEstadoItem>;
 
 export type EstadoItem = ContractEstadoItem;

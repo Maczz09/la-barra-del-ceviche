@@ -15,6 +15,7 @@ export const RoutingKeys = {
   PedidoCreado: 'pedido.creado',
   PedidoListo: 'pedido.listo',
   PedidoActualizado: 'pedido.actualizado',
+  PedidoItemAnulado: 'pedido.item_anulado',
 
   // Cuentas
   CuentaAbierta: 'cuenta.abierta',

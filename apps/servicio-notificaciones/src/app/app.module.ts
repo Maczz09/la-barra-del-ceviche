@@ -27,6 +27,7 @@ import { RoutingKeys } from '@org/contracts';
         RoutingKeys.PedidoCreado,
         RoutingKeys.PedidoActualizado,
         RoutingKeys.PedidoListo,
+        RoutingKeys.PedidoItemAnulado,
         RoutingKeys.CuentaAbierta,
         RoutingKeys.CuentaCerrada,
         RoutingKeys.TicketGenerado,

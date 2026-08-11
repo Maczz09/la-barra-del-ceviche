@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-misused-promises, @typescript-eslint/no-floating-promises */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useNow } from '../../hooks/useNow';
 import { usePedidosQuery } from '../../hooks/queries/usePedidosQuery';
+import { useToast } from '../../components/ui/ToastProvider';
+import { onPedidoUpdate } from '../../services/socket.service';
 import { Icons, type IconName } from '../../components/ui/icons';
 import { Metric, TicketCard } from '../../components/cocina/TicketCard';
 import type { PedidoVM, PedidoItemVM, EstadoItem, ItemArea } from '../../types/pedido.types';
@@ -13,6 +15,11 @@ import {
   PREV_ITEM,
   SLA_MIN,
 } from '../../domain/pedido.flow';
+
+interface PedidoItemAnuladoData {
+  productoNombre?: string;
+  mesaId?: string;
+}
 
 const AREAS: { key: 'TODAS' | ItemArea; label: string; ic: IconName }[] = [
   { key: 'TODAS', label: 'Todas', ic: 'Layers' },
@@ -26,8 +33,25 @@ export function CocinaScreen() {
   const online = useOnlineStatus();
   const now = useNow(4000);
   const { pedidos, loading, error, fetch, avanzarItem } = usePedidosQuery(undefined, { autoLoadAll: true });
+  const { toast } = useToast();
   const [area, setArea] = useState<'TODAS' | ItemArea>('TODAS');
   const [fs, setFs] = useState(false);
+
+  // Notificación flotante: un mesero anuló un plato (área COCINA) — el
+  // backend solo emite este evento para ítems de cocina, las bebidas de
+  // barra no llegan acá (cocina no necesita saberlo).
+  useEffect(() => {
+    return onPedidoUpdate((evento) => {
+      if (evento.pattern !== 'pedido.item_anulado') return;
+      const data = (evento.data ?? {}) as PedidoItemAnuladoData;
+      toast({
+        title: 'Ítem anulado',
+        msg: data.productoNombre ? `El mesero anuló: ${data.productoNombre}` : 'El mesero anuló un ítem del pedido.',
+        icon: 'Alert',
+        kind: 'warn',
+      });
+    });
+  }, [toast]);
 
   const matchArea = (it: PedidoItemVM) => area === 'TODAS' || it.area === area;
 

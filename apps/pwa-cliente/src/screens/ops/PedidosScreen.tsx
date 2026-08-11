@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useNow } from '../../hooks/useNow';
 import { usePedidosQuery } from '../../hooks/queries/usePedidosQuery';
+import { useToast } from '../../components/ui/ToastProvider';
 import { Icons } from '../../components/ui/icons';
 import { Comandero } from '../../components/comandero/Comandero';
 import { TableroView } from '../../components/pedidos/TableroView';
@@ -22,12 +23,21 @@ const CANAL_ICON_TAB: Record<CanalFiltro, keyof typeof Icons> = { TODOS: 'Layers
 export function PedidosScreen() {
   const online = useOnlineStatus();
   const now = useNow();
-  const { pedidos, nextCursor, loading, loadingMore, error, fetch, fetchMore, avanzarEstado } = usePedidosQuery();
+  const { toast } = useToast();
+  const { pedidos, nextCursor, loading, loadingMore, error, fetch, fetchMore, avanzarEstado, avanzarItem } = usePedidosQuery();
   const [canal, setCanal] = useState<CanalFiltro>('TODOS');
   const [vista, setVista] = useState<'tablero' | 'lista'>('tablero');
   const [detalle, setDetalle] = useState<PedidoVM | null>(null);
   const [comandero, setComandero] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Re-deriva el detalle abierto desde la lista viva: tras anular un ítem
+  // (que no cierra el drawer, a diferencia de avanzar), el snapshot local
+  // quedaría desactualizado si no se refresca desde `pedidos`.
+  const detalleVivo = useMemo(
+    () => (detalle ? pedidos.find((p) => p.id === detalle.id) ?? detalle : null),
+    [detalle, pedidos],
+  );
 
   const visibles = useMemo(
     () => pedidos.filter((p) => ESTADOS_VISIBLES.has(p.estado) && (canal === 'TODOS' || p.canal === canal)),
@@ -45,6 +55,19 @@ export function PedidosScreen() {
       setDetalle(null);
     } catch { /* el error se muestra vía estado del hook */ }
     finally { setActionLoading(null); }
+  };
+
+  const anularItem = async (itemId: string) => {
+    if (!online) return;
+    setActionLoading(itemId);
+    try {
+      await avanzarItem(itemId, 'CANCELADO');
+      toast({ title: 'Ítem anulado', icon: 'Check', kind: 'ok' });
+    } catch (err) {
+      toast({ title: 'No se pudo anular el ítem', msg: err instanceof Error ? err.message : 'Inténtalo de nuevo', icon: 'Alert', kind: 'err' });
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   if (loading && pedidos.length === 0) {
@@ -121,10 +144,10 @@ export function PedidosScreen() {
         </div>
       )}
 
-      {detalle && (
+      {detalleVivo && (
         <DetallePedido
-          pedido={detalle} onClose={() => setDetalle(null)}
-          onAvanzar={avanzar} actionLoading={actionLoading} online={online} now={now}
+          pedido={detalleVivo} onClose={() => setDetalle(null)}
+          onAvanzar={avanzar} onAnularItem={anularItem} actionLoading={actionLoading} online={online} now={now}
         />
       )}
 
