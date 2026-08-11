@@ -42,6 +42,10 @@ export interface TransaccionDto {
   notas: string | null;
   usuarioId: string | null;
   cajeroNombre: string | null;
+  mesaId?: string | null;
+  turnoId?: string | null;
+  meseroId?: string | null;
+  meseroNombre?: string | null;
   createdAt: string;
 }
 
@@ -78,6 +82,9 @@ export interface CajaResumenDto {
   turno: TurnoCajaDto | null;
   movimientos: MovimientoCajaDto[];
   ventas: MovimientoCajaDto[];
+  // Auditoría venta-por-venta: quién atendió (mesero) y quién cobró (cajero)
+  // cada venta, a diferencia de `ventas` (agregado sin esos datos).
+  ventasDetalle: TransaccionDto[];
   totalVentas: number;
   totalEgresos: number;
   totalIngresos: number;

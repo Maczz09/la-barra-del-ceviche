@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Param, Patch, Delete, Query, UseGuards } f
 import { Roles, RolesGuard } from '@org/shared-auth';
 import { UsuarioActual } from '@org/observabilidad';
 import { AppService } from './app.service';
-import { CrearCategoriaCommand, ActualizarCategoriaCommand, CrearProductoCommand, ActualizarProductoCommand, ListarProductosQuery, ObtenerProductosLoteCommand, AgregarAlMenuCommand, ActualizarMenuDiarioCommand, RegistrarMermaCommand, ListarMermasQuery } from '@org/contracts';
+import { CrearCategoriaCommand, ActualizarCategoriaCommand, CrearProductoCommand, ActualizarProductoCommand, ActualizarDisponibilidadCommand, ListarProductosQuery, ObtenerProductosLoteCommand, AgregarAlMenuCommand, ActualizarMenuDiarioCommand, RegistrarMermaCommand, ListarMermasQuery } from '@org/contracts';
 
 // Lectura del catálogo: la usan inventario/carta (admin, sistema, gerencia) y
 // también el comandero del PWA (cajero, mesero) al armar pedidos. La gestión
@@ -94,6 +94,15 @@ export class AppController {
     return this.appService.actualizarProducto(id, body);
   }
 
+  // Acotado a solo el flag `disponible` (a diferencia de PATCH productos/:id,
+  // que también acepta nombre/precio/categoría) para que COCINA pueda marcar
+  // 86 (agotado) sin poder editar el resto del plato.
+  @Roles('ADMIN', 'SISTEMA', 'GERENCIA', 'COCINA')
+  @Patch('productos/:id/disponibilidad')
+  actualizarDisponibilidadProducto(@Param('id') id: string, @Body() body: ActualizarDisponibilidadCommand) {
+    return this.appService.actualizarProducto(id, { disponible: body.disponible });
+  }
+
   // --- MENÚ DEL DÍA ---
   // Lectura abierta al comandero (mesero/cajero); gestión restringida a admin,
   // igual que el resto del catálogo.
@@ -117,7 +126,9 @@ export class AppController {
     return this.appService.agregarAlMenu(body, usuarioSedeId, sedeId);
   }
 
-  @Roles('ADMIN', 'SISTEMA', 'GERENCIA')
+  // ActualizarMenuDiarioCommand ya es disponible-only, así que COCINA puede
+  // usar el mismo endpoint sin abrir superficie de edición extra.
+  @Roles('ADMIN', 'SISTEMA', 'GERENCIA', 'COCINA')
   @Patch('menu-diario/:id')
   actualizarMenuDiario(@Param('id') id: string, @Body() body: ActualizarMenuDiarioCommand) {
     return this.appService.actualizarMenuDiario(id, body);

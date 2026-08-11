@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CartaScreen } from './CartaScreen';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useInventarioQuery } from '../../hooks/queries/useInventarioQuery';
+import { useAuthStore } from '../../store/auth.store';
 import { useToast } from '../../components/ui/ToastProvider';
 
 const mockNavigate = vi.fn();
@@ -14,6 +15,8 @@ vi.mock('react-router-dom', () => ({
 vi.mock('../../hooks/useOnlineStatus', () => ({
   useOnlineStatus: vi.fn()
 }));
+
+vi.mock('../../store/auth.store');
 
 vi.mock('../../hooks/queries/useInventarioQuery', () => ({
   useInventarioQuery: vi.fn()
@@ -74,6 +77,7 @@ describe('CartaScreen', () => {
   beforeEach(() => {
     mockNavigate.mockClear();
     vi.mocked(useOnlineStatus).mockReturnValue(true);
+    (useAuthStore as any).mockReturnValue('ADMIN'); // rol
     vi.mocked(useToast).mockReturnValue({ toast: toastMock } as any);
     vi.mocked(useInventarioQuery).mockReturnValue({
       categorias: mockCategorias,
@@ -81,7 +85,8 @@ describe('CartaScreen', () => {
       loading: false,
       saving: false,
       crearProducto: vi.fn(),
-      actualizarProducto: vi.fn()
+      actualizarProducto: vi.fn(),
+      actualizarDisponibilidad: vi.fn(),
     } as any);
   });
 
@@ -110,6 +115,7 @@ describe('CartaScreen', () => {
       saving: false,
       crearProducto: vi.fn(),
       actualizarProducto: vi.fn(),
+      actualizarDisponibilidad: vi.fn(),
     } as any);
 
     render(<CartaScreen />);
@@ -119,14 +125,15 @@ describe('CartaScreen', () => {
   });
 
   it('handles toggle disp', async () => {
-    const actualizarProducto = vi.fn();
+    const actualizarDisponibilidad = vi.fn();
     vi.mocked(useInventarioQuery).mockReturnValue({
       categorias: mockCategorias,
       productos: mockProductos,
       loading: false,
       saving: false,
       crearProducto: vi.fn(),
-      actualizarProducto
+      actualizarProducto: vi.fn(),
+      actualizarDisponibilidad,
     } as any);
 
     render(<CartaScreen />);
@@ -136,37 +143,38 @@ describe('CartaScreen', () => {
     fireEvent.click(toggles[0]);
 
     await waitFor(() => {
-      expect(actualizarProducto).toHaveBeenCalledWith('p1', { disponible: false });
+      expect(actualizarDisponibilidad).toHaveBeenCalledWith('p1', false);
     });
   });
 
   it('handles toggle disp offline and error', async () => {
-    const actualizarProducto = vi.fn().mockRejectedValue(new Error('Update failed'));
+    const actualizarDisponibilidad = vi.fn().mockRejectedValue(new Error('Update failed'));
     vi.mocked(useInventarioQuery).mockReturnValue({
       categorias: mockCategorias,
       productos: mockProductos,
       loading: false,
       saving: false,
       crearProducto: vi.fn(),
-      actualizarProducto
+      actualizarProducto: vi.fn(),
+      actualizarDisponibilidad,
     } as any);
 
     const { rerender } = render(<CartaScreen />);
-    
-    // Click toggle 
+
+    // Click toggle
     const toggles = screen.getAllByRole('button', { name: /Disponible/i });
     fireEvent.click(toggles[0]);
 
     await waitFor(() => {
       expect(toastMock).toHaveBeenCalledWith({ title: 'No se pudo actualizar', msg: 'Update failed', icon: 'Alert', kind: 'err' });
     });
-    
+
     vi.mocked(useOnlineStatus).mockReturnValue(false);
     rerender(<CartaScreen />);
-    
+
     toastMock.mockClear();
     fireEvent.click(toggles[0]);
-    expect(actualizarProducto).toHaveBeenCalledTimes(1); // not called again
+    expect(actualizarDisponibilidad).toHaveBeenCalledTimes(1); // not called again
   });
 
   it('handles edit product and save error', async () => {

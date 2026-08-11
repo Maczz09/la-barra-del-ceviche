@@ -93,6 +93,19 @@ export function useInventarioQuery(categoriaId?: string, options: UseInventarioO
     },
   });
 
+  const mutationActualizarDisponibilidad = useMutation({
+    mutationFn: async ({ id, disponible }: { id: string; disponible: boolean }) => {
+      return inventarioApi.actualizarDisponibilidadProducto(id, disponible);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: INVENTARIO_PRODUCTOS_KEY,
+        exact: false,
+        refetchType: 'active',
+      });
+    },
+  });
+
   const mutationCrearCategoria = useMutation({
     mutationFn: async (payload: CrearCategoriaPayload) => inventarioApi.crearCategoria(payload),
     onSuccess: () => {
@@ -118,8 +131,10 @@ export function useInventarioQuery(categoriaId?: string, options: UseInventarioO
 
   const loading = categoriasQuery.isLoading || productosQuery.isLoading;
   const saving = mutationCrear.isPending || mutationReponer.isPending || mutationActualizar.isPending
+    || mutationActualizarDisponibilidad.isPending
     || mutationCrearCategoria.isPending || mutationActualizarCategoria.isPending || mutationEliminarCategoria.isPending;
   const error = categoriasQuery.error || productosQuery.error || mutationCrear.error || mutationReponer.error || mutationActualizar.error
+    || mutationActualizarDisponibilidad.error
     || mutationCrearCategoria.error || mutationActualizarCategoria.error || mutationEliminarCategoria.error;
 
   return {
@@ -159,6 +174,9 @@ export function useInventarioQuery(categoriaId?: string, options: UseInventarioO
     actualizarProducto: async (id: string, payload: ActualizarProductoPayload) => {
       return mutationActualizar.mutateAsync({ id, payload });
     },
+    actualizarDisponibilidad: async (id: string, disponible: boolean) => {
+      return mutationActualizarDisponibilidad.mutateAsync({ id, disponible });
+    },
     reponerStock: async (id: string, cantidad: number) => {
       return mutationReponer.mutateAsync({ id, cantidad });
     },
@@ -174,6 +192,7 @@ export function useInventarioQuery(categoriaId?: string, options: UseInventarioO
     clearFeedback: () => {
       mutationCrear.reset();
       mutationActualizar.reset();
+      mutationActualizarDisponibilidad.reset();
       mutationReponer.reset();
       mutationCrearCategoria.reset();
       mutationActualizarCategoria.reset();

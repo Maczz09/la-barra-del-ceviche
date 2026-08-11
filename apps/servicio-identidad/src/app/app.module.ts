@@ -6,6 +6,7 @@ import { OutboxAdminModule, OutboxModule } from '@org/resiliencia';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthModule } from '../auth/auth.module';
 import { ObservabilidadModule, HealthModule } from '@org/observabilidad';
+import { RoutingKeys } from '@org/contracts';
 
 @Module({
   imports: [
@@ -15,7 +16,11 @@ import { ObservabilidadModule, HealthModule } from '@org/observabilidad';
     OutboxAdminModule.forRoot(PrismaService),
     OutboxModule.forService(PrismaService, { producer: 'servicio-identidad' }),
     ScheduleModule.forRoot(),
-    RabbitMQModule.forRoot(process.env['RABBITMQ_URI']),
+    RabbitMQModule.forRoot({
+      uri: process.env['RABBITMQ_URI'],
+      queue: 'identidad_queue',
+      bindings: [RoutingKeys.TurnoCajaAbierto, RoutingKeys.TurnoCajaCerrado],
+    }),
     AuthModule,
   ],
   providers: [],

@@ -590,4 +590,20 @@ export class AuthService {
     await this.prisma.sede.delete({ where: { id } });
     return { message: 'Sede eliminada' };
   }
+
+  /* ── Automatización meseros por turno de caja ──────── */
+
+  async activarMeserosPorSede(sedeId: string, activo: boolean): Promise<number> {
+    const { count } = await this.prisma.usuario.updateMany({
+      where: { sedeId, rol: 'MESERO' },
+      data: { activo },
+    });
+    this.logger.log({
+      operation: 'activarMeserosPorSede',
+      aggregateId: sedeId,
+      resultingState: activo ? 'ACTIVOS' : 'INACTIVOS',
+      message: `${count} usuario(s) MESERO ${activo ? 'activados' : 'desactivados'} (sede ${sedeId}).`,
+    } satisfies OperableLog);
+    return count;
+  }
 }

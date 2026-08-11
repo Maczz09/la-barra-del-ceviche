@@ -45,7 +45,7 @@ export const ACCESO_POR_ROL: Record<RolUsuario, AccesoRol> = {
     rutas: ['reportes', 'inventario', 'categorias', 'compras', 'carta', 'reservas', 'usuarios'],
   },
   CAJERO: { home: 'caja', rutas: ['caja', 'mesas', 'pedidos'] },
-  COCINA: { home: 'cocina', rutas: ['cocina'] },
+  COCINA: { home: 'cocina', rutas: ['cocina', 'carta'] },
   MESERO: { home: 'mesas', rutas: ['mesas', 'pedidos', 'reservas'] },
   RECEPCION: { home: 'reservas', rutas: ['reservas', 'mesas'] },
 };

@@ -67,6 +67,14 @@ export class CuentaDto {
   createdAt: string;
   @IsString()
   updatedAt: string;
+  // Mesero dominante de la cuenta (más pedidos/monto), derivado de `pedidos`
+  // — para que caja pueda auditar "quién atendió" además de "quién cobró".
+  @IsOptional()
+  @IsString()
+  meseroId?: string;
+  @IsOptional()
+  @IsString()
+  meseroNombre?: string;
 }
 
 export class TicketDto {

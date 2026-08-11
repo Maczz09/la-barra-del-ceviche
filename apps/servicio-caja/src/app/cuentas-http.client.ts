@@ -16,6 +16,10 @@ export interface CuentaRemota {
   sedeId: string;
   total: number;
   estado: string;
+  // Mesero dominante de la cuenta (auditoría de caja: quién atendió, no solo
+  // quién cobró). Opcional: cuentas antiguas/sin pedido con mesero no lo traen.
+  meseroId?: string;
+  meseroNombre?: string;
 }
 
 /**

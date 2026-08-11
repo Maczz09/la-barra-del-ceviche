@@ -23,6 +23,8 @@ export const RoutingKeys = {
 
   // Caja
   PagoRegistrado: 'pago.registrado',
+  TurnoCajaAbierto: 'turno.abierto',
+  TurnoCajaCerrado: 'turno.cerrado',
 
   // Facturación electrónica (SUNAT)
   ComprobanteEmitido: 'comprobante.emitido',

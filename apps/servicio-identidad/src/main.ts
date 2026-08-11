@@ -8,6 +8,6 @@ import { bootstrapNachoppsService } from '@org/observabilidad/bootstrap';
 import { AppModule } from './app/app.module';
 
 void bootstrapNachoppsService({
-  serviceName: 'servicio-identidad', module: AppModule, defaultPort: 3001,
+  serviceName: 'servicio-identidad', module: AppModule, queue: 'identidad_queue', defaultPort: 3001,
   swagger: { title: apiTitle('Identidad'), description: 'Autenticación JWT, gestión de usuarios, roles y refresh tokens' },
 });

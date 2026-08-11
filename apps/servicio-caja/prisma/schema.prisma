@@ -21,6 +21,10 @@ model Transaccion {
   notas         String?
   usuarioId     String?
   cajeroNombre  String?
+  // Mesero dominante de la cuenta al momento del pago (auditoría: quién
+  // atendió vs. quién cobró). Denormalizado desde servicio-cuentas.
+  meseroId      String?
+  meseroNombre  String?
   createdAt     DateTime @default(now())
 
   turno       TurnoCaja? @relation(fields: [turnoId], references: [id])

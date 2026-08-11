@@ -509,16 +509,20 @@ export class AppService {
   }
 
   private mapToDto(c: CuentaRecord): CuentaDto {
+    const pedidos = this.parsePedidosSnapshot(c.pedidos);
     return {
       id: c.id,
       mesaId: c.mesaId,
       sedeId: c.sedeId,
-      pedidos: this.parsePedidosSnapshot(c.pedidos),
+      pedidos,
       total: Number(c.total),
       estado: c.estado,
       ticket: c.ticket,
       createdAt: this.requireDate(c.createdAt, 'createdAt', c.id).toISOString(),
       updatedAt: this.requireDate(c.updatedAt, 'updatedAt', c.id).toISOString(),
+      // Para auditoría de caja (quién atendió la venta, no solo quién cobró):
+      // caja lee esto de fetchCuenta() y lo denormaliza en la Transaccion.
+      ...this.obtenerMeseroCuenta(pedidos),
     };
   }
 

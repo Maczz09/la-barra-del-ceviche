@@ -12,6 +12,7 @@ import { MiniStat } from '../../components/ui/Stat';
 import { useToast } from '../../components/ui/ToastProvider';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useInventarioQuery } from '../../hooks/queries/useInventarioQuery';
+import { useAuthStore } from '../../store/auth.store';
 import type { CategoriaDto, ProductoVM } from '../../types/inventario.types';
 import { MenuDiarioPanel } from './MenuDiarioPanel';
 
@@ -19,6 +20,9 @@ export function CartaScreen() {
   const { toast } = useToast();
   const online = useOnlineStatus();
   const navigate = useNavigate();
+  const rol = useAuthStore((s) => s.user?.rol);
+  // COCINA solo puede marcar 86 (agotado/disponible), no crear ni editar platos.
+  const soloDisponibilidad = rol === 'COCINA';
   const {
     categorias,
     productos,
@@ -26,6 +30,7 @@ export function CartaScreen() {
     saving,
     crearProducto,
     actualizarProducto,
+    actualizarDisponibilidad,
   } = useInventarioQuery(undefined, { conStock: false });
 
   const [modo, setModo] = useState<'CARTA' | 'MENU_DIA'>('CARTA');
@@ -63,7 +68,7 @@ export function CartaScreen() {
   const toggleDisp = async (p: ProductoVM) => {
     if (!online) return;
     try {
-      await actualizarProducto(p.id, { disponible: !p.disponible });
+      await actualizarDisponibilidad(p.id, !p.disponible);
     } catch (err) {
       toast({ title: 'No se pudo actualizar', msg: err instanceof Error ? err.message : 'Inténtalo de nuevo', icon: 'Alert', kind: 'err' });
     }
@@ -108,10 +113,12 @@ export function CartaScreen() {
           </div>
         </div>
         <span className="spacer" />
-        <button className="btn btn-ghost" onClick={() => navigate('/app/categorias')}>
-          <Icons.Layers s={16} /> Gestionar categorías
-        </button>
-        {modo === 'CARTA' && (
+        {!soloDisponibilidad && (
+          <button className="btn btn-ghost" onClick={() => navigate('/app/categorias')}>
+            <Icons.Layers s={16} /> Gestionar categorías
+          </button>
+        )}
+        {modo === 'CARTA' && !soloDisponibilidad && (
           <button className="btn btn-primary" disabled={!online || categorias.length === 0} onClick={() => setNuevo(true)}>
             <Icons.Plus s={16} /> Nuevo plato
           </button>
@@ -166,14 +173,20 @@ export function CartaScreen() {
               <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24 }} className="muted">Sin platos. Crea uno con "Nuevo plato".</td></tr>
             )}
             {filtrados.map((p) => (
-              <tr key={p.id} style={{ cursor: 'pointer', opacity: p.disponible ? 1 : 0.55 }} onClick={() => setEdit(p)}>
+              <tr
+                key={p.id}
+                style={{ cursor: soloDisponibilidad ? 'default' : 'pointer', opacity: p.disponible ? 1 : 0.55 }}
+                onClick={() => { if (!soloDisponibilidad) setEdit(p); }}
+              >
                 <td><strong>{p.nombre}</strong>{p.descripcion && <div className="muted" style={{ fontSize: 12 }}>{p.descripcion}</div>}</td>
                 <td className="col-mobile-hidden"><span className="pill-soft">{nombrePorCategoria.get(p.categoriaId) ?? p.categoriaNombre ?? '—'}</span></td>
                 <td style={{ textAlign: 'right' }}><strong className="mono">{p.precioLabel}</strong></td>
                 <td onClick={(e) => e.stopPropagation()}>
                   <button className={`toggle ${p.disponible ? 'on' : ''}`} disabled={saving || !online} onClick={() => toggleDisp(p)} title={p.disponible ? 'Disponible' : 'Agotado'}><span className="knob" /></button>
                 </td>
-                <td style={{ textAlign: 'right' }} className="col-mobile-hidden"><span className="muted" style={{ fontSize: 12 }}>Editar</span></td>
+                <td style={{ textAlign: 'right' }} className="col-mobile-hidden">
+                  {!soloDisponibilidad && <span className="muted" style={{ fontSize: 12 }}>Editar</span>}
+                </td>
               </tr>
             ))}
           </tbody>

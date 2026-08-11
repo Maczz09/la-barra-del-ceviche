@@ -14,8 +14,8 @@ describe('ACCESO_POR_ROL', () => {
     expect(ACCESO_POR_ROL.ADMIN.rutas).toEqual(TODAS_LAS_RUTAS);
   });
 
-  it('COCINA solo tiene acceso a cocina', () => {
-    expect(ACCESO_POR_ROL.COCINA.rutas).toEqual(['cocina']);
+  it('COCINA tiene acceso a cocina y carta (para desactivar platos)', () => {
+    expect(ACCESO_POR_ROL.COCINA.rutas).toEqual(['cocina', 'carta']);
     expect(ACCESO_POR_ROL.COCINA.home).toBe('cocina');
   });
 

@@ -125,4 +125,11 @@ describe('AppController (Inventario)', () => {
     expect(await appController.actualizarProducto('p1', command)).toEqual(expected);
     expect(appService.actualizarProducto).toHaveBeenCalledWith('p1', command);
   });
+
+  it('actualizarDisponibilidadProducto debe llamar a appService.actualizarProducto solo con disponible (rol COCINA)', async () => {
+    const expected = { id: 'p1', disponible: false };
+    jest.spyOn(appService, 'actualizarProducto').mockResolvedValue(expected as any);
+    expect(await appController.actualizarDisponibilidadProducto('p1', { disponible: false })).toEqual(expected);
+    expect(appService.actualizarProducto).toHaveBeenCalledWith('p1', { disponible: false });
+  });
 });

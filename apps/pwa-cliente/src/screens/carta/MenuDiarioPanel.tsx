@@ -10,6 +10,7 @@ import { Icons } from '../../components/ui/icons';
 import { useToast } from '../../components/ui/ToastProvider';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useMenuDiarioQuery } from '../../hooks/queries/useMenuDiarioQuery';
+import { useAuthStore } from '../../store/auth.store';
 import type { CategoriaDto, ProductoVM } from '../../types/inventario.types';
 
 function hoyLabel(): string {
@@ -24,6 +25,9 @@ interface Props {
 export function MenuDiarioPanel({ productos, categorias }: Readonly<Props>) {
   const { toast } = useToast();
   const online = useOnlineStatus();
+  const rol = useAuthStore((s) => s.user?.rol);
+  // COCINA solo puede marcar 86 (agotado/disponible), no agregar ni quitar platos del menú.
+  const soloDisponibilidad = rol === 'COCINA';
   const { menu, loading, saving, agregarAlMenu, actualizarDisponibilidad, quitarDelMenu } = useMenuDiarioQuery();
   const [agregando, setAgregando] = useState(false);
 
@@ -54,9 +58,11 @@ export function MenuDiarioPanel({ productos, categorias }: Readonly<Props>) {
           <div className="hint" style={{ textTransform: 'capitalize', fontWeight: 700 }}>{hoyLabel()}</div>
           <div className="muted" style={{ fontSize: 12 }}>{menu.length} plato(s) en el menú de hoy · {menu.filter((m) => m.disponible).length} disponibles</div>
         </div>
-        <button className="btn btn-primary" disabled={!online} onClick={() => setAgregando(true)}>
-          <Icons.Plus s={16} /> Agregar al menú
-        </button>
+        {!soloDisponibilidad && (
+          <button className="btn btn-primary" disabled={!online} onClick={() => setAgregando(true)}>
+            <Icons.Plus s={16} /> Agregar al menú
+          </button>
+        )}
       </div>
 
       <div className="table-wrap" style={{ flex: 1, overflowY: 'auto' }}>
@@ -84,7 +90,9 @@ export function MenuDiarioPanel({ productos, categorias }: Readonly<Props>) {
                   <button className={`toggle ${m.disponible ? 'on' : ''}`} disabled={saving || !online} onClick={() => toggle(m.id, m.disponible)} title={m.disponible ? 'Disponible' : 'Se acabó (desactivado)'}><span className="knob" /></button>
                 </td>
                 <td style={{ textAlign: 'right' }} className="col-mobile-hidden">
-                  <button className="btn btn-sm btn-ghost" disabled={saving || !online} onClick={() => quitar(m.id)}>Quitar</button>
+                  {!soloDisponibilidad && (
+                    <button className="btn btn-sm btn-ghost" disabled={saving || !online} onClick={() => quitar(m.id)}>Quitar</button>
+                  )}
                 </td>
               </tr>
             ))}

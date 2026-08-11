@@ -49,11 +49,19 @@ function createMockPrismaService(): any {
     },
     turnoCaja: {
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
     },
     movimientoCaja: {
       create: jest.fn(),
       updateMany: jest.fn(),
+    },
+    arqueoCaja: {
+      create: jest.fn(),
+    },
+    cierreCaja: {
+      create: jest.fn(),
     },
     $executeRaw: jest.fn(),
   };
@@ -300,6 +308,82 @@ describe('AppService — Caja', () => {
 
     it('el admin general sin sede seleccionada recibe BadRequestException', async () => {
       await expect(service.abrirTurno({ fondoInicial: 300 } as any, 'u-001', null)).rejects.toThrow('Indica la sede');
+    });
+
+    it('emite TurnoCajaAbierto al crear un turno nuevo', async () => {
+      mockPrisma.turnoCaja.findFirst.mockResolvedValueOnce(null);
+      mockPrisma.turnoCaja.create.mockResolvedValue(turnoAbierto);
+      mockPrisma.movimientoCaja.create.mockResolvedValue({});
+      mockPrisma.outboxEvent.create.mockResolvedValue({});
+
+      await service.abrirTurno({ fondoInicial: 300 } as any, 'u-001', 'sede-001');
+
+      expect(mockPrisma.outboxEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ routingKey: 'turno.abierto' }),
+        }),
+      );
+    });
+
+    it('no emite TurnoCajaAbierto si ya había un turno abierto', async () => {
+      mockPrisma.turnoCaja.findFirst.mockResolvedValue(turnoAbierto);
+
+      await service.abrirTurno({ fondoInicial: 300 } as any, 'u-001', 'sede-001');
+
+      expect(mockPrisma.outboxEvent.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cerrarTurno', () => {
+    const turnoParaCerrar = {
+      id: 'turno-001',
+      sedeId: 'sede-001',
+      cajaId: 'T01',
+      cajaNombre: 'Terminal 01',
+      usuarioId: 'u-001',
+      cajeroNombre: 'Caja',
+      fondoInicial: 300,
+      estado: 'ABIERTA',
+      abiertoAt: new Date(),
+      cerradoAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      movimientos: [],
+      arqueos: [],
+      cierre: null,
+    };
+
+    beforeEach(() => {
+      mockPrisma.turnoCaja.findUnique.mockResolvedValue(turnoParaCerrar);
+      mockPrisma.arqueoCaja.create.mockResolvedValue({
+        id: 'arq-001', turnoId: 'turno-001', denominaciones: {}, efectivoEsperado: 0, efectivoContado: 0, diferencia: 0,
+        usuarioId: 'u-001', createdAt: new Date(),
+      });
+      mockPrisma.cierreCaja.create.mockResolvedValue({
+        id: 'cie-001', turnoId: 'turno-001', montoEsperado: 0, montoReal: 0, diferencia: 0, resumen: {},
+        usuarioId: 'u-001', createdAt: new Date(),
+      });
+      mockPrisma.turnoCaja.update.mockResolvedValue({ ...turnoParaCerrar, estado: 'CERRADA', cerradoAt: new Date() });
+      mockPrisma.outboxEvent.create.mockResolvedValue({});
+    });
+
+    it('marca el turno como CERRADA', async () => {
+      await service.cerrarTurno('turno-001', { denominaciones: {} } as any, 'u-001', 'sede-001');
+
+      expect(mockPrisma.turnoCaja.update).toHaveBeenCalledWith({
+        where: { id: 'turno-001' },
+        data: expect.objectContaining({ estado: 'CERRADA' }),
+      });
+    });
+
+    it('emite TurnoCajaCerrado al cerrar el turno', async () => {
+      await service.cerrarTurno('turno-001', { denominaciones: {} } as any, 'u-001', 'sede-001');
+
+      expect(mockPrisma.outboxEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ routingKey: 'turno.cerrado' }),
+        }),
+      );
     });
   });
 

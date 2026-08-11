@@ -191,7 +191,7 @@ export function HistorialCajaScreen() {
                     </div>
                   )}
 
-                  <div className="panel">
+                  <div className="panel" style={{ marginBottom: 16 }}>
                     <div className="panel-h"><h3>Ventas por método</h3></div>
                     <div className="table-wrap table-wrap-flat">
                       <table className="dt">
@@ -206,6 +206,40 @@ export function HistorialCajaScreen() {
                         </tbody>
                       </table>
                     </div>
+                  </div>
+
+                  <div className="panel">
+                    <div className="panel-h"><h3>Ventas del turno (auditoría)</h3></div>
+                    {(!detalle.ventasDetalle || detalle.ventasDetalle.length === 0) ? (
+                      <div className="muted" style={{ padding: '0 16px 16px', fontSize: 13 }}>Sin ventas registradas en este turno.</div>
+                    ) : (
+                      <div className="table-wrap table-wrap-flat">
+                        <table className="dt">
+                          <thead>
+                            <tr>
+                              <th>Hora</th>
+                              <th className="col-mobile-hidden">Mesa</th>
+                              <th>Método</th>
+                              <th style={{ textAlign: 'right' }}>Monto</th>
+                              <th>Mesero</th>
+                              <th>Cobrado por</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detalle.ventasDetalle.map((v) => (
+                              <tr key={v.id}>
+                                <td className="muted">{fechaHora(v.createdAt)}</td>
+                                <td className="col-mobile-hidden muted">{v.mesaId ?? '—'}</td>
+                                <td>{METODO_META[v.metodo]?.label ?? v.metodo}</td>
+                                <td style={{ textAlign: 'right' }}>{fmt(v.monto)}</td>
+                                <td>{v.meseroNombre ?? <span className="muted">Sin datos</span>}</td>
+                                <td>{v.cajeroNombre ?? <span className="muted">Sin datos</span>}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 </>
               )}

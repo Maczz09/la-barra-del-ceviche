@@ -206,6 +206,12 @@ export class ActualizarProductoCommand {
   disponible?: boolean;
 }
 
+/** PATCH acotado a solo disponibilidad (ej. rol COCINA marcando 86/agotado). */
+export class ActualizarDisponibilidadCommand {
+  @IsBoolean()
+  disponible: boolean;
+}
+
 // --- Menú del día (T-20) ---
 // Selección curada de productos ofrecidos en una fecha concreta, separada de
 // la carta fija: el mismo Producto puede estar en la carta y/o en el menú de

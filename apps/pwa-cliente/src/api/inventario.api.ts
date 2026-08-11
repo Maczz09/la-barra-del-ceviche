@@ -102,6 +102,14 @@ export async function actualizarProducto(
   return unwrapEntity<ProductoDto>(response, 'producto');
 }
 
+export async function actualizarDisponibilidadProducto(id: string, disponible: boolean): Promise<ProductoDto> {
+  const response = await client.patch<ProductoResponse | ProductoDto>(
+    `/inventario/productos/${id}/disponibilidad`,
+    { disponible },
+  );
+  return unwrapEntity<ProductoDto>(response, 'producto');
+}
+
 export async function reponerStock(id: string, cantidad: number): Promise<ProductoDto> {
   const response = await client.patch<ProductoResponse | ProductoDto>(`/inventario/productos/${id}/stock`, {
     stock: cantidad,

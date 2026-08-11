@@ -46,6 +46,23 @@ export class TransaccionDto {
   @IsString()
   cajeroNombre?: string;
 
+  // Auditoría de cierre (quién atendió vs. quién cobró/generó el comprobante).
+  @IsOptional()
+  @IsString()
+  mesaId?: string;
+
+  @IsOptional()
+  @IsString()
+  turnoId?: string;
+
+  @IsOptional()
+  @IsString()
+  meseroId?: string;
+
+  @IsOptional()
+  @IsString()
+  meseroNombre?: string;
+
   @IsString()
   createdAt: string;
 }
@@ -198,4 +215,18 @@ export class TurnoListResponse {
   @IsOptional()
   @IsString()
   nextCursor: string | null;
+}
+
+export class TurnoCajaAbiertoPayload {
+  @IsString()
+  turnoId: string;
+  @IsString()
+  sedeId: string;
+}
+
+export class TurnoCajaCerradoPayload {
+  @IsString()
+  turnoId: string;
+  @IsString()
+  sedeId: string;
 }
