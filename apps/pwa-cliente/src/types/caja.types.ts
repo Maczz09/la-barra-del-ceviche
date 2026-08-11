@@ -46,6 +46,8 @@ export interface TransaccionDto {
   turnoId?: string | null;
   meseroId?: string | null;
   meseroNombre?: string | null;
+  mesaNumero?: string | null;
+  mesaUnidaCon?: string | null;
   createdAt: string;
 }
 

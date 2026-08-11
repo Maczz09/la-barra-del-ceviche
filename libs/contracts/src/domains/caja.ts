@@ -63,6 +63,16 @@ export class TransaccionDto {
   @IsString()
   meseroNombre?: string;
 
+  // Número de mesa legible (y hermanas si estaba unida), para no mostrar el
+  // mesaId (UUID) crudo en la auditoría de caja.
+  @IsOptional()
+  @IsString()
+  mesaNumero?: string;
+
+  @IsOptional()
+  @IsString()
+  mesaUnidaCon?: string;
+
   @IsString()
   createdAt: string;
 }

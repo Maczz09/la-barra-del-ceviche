@@ -95,6 +95,13 @@ export class PagarCuentaCajaCommand {
   @MaxLength(20)
   mesaNumero?: string;
 
+  // Auditoría de caja: números de las mesas hermanas si la mesa cobrada
+  // estaba unida a otra(s) al momento del cobro (ej. "6" o "6, 7").
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  mesaUnidaCon?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(120)

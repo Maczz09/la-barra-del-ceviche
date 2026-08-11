@@ -96,6 +96,8 @@ export interface RegistrarPagoPayload {
   descuento?: number;
   propina?: number;
   mesaNumero?: string;
+  /** Números de las mesas hermanas si la mesa cobrada está unida a otra(s) (ej. "6"). */
+  mesaUnidaCon?: string;
 }
 
 export interface TransaccionDto {

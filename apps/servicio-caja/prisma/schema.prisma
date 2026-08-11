@@ -25,6 +25,10 @@ model Transaccion {
   // atendió vs. quién cobró). Denormalizado desde servicio-cuentas.
   meseroId      String?
   meseroNombre  String?
+  // Número de mesa legible (y hermanas si estaba unida) al momento del
+  // cobro — evita mostrar el mesaId (UUID) crudo en la auditoría de caja.
+  mesaNumero    String?
+  mesaUnidaCon  String?
   createdAt     DateTime @default(now())
 
   turno       TurnoCaja? @relation(fields: [turnoId], references: [id])

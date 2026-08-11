@@ -229,7 +229,10 @@ export function HistorialCajaScreen() {
                             {detalle.ventasDetalle.map((v) => (
                               <tr key={v.id}>
                                 <td className="muted">{fechaHora(v.createdAt)}</td>
-                                <td className="col-mobile-hidden muted">{v.mesaId ?? '—'}</td>
+                                <td className="col-mobile-hidden muted">
+                                  {v.mesaNumero ? `Mesa ${v.mesaNumero}` : (v.mesaId ?? '—')}
+                                  {v.mesaUnidaCon && <span className="pill-soft" style={{ marginLeft: 6, fontSize: 11 }}>unida con Mesa {v.mesaUnidaCon}</span>}
+                                </td>
                                 <td>{METODO_META[v.metodo]?.label ?? v.metodo}</td>
                                 <td style={{ textAlign: 'right' }}>{fmt(v.monto)}</td>
                                 <td>{v.meseroNombre ?? <span className="muted">Sin datos</span>}</td>

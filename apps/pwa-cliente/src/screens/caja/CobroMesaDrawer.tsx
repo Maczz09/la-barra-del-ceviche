@@ -38,11 +38,12 @@ interface Parte {
 interface Props {
   mesaId: string;
   mesaNumero?: string;
+  mesaUnidaCon?: string;
   onClose: () => void;
   onPaid?: () => void;
 }
 
-export function CobroMesaDrawer({ mesaId, mesaNumero, onClose, onPaid }: Readonly<Props>) {
+export function CobroMesaDrawer({ mesaId, mesaNumero, mesaUnidaCon, onClose, onPaid }: Readonly<Props>) {
   const online = useOnlineStatus();
   const { toast } = useToast();
   const {
@@ -162,6 +163,7 @@ export function CobroMesaDrawer({ mesaId, mesaNumero, onClose, onPaid }: Readonl
         descuento: desc,
         propina: tipAPagar,
         mesaNumero,
+        mesaUnidaCon,
       });
       if (esUltimaParte) {
         onPaid?.();

@@ -87,6 +87,15 @@ export function CajaScreen() {
     }
   }, [searchParams, mesas]);
 
+  // Mesas hermanas si la mesa que se está cobrando está unida a otra(s), para
+  // dejar constancia en la auditoría de caja (ver Transaccion.mesaUnidaCon).
+  const mesaUnidaCon = useMemo(() => {
+    const mesaCobro = cobro ? mesas.find((m) => m.id === cobro.mesaId) : null;
+    if (!mesaCobro?.grupoId) return undefined;
+    const hermanas = mesas.filter((m) => m.grupoId === mesaCobro.grupoId && m.id !== mesaCobro.id);
+    return hermanas.length > 0 ? hermanas.map((h) => h.numero).join(', ') : undefined;
+  }, [mesas, cobro]);
+
   const closeCobro = () => {
     setCobro(null);
     if (searchParams.get('mesaId')) {
@@ -281,6 +290,7 @@ export function CajaScreen() {
         <CobroMesaDrawer
           mesaId={cobro.mesaId}
           mesaNumero={cobro.mesaNumero}
+          mesaUnidaCon={mesaUnidaCon}
           onClose={closeCobro}
           onPaid={() => toast({ title: 'Pago registrado correctamente.', msg: `Mesa ${cobro.mesaNumero ?? ''}`.trim(), icon: 'Receipt', kind: 'ok' })}
         />
