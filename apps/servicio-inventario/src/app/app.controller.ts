@@ -5,13 +5,15 @@ import { AppService } from './app.service';
 import { CrearCategoriaCommand, ActualizarCategoriaCommand, CrearProductoCommand, ActualizarProductoCommand, ActualizarDisponibilidadCommand, ListarProductosQuery, ObtenerProductosLoteCommand, AgregarAlMenuCommand, ActualizarMenuDiarioCommand, RegistrarMermaCommand, ListarMermasQuery } from '@org/contracts';
 
 // Lectura del catálogo: la usan inventario/carta (admin, sistema, gerencia) y
-// también el comandero del PWA (cajero, mesero) al armar pedidos. La gestión
-// del catálogo (mutaciones) queda restringida a administración por método.
+// también el comandero del PWA (cajero, mesero) al armar pedidos. COCINA
+// también necesita leer (Carta, para marcar 86) aunque solo pueda escribir
+// disponibilidad — ver los @Roles de método más abajo. La gestión del
+// catálogo (mutaciones) queda restringida a administración por método.
 // T-23 (multi-sede): listar/crear reciben `sedeId` por query — el servicio la
 // resuelve contra `req.user.sedeId` (usuario pineado gana siempre; el admin
 // general debe indicarla).
 @UseGuards(RolesGuard)
-@Roles('ADMIN', 'SISTEMA', 'GERENCIA', 'CAJERO', 'MESERO')
+@Roles('ADMIN', 'SISTEMA', 'GERENCIA', 'CAJERO', 'MESERO', 'COCINA')
 @Controller()
 export class AppController {
   constructor(private readonly appService: AppService) {}
@@ -56,9 +58,15 @@ export class AppController {
   listarProductos(
     @Query() query: ListarProductosQuery,
     @UsuarioActual('sedeId') usuarioSedeId: string | null,
+    @UsuarioActual('rol') rol: string | null,
     @Query('sedeId') sedeId?: string,
   ) {
-    return this.appService.listarProductos(query, usuarioSedeId, sedeId);
+    // COCINA solo ve Carta/Menú del día (conStock=false) — Inventario (con
+    // control de stock) es aparte, lo maneja el mesero al entregar, sin
+    // seguimiento de cocina. Se fuerza acá, no solo en el front, porque
+    // ocultar la ruta de Inventario no protege este endpoint.
+    const queryEfectiva = rol === 'COCINA' ? { ...query, conStock: false } : query;
+    return this.appService.listarProductos(queryEfectiva, usuarioSedeId, sedeId);
   }
 
   @Get('productos/:id')

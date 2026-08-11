@@ -88,6 +88,14 @@ describe('AppController (Inventario)', () => {
     expect(appService.listarProductos).toHaveBeenCalledWith(query, undefined, undefined);
   });
 
+  it('listarProductos fuerza conStock=false para rol COCINA (Inventario es aparte)', async () => {
+    const query: ListarProductosQuery = { limit: 10, conStock: true };
+    const expected = { data: [], nextCursor: null };
+    jest.spyOn(appService, 'listarProductos').mockResolvedValue(expected as any);
+    await appController.listarProductos(query, undefined, 'COCINA');
+    expect(appService.listarProductos).toHaveBeenCalledWith({ ...query, conStock: false }, undefined, undefined);
+  });
+
   it('obtenerProducto debe llamar a appService.obtenerProducto', async () => {
     const expected = { id: 'p1', nombre: 'prod' };
     jest.spyOn(appService, 'obtenerProducto').mockResolvedValue(expected as any);
