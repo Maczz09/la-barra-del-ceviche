@@ -100,7 +100,6 @@ export function useInicioData() {
     totalVentas: reporte?.ingresosTotales ?? 0,
     cuentas: reporte?.totalVentas ?? 0,
     ticketProm: reporte?.ticketPromedio ?? 0,
-    topProductos: reporte?.topProductos ?? [],
     ventasHora,
     propinas: caja?.propinas ?? 0,
     efectivo: caja?.efectivoEsperado ?? 0,

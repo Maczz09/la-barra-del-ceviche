@@ -10,12 +10,15 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
 }));
 
+vi.mock('./TopProductosPanel', () => ({
+  TopProductosPanel: () => <div data-testid="top-productos-panel" />,
+}));
+
 vi.mock('../../hooks/useInicioData', () => ({
   useInicioData: () => ({
     totalVentas: 1500,
     cuentas: 10,
     ticketProm: 150,
-    topProductos: [],
     ventasHora: [],
     propinas: 100,
     efectivo: 500,

@@ -44,12 +44,17 @@ vi.mock('../../hooks/useInicioData', () => ({
   useInicioData: () => mockUseInicioData(),
 }));
 
+// TopProductosPanel maneja su propia consulta (con filtro de período) —
+// se prueba por separado en TopProductosPanel.test.tsx.
+vi.mock('./TopProductosPanel', () => ({
+  TopProductosPanel: () => <div data-testid="top-productos-panel" />,
+}));
+
 // Datos base vacíos/cero
 const defaultInicioData = {
   totalVentas: 0,
   cuentas: 0,
   ticketProm: 0,
-  topProductos: [],
   ventasHora: [],
   propinas: 0,
   efectivo: 0,
@@ -150,14 +155,9 @@ describe('InicioScreen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/app/mesas');
   });
 
-  it('renderiza sección de "Top productos del día"', () => {
+  it('renderiza el panel de "Top productos"', () => {
     render(<InicioScreen />);
-    expect(screen.getByText('Top productos del día')).toBeInTheDocument();
-  });
-
-  it('muestra mensaje vacío en productos cuando no hay ventas', () => {
-    render(<InicioScreen />);
-    expect(screen.getAllByText('Aún no hay ventas en el turno.').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('top-productos-panel')).toBeInTheDocument();
   });
 
   it('renderiza sección "Requiere atención"', () => {
@@ -229,19 +229,6 @@ describe('InicioScreen', () => {
 describe('InicioScreen con datos', () => {
   beforeEach(() => {
     mockNavigate.mockReset();
-  });
-
-  it('muestra productos cuando hay datos', () => {
-    mockUseInicioData.mockReturnValue({
-      ...defaultInicioData,
-      topProductos: [
-        { productoId: '1', nombre: 'Lomo Saltado', cantidad: 5, ingresos: 150 },
-        { productoId: '2', nombre: 'Causa Rellena', cantidad: 3, ingresos: 75 },
-      ],
-    });
-    render(<InicioScreen />);
-    expect(screen.getAllByText('Lomo Saltado').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Causa Rellena').length).toBeGreaterThan(0);
   });
 
   it('muestra reservas próximas cuando hay datos', () => {

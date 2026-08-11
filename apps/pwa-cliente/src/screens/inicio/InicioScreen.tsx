@@ -4,12 +4,13 @@ import { Icons, type IconName } from '../../components/ui/icons';
 import { HeroStat } from '../../components/ui/Stat';
 import { fmt, elapsedMin } from '../../utils/format';
 import { useInicioData, type ActividadItem } from '../../hooks/useInicioData';
+import { TopProductosPanel } from './TopProductosPanel';
 
 export function InicioScreen() {
   const navigate = useNavigate();
   const go = (key: string) => navigate(`/app/${key}`);
   const {
-    totalVentas, cuentas, ticketProm, topProductos, ventasHora,
+    totalVentas, cuentas, ticketProm, ventasHora,
     propinas, efectivo, turnoAbierto,
     salon, ocupPct, cocina,
     items86, stockAlerts, STOCK_BAJO,
@@ -77,37 +78,7 @@ export function InicioScreen() {
             </div>
           </section>
 
-          <section className="panel">
-            <div className="panel-h"><h3>Top productos del día</h3></div>
-            <div className="top-prod-table table-wrap table-wrap-flat">
-              <table className="dt">
-                <thead><tr><th>Producto</th><th>Vendidos</th><th style={{ textAlign: 'right' }}>Ingresos</th></tr></thead>
-                <tbody>
-                  {topProductos.length === 0 ? (
-                    <tr><td colSpan={3} style={{ textAlign: 'center', padding: 20 }} className="muted">Aún no hay ventas en el turno.</td></tr>
-                  ) : topProductos.map((p, i) => (
-                    <tr key={p.productoId ?? p.nombre}>
-                      <td><div className="row" style={{ gap: 10 }}><span className="dish-q" style={{ background: 'var(--surface-3)', color: 'var(--text-2)' }}>{i + 1}</span><strong>{p.nombre}</strong></div></td>
-                      <td><span className="mono">{p.cantidad}</span></td>
-                      <td style={{ textAlign: 'right' }} className="mono"><strong>{fmt(p.ingresos ?? 0)}</strong></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="top-prod-list">
-              {topProductos.length === 0 ? (
-                <div className="muted" style={{ textAlign: 'center', padding: 20 }}>Aún no hay ventas en el turno.</div>
-              ) : topProductos.map((p, i) => (
-                <div className="top-prod-item" key={p.productoId ?? p.nombre}>
-                  <span className="tp-rank">{i + 1}</span>
-                  <span className="tp-nombre">{p.nombre}</span>
-                  <span className="tp-qty">{p.cantidad}</span>
-                  <span className="tp-amt">{fmt(p.ingresos ?? 0)}</span>
-                </div>
-              ))}
-            </div>
-          </section>
+          <TopProductosPanel />
 
           <PanelActividad actividad={actividad} />
         </div>
