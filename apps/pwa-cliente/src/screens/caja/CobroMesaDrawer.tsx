@@ -238,7 +238,6 @@ export function CobroMesaDrawer({ mesaId, mesaNumero, mesaUnidaCon, onClose, onP
               mesaNumero={mesaNumero}
               propina={tip}
               sede={sede}
-              onImprimir={() => globalThis.print()}
               onCerrar={onClose}
             />
           ) : (

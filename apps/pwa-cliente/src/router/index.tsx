@@ -21,6 +21,7 @@ const UsuariosScreen = lazy(() => import('../screens/admin/UsuariosScreen').then
 const SedesScreen = lazy(() => import('../screens/sedes/SedesScreen').then(m => ({ default: m.SedesScreen })));
 const CartaScreen = lazy(() => import('../screens/carta/CartaScreen').then(m => ({ default: m.CartaScreen })));
 const ComprasScreen = lazy(() => import('../screens/compras/ComprasScreen').then(m => ({ default: m.ComprasScreen })));
+const TicketPrintPage = lazy(() => import('../screens/print/TicketPrintPage').then(m => ({ default: m.TicketPrintPage })));
 import { Shell } from '../components/layout/Shell';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 
@@ -100,6 +101,11 @@ export function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Pestaña de impresión dedicada: sin Shell, sin auth (lee su payload
+            de localStorage, ver utils/ticketPrint.ts) — así Chrome imprime
+            solo el ticket, no el layout completo de la app alrededor. */}
+        <Route path="/imprimir/boleta" element={<Suspense fallback={null}><TicketPrintPage /></Suspense>} />
+
         {/* Rutas públicas */}
         <Route element={<PublicRoute />}>
           <Route path="/login" element={<Suspense fallback={<ScreenLoading />}><LoginScreen /></Suspense>} />

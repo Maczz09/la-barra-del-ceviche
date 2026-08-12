@@ -1,14 +1,20 @@
 // screens/caja/HistorialCajaScreen.tsx — Historial de turnos/cierres de caja (solo ADMIN/SISTEMA).
 // Lista de turnos pasados + detalle de un cierre (arqueo, resumen por método).
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Scrim } from '../../components/ui/Scrim';
 import { Icons } from '../../components/ui/icons';
 import { StatKpi } from '../../components/ui/StatKpi';
+import { useToast } from '../../components/ui/ToastProvider';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { fmt } from '../../utils/format';
+import { abrirTicketParaImprimir } from '../../utils/ticketPrint';
 import { METODO_META, METODOS_ORDEN } from './cajaMeta';
 import { useHistorialCajaQuery, useTurnoDetalleQuery } from '../../hooks/queries/useHistorialCajaQuery';
-import type { TurnoCajaEstado } from '../../types/caja.types';
+import { useSedeActualQuery } from '../../hooks/queries/useSedesQuery';
+import * as cuentasApi from '../../api/cuentas.api';
+import { mapCuenta } from '../../mappers/cuenta.mapper';
+import type { TurnoCajaEstado, TransaccionDto } from '../../types/caja.types';
 
 function fechaHora(iso: string | null): string {
   if (!iso) return '—';
@@ -20,6 +26,10 @@ export function HistorialCajaScreen() {
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
   const [turnoId, setTurnoId] = useState<string | null>(null);
+  const [imprimiendoId, setImprimiendoId] = useState<string | null>(null);
+  const modalRef = useRef<HTMLDialogElement>(null);
+  const { toast } = useToast();
+  const { sede } = useSedeActualQuery();
 
   const { turnos, nextCursor, loading, loadingMore, error, fetch, fetchMore } = useHistorialCajaQuery({
     estado: estado || undefined,
@@ -27,6 +37,54 @@ export function HistorialCajaScreen() {
     hasta: hasta || undefined,
   });
   const { detalle, loading: loadingDetalle } = useTurnoDetalleQuery(turnoId);
+  const cerrarModal = () => setTurnoId(null);
+  useFocusTrap(modalRef, { active: !!turnoId, onClose: cerrarModal });
+
+  // La Transacción no guarda los ítems (viven en la Cuenta, servicio-cuentas)
+  // — para reimprimir un cobro ya cerrado hay que ir a buscarlos. La propina
+  // de un cobro pasado no queda registrada aparte en la Transaccion, así que
+  // el total reimpreso no la desglosa por separado (ya está incluida en el
+  // monto cobrado en su momento).
+  const verImprimirTicket = async (v: TransaccionDto) => {
+    setImprimiendoId(v.id);
+    try {
+      const cuentaDto = await cuentasApi.getById(v.cuentaId);
+      const cuenta = mapCuenta(cuentaDto);
+      const items = cuenta.pedidos.flatMap((p) =>
+        p.items.map((it) => ({ productoId: it.productoId, nombre: it.nombre, cantidad: it.cantidad, precioUnitario: it.precioUnitario })),
+      );
+      abrirTicketParaImprimir({
+        ticket: {
+          id: v.id,
+          cuentaId: v.cuentaId,
+          mesaId: v.mesaId ?? cuenta.mesaId,
+          items,
+          subtotal: v.monto + v.descuento,
+          descuento: v.descuento,
+          total: v.monto,
+          fecha: v.createdAt,
+        },
+        transaccion: {
+          id: v.id,
+          cuentaId: v.cuentaId,
+          monto: v.monto,
+          descuento: v.descuento,
+          metodo: v.metodo,
+          cajeroNombre: v.cajeroNombre,
+          tipoComprobante: v.tipoComprobante === 'FACTURA' ? 'FACTURA' : 'BOLETA',
+          clienteDocumento: v.clienteDocumento,
+          createdAt: v.createdAt,
+        },
+        mesaNumero: v.mesaNumero ?? undefined,
+        propina: 0,
+        sede,
+      });
+    } catch {
+      toast({ title: 'No se pudo abrir el comprobante', msg: 'Inténtalo de nuevo', icon: 'Alert', kind: 'err' });
+    } finally {
+      setImprimiendoId(null);
+    }
+  };
 
   const kpis = useMemo(() => {
     const cerradas = turnos.filter((t) => t.estado === 'CERRADA').length;
@@ -142,15 +200,22 @@ export function HistorialCajaScreen() {
       </section>
 
       {turnoId && (
-        <div className="drawer-wrap">
-          <Scrim onClose={() => setTurnoId(null)} />
-          <aside className="drawer">
+        <div className="modal-wrap">
+          <Scrim onClose={cerrarModal} />
+          <dialog
+            open
+            className="modal xwide"
+            ref={modalRef}
+            aria-modal="true"
+            aria-label="Detalle del turno"
+            style={{ position: 'relative', zIndex: 1 }}
+          >
             <div className="panel-h" style={{ padding: '16px 20px' }}>
               <h3 style={{ fontSize: 18 }}>{detalle?.turno?.cajaNombre ?? 'Detalle del turno'}</h3>
               <span className="spacer" />
-              <button className="icon-btn" onClick={() => setTurnoId(null)}><Icons.Close s={17} /></button>
+              <button className="icon-btn" onClick={cerrarModal} aria-label="Cerrar detalle del turno"><Icons.Close s={17} /></button>
             </div>
-            <div className="drawer-body">
+            <div className="modal-scroll" style={{ padding: '18px 20px' }}>
               {loadingDetalle && <div className="skel" style={{ height: 120 }} />}
               {!loadingDetalle && detalle && (
                 <>
@@ -223,6 +288,7 @@ export function HistorialCajaScreen() {
                               <th style={{ textAlign: 'right' }}>Monto</th>
                               <th>Mesero</th>
                               <th>Cobrado por</th>
+                              <th className="cell-action"></th>
                             </tr>
                           </thead>
                           <tbody>
@@ -237,6 +303,16 @@ export function HistorialCajaScreen() {
                                 <td style={{ textAlign: 'right' }}>{fmt(v.monto)}</td>
                                 <td>{v.meseroNombre ?? <span className="muted">Sin datos</span>}</td>
                                 <td>{v.cajeroNombre ?? <span className="muted">Sin datos</span>}</td>
+                                <td className="cell-action">
+                                  <button
+                                    className="btn btn-sm btn-ghost"
+                                    disabled={imprimiendoId === v.id}
+                                    onClick={() => void verImprimirTicket(v)}
+                                    aria-label={`Imprimir comprobante de ${fechaHora(v.createdAt)}`}
+                                  >
+                                    {imprimiendoId === v.id ? <span className="spinner" /> : <Icons.Print s={14} />}
+                                  </button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -247,7 +323,7 @@ export function HistorialCajaScreen() {
                 </>
               )}
             </div>
-          </aside>
+          </dialog>
         </div>
       )}
     </div>

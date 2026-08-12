@@ -2,7 +2,12 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { BoletaInterna } from './BoletaInterna';
+import { abrirTicketParaImprimir } from '../../utils/ticketPrint';
 import type { TicketDto, TransaccionDto } from '../../types/cuenta.types';
+
+vi.mock('../../utils/ticketPrint', () => ({
+  abrirTicketParaImprimir: vi.fn(),
+}));
 
 const ticket: TicketDto = {
   id: 'ticket-0123456789',
@@ -29,7 +34,7 @@ const transaccion: TransaccionDto = {
 
 describe('BoletaInterna', () => {
   it('muestra el nombre de la sede (o el nombre de marca si no hay sede) en el encabezado', () => {
-    render(<BoletaInterna ticket={ticket} transaccion={transaccion} mesaNumero="5" propina={0} onImprimir={vi.fn()} onCerrar={vi.fn()} />);
+    render(<BoletaInterna ticket={ticket} transaccion={transaccion} mesaNumero="5" propina={0} onCerrar={vi.fn()} />);
     expect(screen.getByText('RESTOAPP.PE')).toBeInTheDocument();
     expect(screen.getByText('Boleta de venta')).toBeInTheDocument();
     expect(screen.getByText('Mesa 5')).toBeInTheDocument();
@@ -43,7 +48,6 @@ describe('BoletaInterna', () => {
         mesaNumero="5"
         propina={0}
         sede={{ id: 's1', nombre: 'Sede Dos', direccion: 'Av. Test 456', ruc: '20999999999', activa: true }}
-        onImprimir={vi.fn()}
         onCerrar={vi.fn()}
       />,
     );
@@ -59,7 +63,6 @@ describe('BoletaInterna', () => {
         transaccion={{ ...transaccion, tipoComprobante: 'FACTURA', clienteDocumento: '20555555555' }}
         mesaNumero="5"
         propina={0}
-        onImprimir={vi.fn()}
         onCerrar={vi.fn()}
       />,
     );
@@ -69,14 +72,14 @@ describe('BoletaInterna', () => {
   });
 
   it('lista cada ítem con cantidad y subtotal', () => {
-    render(<BoletaInterna ticket={ticket} transaccion={transaccion} propina={0} onImprimir={vi.fn()} onCerrar={vi.fn()} />);
+    render(<BoletaInterna ticket={ticket} transaccion={transaccion} propina={0} onCerrar={vi.fn()} />);
     expect(screen.getByText('1x Ceviche Clásico')).toBeInTheDocument();
     expect(screen.getByText('2x Inca Kola')).toBeInTheDocument();
     expect(screen.getByText('S/ 16.00')).toBeInTheDocument(); // 2 * 8
   });
 
   it('desglosa subtotal, descuento, IGV y total (incluye propina)', () => {
-    render(<BoletaInterna ticket={ticket} transaccion={transaccion} propina={3} onImprimir={vi.fn()} onCerrar={vi.fn()} />);
+    render(<BoletaInterna ticket={ticket} transaccion={transaccion} propina={3} onCerrar={vi.fn()} />);
     expect(screen.getByText('S/ 51.00')).toBeInTheDocument(); // subtotal
     expect(screen.getByText('-S/ 5.00')).toBeInTheDocument(); // descuento
     expect(screen.getByText('S/ 3.00')).toBeInTheDocument(); // propina
@@ -85,22 +88,22 @@ describe('BoletaInterna', () => {
   });
 
   it('no muestra la fila de descuento cuando es cero', () => {
-    render(<BoletaInterna ticket={{ ...ticket, descuento: 0 }} transaccion={transaccion} propina={0} onImprimir={vi.fn()} onCerrar={vi.fn()} />);
+    render(<BoletaInterna ticket={{ ...ticket, descuento: 0 }} transaccion={transaccion} propina={0} onCerrar={vi.fn()} />);
     expect(screen.queryByText(/^-S\//)).not.toBeInTheDocument();
   });
 
   it('muestra el nombre del cajero cuando viene en la transacción', () => {
-    render(<BoletaInterna ticket={ticket} transaccion={transaccion} propina={0} onImprimir={vi.fn()} onCerrar={vi.fn()} />);
+    render(<BoletaInterna ticket={ticket} transaccion={transaccion} propina={0} onCerrar={vi.fn()} />);
     expect(screen.getByText('Ana Torres')).toBeInTheDocument();
   });
 
-  it('llama a onImprimir y onCerrar', () => {
-    const onImprimir = vi.fn();
+  it('al imprimir, abre la boleta en la pestaña dedicada (no imprime encima del modal)', () => {
     const onCerrar = vi.fn();
-    render(<BoletaInterna ticket={ticket} transaccion={transaccion} propina={0} onImprimir={onImprimir} onCerrar={onCerrar} />);
+    const sede = { id: 's1', nombre: 'Sede Dos', direccion: null, ruc: null, activa: true };
+    render(<BoletaInterna ticket={ticket} transaccion={transaccion} mesaNumero="5" propina={0} sede={sede} onCerrar={onCerrar} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Imprimir boleta/i }));
-    expect(onImprimir).toHaveBeenCalled();
+    expect(abrirTicketParaImprimir).toHaveBeenCalledWith({ ticket, transaccion, mesaNumero: '5', propina: 0, sede });
 
     fireEvent.click(screen.getByRole('button', { name: 'Listo' }));
     expect(onCerrar).toHaveBeenCalled();

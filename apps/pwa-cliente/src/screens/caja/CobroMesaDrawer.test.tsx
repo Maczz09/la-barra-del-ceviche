@@ -23,6 +23,10 @@ vi.mock('../../components/ui/ToastProvider', () => ({
   useToast: vi.fn()
 }));
 
+vi.mock('../../utils/ticketPrint', () => ({
+  abrirTicketParaImprimir: vi.fn()
+}));
+
 vi.mock('../../components/ui/Scrim', () => ({
   Scrim: ({ onClose }: { onClose: () => void }) => <div data-testid="scrim" onClick={onClose}></div>
 }));
@@ -144,7 +148,6 @@ describe('CobroMesaDrawer', () => {
       cuentaActiva: mockCuenta, loading: false, error: null, success: null,
       registrarPago, clearFeedback: vi.fn(),
     } as any);
-    const printSpy = vi.spyOn(globalThis, 'print').mockImplementation(() => {});
     const onClose = vi.fn();
     const onPaid = vi.fn();
 
@@ -157,13 +160,12 @@ describe('CobroMesaDrawer', () => {
     expect(onPaid).toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled(); // no cierra hasta que el usuario confirme
 
+    // Imprimir abre la boleta en una pestaña dedicada (utils/ticketPrint.ts),
+    // no imprime encima del modal — ver BoletaInterna.test.tsx para el detalle.
     fireEvent.click(screen.getByRole('button', { name: /Imprimir boleta/i }));
-    expect(printSpy).toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Listo' }));
     expect(onClose).toHaveBeenCalled();
-
-    printSpy.mockRestore();
   });
 
   it('handles other payment methods and insufficient payment', () => {
