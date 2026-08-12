@@ -91,12 +91,27 @@ describe('AppService — Reportes', () => {
 
     const resumen = await service.obtenerResumenDiario({ desde: '2026-01-01', hasta: '2026-01-31' });
 
+    const gteEsperado = new Date('2026-01-01T00:00:00.000-05:00');
+    const lteEsperado = new Date('2026-01-31T23:59:59.999-05:00');
     expect(prisma.ventaDiaria.findMany).toHaveBeenCalledWith({
-      where: { fecha: { gte: new Date('2026-01-01'), lte: new Date('2026-01-31') } },
+      where: { fecha: { gte: gteEsperado, lte: lteEsperado } },
     });
-    expect(resumen.fecha).toEqual(new Date('2026-01-01'));
-    expect(resumen.hasta).toEqual(new Date('2026-01-31'));
+    expect(resumen.fecha).toEqual(gteEsperado);
+    expect(resumen.hasta).toEqual(lteEsperado);
     expect(resumen.totalVentas).toBe(1);
+  });
+
+  it('rango "Hoy" (desde === hasta) cubre todo el día calendario de Lima, no un instante', async () => {
+    prisma.ventaDiaria.findMany.mockResolvedValue([]);
+    await service.obtenerResumenDiario({ desde: '2026-08-11', hasta: '2026-08-11' });
+    expect(prisma.ventaDiaria.findMany).toHaveBeenCalledWith({
+      where: {
+        fecha: {
+          gte: new Date('2026-08-11T00:00:00.000-05:00'),
+          lte: new Date('2026-08-11T23:59:59.999-05:00'),
+        },
+      },
+    });
   });
 
   describe('reportes ricos (plan 6.3)', () => {

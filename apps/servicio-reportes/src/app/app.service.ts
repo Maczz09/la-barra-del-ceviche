@@ -62,12 +62,29 @@ export class AppService {
     return sedeId ? { sedeId } : {};
   }
 
+  // Perú no tiene horario de verano: -05:00 es fijo todo el año.
+  private static readonly SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+
+  // Los presets del frontend (utils/periodos.ts) mandan "YYYY-MM-DD" sin hora
+  // — un día calendario de Lima, no un instante UTC. `new Date('2026-08-11')`
+  // cae en medianoche UTC, 5 horas ANTES de que empiece ese día en Lima; si
+  // además "hasta" usa la misma fecha que "desde" (rango "Hoy"), gte y lte
+  // quedan en el mismo instante y el filtro no matchea ninguna venta real.
+  // Anclamos explícitamente al inicio/fin de ese día en -05:00.
+  private parseFechaLimite(value: string, limite: 'inicio' | 'fin'): Date {
+    if (AppService.SOLO_FECHA.test(value)) {
+      const hora = limite === 'inicio' ? '00:00:00.000' : '23:59:59.999';
+      return new Date(`${value}T${hora}-05:00`);
+    }
+    return new Date(value);
+  }
+
   /** Rango de fechas: usa desde/hasta si vienen, si no el día de hoy. */
   private rango(query?: { desde?: string; hasta?: string }): { gte: Date; lte: Date } {
     if (query?.desde || query?.hasta) {
       return {
-        gte: query.desde ? new Date(query.desde) : new Date(0),
-        lte: query.hasta ? new Date(query.hasta) : new Date(),
+        gte: query.desde ? this.parseFechaLimite(query.desde, 'inicio') : new Date(0),
+        lte: query.hasta ? this.parseFechaLimite(query.hasta, 'fin') : new Date(),
       };
     }
     const hoy = new Date();
