@@ -11,11 +11,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Icons, type IconName } from '../../components/ui/icons';
 import { fmt } from '../../utils/format';
 import { useCuentasQuery } from '../../hooks/queries/useCuentasQuery';
+import { useSedeActualQuery } from '../../hooks/queries/useSedesQuery';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useToast } from '../../components/ui/ToastProvider';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { BoletaInterna } from './BoletaInterna';
-import type { MetodoPago, CuentaVM, TicketDto, TransaccionDto } from '../../types/cuenta.types';
+import type { MetodoPago, CuentaVM, TicketDto, TransaccionDto, TipoComprobante } from '../../types/cuenta.types';
 import type { PedidoItemVM } from '../../types/pedido.types';
 
 const METODOS: { value: MetodoPago; label: string; ic: IconName; color: string }[] = [
@@ -46,6 +47,7 @@ interface Props {
 export function CobroMesaDrawer({ mesaId, mesaNumero, mesaUnidaCon, onClose, onPaid }: Readonly<Props>) {
   const online = useOnlineStatus();
   const { toast } = useToast();
+  const { sede } = useSedeActualQuery();
   const {
     cuentaActiva, loading, error, success, queryError,
     registrarPago, clearFeedback, refetchCuenta,
@@ -57,6 +59,8 @@ export function CobroMesaDrawer({ mesaId, mesaNumero, mesaUnidaCon, onClose, onP
   const [recibido, setRecibido] = useState('');
   const [descuento, setDescuento] = useState('0');
   const [propina, setPropina] = useState('0');
+  const [tipoComprobante, setTipoComprobante] = useState<TipoComprobante>('BOLETA');
+  const [clienteDocumento, setClienteDocumento] = useState('');
   const [recibo, setRecibo] = useState<{ ticket: TicketDto; transaccion: TransaccionDto } | null>(null);
 
   const [modoDivision, setModoDivision] = useState<ModoDivision>('UNICO');
@@ -86,6 +90,8 @@ export function CobroMesaDrawer({ mesaId, mesaNumero, mesaUnidaCon, onClose, onP
     setComensalPorItem({});
     setNumPartes(2);
     setNumComensales(2);
+    setTipoComprobante('BOLETA');
+    setClienteDocumento('');
   }, [cuentaActiva?.id]);
 
   const partes = useMemo<Parte[]>(() => {
@@ -164,6 +170,8 @@ export function CobroMesaDrawer({ mesaId, mesaNumero, mesaUnidaCon, onClose, onP
         propina: tipAPagar,
         mesaNumero,
         mesaUnidaCon,
+        tipoComprobante,
+        clienteDocumento: clienteDocumento.trim() || undefined,
       });
       if (esUltimaParte) {
         onPaid?.();
@@ -229,6 +237,7 @@ export function CobroMesaDrawer({ mesaId, mesaNumero, mesaUnidaCon, onClose, onP
               transaccion={recibo.transaccion}
               mesaNumero={mesaNumero}
               propina={tip}
+              sede={sede}
               onImprimir={() => globalThis.print()}
               onCerrar={onClose}
             />
@@ -247,6 +256,10 @@ export function CobroMesaDrawer({ mesaId, mesaNumero, mesaUnidaCon, onClose, onP
               igv={igv}
               metodo={metodo}
               setMetodo={setMetodo}
+              tipoComprobante={tipoComprobante}
+              setTipoComprobante={setTipoComprobante}
+              clienteDocumento={clienteDocumento}
+              setClienteDocumento={setClienteDocumento}
               recibido={recibido}
               setRecibido={setRecibido}
               vuelto={vuelto}
@@ -292,6 +305,10 @@ interface CobroBodyProps {
   igv: number;
   metodo: MetodoPago;
   setMetodo: (m: MetodoPago) => void;
+  tipoComprobante: TipoComprobante;
+  setTipoComprobante: (t: TipoComprobante) => void;
+  clienteDocumento: string;
+  setClienteDocumento: (v: string) => void;
   recibido: string;
   setRecibido: (v: string) => void;
   vuelto: number;
@@ -321,6 +338,7 @@ function CobroBody({
   loading, online, cuentaActiva, items,
   subtotal, descuento, setDescuento, propina, setPropina,
   totalCobro, igv, metodo, setMetodo,
+  tipoComprobante, setTipoComprobante, clienteDocumento, setClienteDocumento,
   recibido, setRecibido, vuelto, faltaPago,
   onClose, onKey, onPagar,
   modoDivision, setModoDivision, numPartes, setNumPartes,
@@ -439,6 +457,37 @@ function CobroBody({
             )}
           </div>
         )}
+        <div>
+          <div className="hint" style={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Comprobante</div>
+          <div className="row" style={{ gap: 6 }}>
+            {([
+              { v: 'BOLETA', l: 'Boleta' },
+              { v: 'FACTURA', l: 'Factura' },
+            ] as { v: TipoComprobante; l: string }[]).map((c) => (
+              <button
+                key={c.v}
+                type="button"
+                className={`chip ${tipoComprobante === c.v ? 'on' : ''}`}
+                onClick={() => setTipoComprobante(c.v)}
+              >
+                {c.l}
+              </button>
+            ))}
+          </div>
+          <div className="field" style={{ marginTop: 8 }}>
+            <label htmlFor="cobro-doc-cliente">{tipoComprobante === 'FACTURA' ? 'RUC del cliente' : 'DNI del cliente'}</label>
+            <div className="input">
+              <input
+                id="cobro-doc-cliente"
+                value={clienteDocumento}
+                onChange={(e) => setClienteDocumento(e.target.value.replace(/\D/g, ''))}
+                inputMode="numeric"
+                maxLength={tipoComprobante === 'FACTURA' ? 11 : 8}
+                placeholder="Opcional"
+              />
+            </div>
+          </div>
+        </div>
         <div>
           <div className="hint" style={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Método de pago</div>
           <div className="method-grid">

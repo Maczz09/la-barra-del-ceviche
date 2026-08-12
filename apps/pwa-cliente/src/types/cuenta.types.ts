@@ -89,6 +89,13 @@ export interface DividirCuentaResponse {
   partes: Array<{ parte?: number; comensal?: number; monto: number }>;
 }
 
+export const TipoComprobante = {
+  Boleta: 'BOLETA',
+  Factura: 'FACTURA',
+} as const;
+
+export type TipoComprobante = (typeof TipoComprobante)[keyof typeof TipoComprobante];
+
 export interface RegistrarPagoPayload {
   cuentaId: string;
   montoRecibido: number;
@@ -98,6 +105,9 @@ export interface RegistrarPagoPayload {
   mesaNumero?: string;
   /** Números de las mesas hermanas si la mesa cobrada está unida a otra(s) (ej. "6"). */
   mesaUnidaCon?: string;
+  tipoComprobante?: TipoComprobante;
+  /** DNI (boleta) o RUC (factura) del cliente. Opcional, informativo — no es el comprobante SUNAT. */
+  clienteDocumento?: string;
 }
 
 export interface TransaccionDto {
@@ -110,6 +120,8 @@ export interface TransaccionDto {
   notas?: string | null;
   usuarioId?: string | null;
   cajeroNombre?: string | null;
+  tipoComprobante?: TipoComprobante;
+  clienteDocumento?: string | null;
   createdAt: string;
 }
 

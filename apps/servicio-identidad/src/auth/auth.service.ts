@@ -526,8 +526,8 @@ export class AuthService {
 
   /* ── Sedes (T-23: multi-sede, solo ADMIN) ──────────── */
 
-  private toSedeDto(sede: { id: string; nombre: string; direccion: string | null; activa: boolean }): SedeDto {
-    return { id: sede.id, nombre: sede.nombre, direccion: sede.direccion, activa: sede.activa };
+  private toSedeDto(sede: { id: string; nombre: string; direccion: string | null; ruc: string | null; activa: boolean }): SedeDto {
+    return { id: sede.id, nombre: sede.nombre, direccion: sede.direccion, ruc: sede.ruc, activa: sede.activa };
   }
 
   async listarSedes(): Promise<{ sedes: SedeDto[] }> {
@@ -552,7 +552,7 @@ export class AuthService {
     if (existe) throw new ConflictException(`Ya existe una sede llamada "${command.nombre}".`);
 
     const sede = await this.prisma.sede.create({
-      data: { nombre: command.nombre, direccion: command.direccion },
+      data: { nombre: command.nombre, direccion: command.direccion, ruc: command.ruc },
     });
 
     this.logger.log({
@@ -574,7 +574,7 @@ export class AuthService {
 
     const sede = await this.prisma.sede.update({
       where: { id },
-      data: { nombre: command.nombre, direccion: command.direccion, activa: command.activa },
+      data: { nombre: command.nombre, direccion: command.direccion, ruc: command.ruc, activa: command.activa },
     });
 
     return { message: 'Sede actualizada', sede: this.toSedeDto(sede) };

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CobroMesaDrawer } from './CobroMesaDrawer';
 import { useCuentasQuery } from '../../hooks/queries/useCuentasQuery';
+import { useSedeActualQuery } from '../../hooks/queries/useSedesQuery';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useToast } from '../../components/ui/ToastProvider';
 
@@ -12,6 +13,10 @@ vi.mock('../../hooks/useOnlineStatus', () => ({
 
 vi.mock('../../hooks/queries/useCuentasQuery', () => ({
   useCuentasQuery: vi.fn()
+}));
+
+vi.mock('../../hooks/queries/useSedesQuery', () => ({
+  useSedeActualQuery: vi.fn()
 }));
 
 vi.mock('../../components/ui/ToastProvider', () => ({
@@ -60,6 +65,7 @@ describe('CobroMesaDrawer', () => {
   beforeEach(() => {
     vi.mocked(useOnlineStatus).mockReturnValue(true);
     vi.mocked(useToast).mockReturnValue({ toast: vi.fn() } as any);
+    vi.mocked(useSedeActualQuery).mockReturnValue({ sede: null, loading: false } as any);
     vi.mocked(useCuentasQuery).mockReturnValue({
       cuentaActiva: mockCuenta,
       loading: false,
@@ -117,7 +123,8 @@ describe('CobroMesaDrawer', () => {
         metodo: 'EFECTIVO',
         descuento: 10,
         propina: 5,
-        mesaNumero: '12'
+        mesaNumero: '12',
+        tipoComprobante: 'BOLETA'
       });
       expect(onPaid).toHaveBeenCalled();
       expect(onClose).toHaveBeenCalled();
@@ -145,7 +152,7 @@ describe('CobroMesaDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: /Registrar pago y cerrar cuenta/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('Boleta de venta · Documento interno')).toBeInTheDocument();
+      expect(screen.getByText('Boleta de venta')).toBeInTheDocument();
     });
     expect(onPaid).toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled(); // no cierra hasta que el usuario confirme
@@ -313,6 +320,7 @@ describe('CobroMesaDrawer', () => {
         descuento: 0,
         propina: 0,
         mesaNumero: '12',
+        tipoComprobante: 'BOLETA',
       });
     });
     // Pago parcial: no cierra el drawer todavía, pasa a la parte 2.
@@ -331,6 +339,7 @@ describe('CobroMesaDrawer', () => {
         descuento: 0,
         propina: 0,
         mesaNumero: '12',
+        tipoComprobante: 'BOLETA',
       });
       expect(onPaid).toHaveBeenCalled();
       expect(onClose).toHaveBeenCalled();
@@ -365,6 +374,7 @@ describe('CobroMesaDrawer', () => {
         descuento: 0,
         propina: 0,
         mesaNumero: '12',
+        tipoComprobante: 'BOLETA',
       });
     });
 
@@ -380,6 +390,7 @@ describe('CobroMesaDrawer', () => {
         descuento: 0,
         propina: 0,
         mesaNumero: '12',
+        tipoComprobante: 'BOLETA',
       });
     });
   });

@@ -5,8 +5,9 @@
 
 import { Icons } from '../../components/ui/icons';
 import { fmt } from '../../utils/format';
-import { RESTO_FISCAL } from './cajaConstants';
+import { APP_NAME } from '../../config';
 import type { TicketDto, TransaccionDto } from '../../types/cuenta.types';
+import type { SedeDto } from '../../types/sede.types';
 
 const Row = ({ l, v, bold }: Readonly<{ l: string; v: string; bold?: boolean }>) => (
   <div className={`zrow ${bold ? 'bold' : ''}`}><span>{l}</span><span>{v}</span></div>
@@ -17,33 +18,36 @@ interface Props {
   transaccion: TransaccionDto;
   mesaNumero?: string;
   propina: number;
+  sede?: SedeDto | null;
   onImprimir: () => void;
   onCerrar: () => void;
 }
 
-export function BoletaInterna({ ticket, transaccion, mesaNumero, propina, onImprimir, onCerrar }: Readonly<Props>) {
+export function BoletaInterna({ ticket, transaccion, mesaNumero, propina, sede, onImprimir, onCerrar }: Readonly<Props>) {
   const totalConPropina = ticket.total + propina;
   const igv = ticket.total - ticket.total / 1.18;
   const fecha = new Date(ticket.fecha);
+  const esFactura = transaccion.tipoComprobante === 'FACTURA';
 
   return (
     <div style={{ padding: 20 }}>
       <div className="print-area">
         <div className="zticket">
           <div className="zc">
-            <h4>{RESTO_FISCAL.nombre.toUpperCase()}</h4>
-            <div style={{ fontSize: 11 }}>{RESTO_FISCAL.dir}</div>
-            <div style={{ fontSize: 11 }}>RUC {RESTO_FISCAL.ruc}</div>
+            <h4>{(sede?.nombre ?? APP_NAME).toUpperCase()}</h4>
+            {sede?.direccion && <div style={{ fontSize: 11 }}>{sede.direccion}</div>}
+            {sede?.ruc && <div style={{ fontSize: 11 }}>RUC {sede.ruc}</div>}
           </div>
           <hr className="zhr" />
           <div className="zc">
-            <div className="zlbl">Boleta de venta · Documento interno</div>
+            <div className="zlbl">{esFactura ? 'Factura de venta' : 'Boleta de venta'}</div>
             <div style={{ fontWeight: 800, fontSize: 14 }}>Mesa {mesaNumero ?? ticket.mesaId}</div>
           </div>
           <Row l="Ticket" v={ticket.id.slice(0, 8)} />
           <Row l="Fecha" v={fecha.toLocaleDateString('es-PE')} />
           <Row l="Hora" v={fecha.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })} />
           {transaccion.cajeroNombre && <Row l="Cajero" v={transaccion.cajeroNombre} />}
+          {transaccion.clienteDocumento && <Row l={esFactura ? 'RUC cliente' : 'DNI cliente'} v={transaccion.clienteDocumento} />}
           <hr className="zhr" />
           <div className="zlbl" style={{ marginBottom: 4 }}>Ítems</div>
           {ticket.items.map((it, i) => (
@@ -57,10 +61,6 @@ export function BoletaInterna({ ticket, transaccion, mesaNumero, propina, onImpr
           <Row l="Total" v={fmt(totalConPropina)} bold />
           <hr className="zhr" />
           <Row l="Método de pago" v={transaccion.metodo} />
-          <hr className="zhr" />
-          <div className="zc" style={{ fontSize: 11, marginTop: 4 }}>
-            Documento interno de control · no es un comprobante de pago electrónico SUNAT
-          </div>
         </div>
       </div>
 

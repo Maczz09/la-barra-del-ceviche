@@ -14,8 +14,8 @@ vi.mock('../../hooks/queries/useSedesQuery', () => ({
 }));
 
 const mockSedes = [
-  { id: 's1', nombre: 'Sede Central', direccion: 'Av. Principal 123', activa: true },
-  { id: 's2', nombre: 'Sede Norte', direccion: null, activa: false },
+  { id: 's1', nombre: 'Sede Central', direccion: 'Av. Principal 123', ruc: '20554879631', activa: true },
+  { id: 's2', nombre: 'Sede Norte', direccion: null, ruc: null, activa: false },
 ];
 
 function baseMock(overrides: Record<string, unknown> = {}) {
@@ -45,6 +45,7 @@ describe('SedesScreen', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Sedes' })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'Sede Central' })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'Sede Norte' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: '20554879631' })).toBeInTheDocument();
   });
 
   it('crea una sede desde el formulario lateral', async () => {
@@ -61,6 +62,20 @@ describe('SedesScreen', () => {
     });
   });
 
+  it('crea una sede con RUC (va impreso en la boleta)', async () => {
+    const crearSede = vi.fn();
+    vi.mocked(useSedesQuery).mockReturnValue(baseMock({ crearSede }) as any);
+
+    render(<SedesScreen />);
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Sede Sur' } });
+    fireEvent.change(screen.getByLabelText('RUC'), { target: { value: '20111111111' } });
+    fireEvent.click(screen.getByRole('button', { name: /Crear sede/i }));
+
+    await waitFor(() => {
+      expect(crearSede).toHaveBeenCalledWith({ nombre: 'Sede Sur', direccion: undefined, ruc: '20111111111' });
+    });
+  });
+
   it('edita una sede existente', async () => {
     const actualizarSede = vi.fn();
     vi.mocked(useSedesQuery).mockReturnValue(baseMock({ actualizarSede }) as any);
@@ -73,7 +88,7 @@ describe('SedesScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Guardar cambios/i }));
 
     await waitFor(() => {
-      expect(actualizarSede).toHaveBeenCalledWith('s1', { nombre: 'Sede Central Renovada', direccion: 'Av. Principal 123' });
+      expect(actualizarSede).toHaveBeenCalledWith('s1', { nombre: 'Sede Central Renovada', direccion: 'Av. Principal 123', ruc: '20554879631' });
     });
   });
 

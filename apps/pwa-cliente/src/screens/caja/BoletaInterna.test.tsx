@@ -28,11 +28,44 @@ const transaccion: TransaccionDto = {
 };
 
 describe('BoletaInterna', () => {
-  it('muestra el encabezado del local y el disclaimer de "no es SUNAT"', () => {
+  it('muestra el nombre de la sede (o el nombre de marca si no hay sede) en el encabezado', () => {
     render(<BoletaInterna ticket={ticket} transaccion={transaccion} mesaNumero="5" propina={0} onImprimir={vi.fn()} onCerrar={vi.fn()} />);
     expect(screen.getByText('RESTOAPP.PE')).toBeInTheDocument();
-    expect(screen.getByText(/no es un comprobante de pago electrónico SUNAT/i)).toBeInTheDocument();
+    expect(screen.getByText('Boleta de venta')).toBeInTheDocument();
     expect(screen.getByText('Mesa 5')).toBeInTheDocument();
+  });
+
+  it('usa el nombre, dirección y RUC de la sede activa cuando vienen', () => {
+    render(
+      <BoletaInterna
+        ticket={ticket}
+        transaccion={transaccion}
+        mesaNumero="5"
+        propina={0}
+        sede={{ id: 's1', nombre: 'Sede Dos', direccion: 'Av. Test 456', ruc: '20999999999', activa: true }}
+        onImprimir={vi.fn()}
+        onCerrar={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('SEDE DOS')).toBeInTheDocument();
+    expect(screen.getByText('Av. Test 456')).toBeInTheDocument();
+    expect(screen.getByText('RUC 20999999999')).toBeInTheDocument();
+  });
+
+  it('muestra "Factura de venta" y el RUC del cliente cuando el comprobante es FACTURA', () => {
+    render(
+      <BoletaInterna
+        ticket={ticket}
+        transaccion={{ ...transaccion, tipoComprobante: 'FACTURA', clienteDocumento: '20555555555' }}
+        mesaNumero="5"
+        propina={0}
+        onImprimir={vi.fn()}
+        onCerrar={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Factura de venta')).toBeInTheDocument();
+    expect(screen.getByText('RUC cliente')).toBeInTheDocument();
+    expect(screen.getByText('20555555555')).toBeInTheDocument();
   });
 
   it('lista cada ítem con cantidad y subtotal', () => {

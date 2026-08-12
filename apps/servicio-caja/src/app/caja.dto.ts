@@ -20,6 +20,8 @@ export const MetodoPagoCaja = [
 
 export const MovimientoCajaTipo = ['INGRESO', 'EGRESO', 'AJUSTE'] as const;
 
+export const TipoComprobante = ['BOLETA', 'FACTURA'] as const;
+
 export class AbrirTurnoCajaCommand {
   @IsOptional()
   @IsString()
@@ -111,6 +113,17 @@ export class PagarCuentaCajaCommand {
   @IsString()
   @MaxLength(240)
   notas?: string;
+
+  // BOLETA pide DNI del cliente, FACTURA pide RUC — ambos opcionales, el
+  // cajero puede dejarlos en blanco. Dato informativo, no SUNAT.
+  @IsOptional()
+  @IsIn(TipoComprobante)
+  tipoComprobante?: (typeof TipoComprobante)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(15)
+  clienteDocumento?: string;
 }
 
 export interface CajaResumenDto {

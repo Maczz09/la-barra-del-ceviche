@@ -12,7 +12,7 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useSedesQuery } from '../../hooks/queries/useSedesQuery';
 import type { SedeDto } from '../../types/sede.types';
 
-const INITIAL_FORM = { nombre: '', direccion: '' };
+const INITIAL_FORM = { nombre: '', direccion: '', ruc: '' };
 
 export function SedesScreen() {
   const online = useOnlineStatus();
@@ -33,6 +33,7 @@ export function SedesScreen() {
   const [edit, setEdit] = useState<SedeDto | null>(null);
   const [editNombre, setEditNombre] = useState('');
   const [editDireccion, setEditDireccion] = useState('');
+  const [editRuc, setEditRuc] = useState('');
 
   const activas = sedes.filter((s) => s.activa).length;
 
@@ -42,6 +43,7 @@ export function SedesScreen() {
     await crearSede({
       nombre: form.nombre.trim(),
       direccion: form.direccion.trim() || undefined,
+      ruc: form.ruc.trim() || undefined,
     });
     setForm(INITIAL_FORM);
   };
@@ -50,6 +52,7 @@ export function SedesScreen() {
     setEdit(sede);
     setEditNombre(sede.nombre);
     setEditDireccion(sede.direccion ?? '');
+    setEditRuc(sede.ruc ?? '');
   };
 
   const guardarEdicion = async () => {
@@ -57,6 +60,7 @@ export function SedesScreen() {
     await actualizarSede(edit.id, {
       nombre: editNombre.trim(),
       direccion: editDireccion.trim() || null,
+      ruc: editRuc.trim() || null,
     });
     setEdit(null);
   };
@@ -140,6 +144,7 @@ export function SedesScreen() {
                   <tr>
                     <th>Nombre</th>
                     <th className="col-mobile-hidden">Dirección</th>
+                    <th className="col-mobile-hidden">RUC</th>
                     <th>Estado</th>
                     <th className="cell-action">Acciones</th>
                   </tr>
@@ -149,6 +154,7 @@ export function SedesScreen() {
                     <tr key={sede.id}>
                       <td><strong>{sede.nombre}</strong></td>
                       <td className="col-mobile-hidden muted">{sede.direccion || '—'}</td>
+                      <td className="col-mobile-hidden muted">{sede.ruc || '—'}</td>
                       <td>
                         <button
                           className={`toggle ${sede.activa ? 'on' : ''}`}
@@ -218,6 +224,17 @@ export function SedesScreen() {
                   />
                 </div>
               </div>
+              <div className="field">
+                <label htmlFor="sede-ruc">RUC</label>
+                <div className="input">
+                  <input
+                    id="sede-ruc"
+                    value={form.ruc}
+                    onChange={(e) => setForm((f) => ({ ...f, ruc: e.target.value }))}
+                    placeholder="Opcional · va impreso en la boleta"
+                  />
+                </div>
+              </div>
               <button className="btn btn-primary btn-block" disabled={saving || !online} type="submit">
                 {saving ? <span className="spinner" /> : <Icons.Plus s={16} />}
                 Crear sede
@@ -247,6 +264,12 @@ export function SedesScreen() {
                 <label htmlFor="sede-edit-direccion">Dirección</label>
                 <div className="input">
                   <input id="sede-edit-direccion" value={editDireccion} onChange={(e) => setEditDireccion(e.target.value)} />
+                </div>
+              </div>
+              <div className="field" style={{ marginBottom: 12 }}>
+                <label htmlFor="sede-edit-ruc">RUC</label>
+                <div className="input">
+                  <input id="sede-edit-ruc" value={editRuc} onChange={(e) => setEditRuc(e.target.value)} />
                 </div>
               </div>
             </div>

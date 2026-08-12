@@ -106,7 +106,7 @@ describe('autorización por rol (RBAC) alineada con el mapa de vistas del PWA', 
       "@Roles('ADMIN', 'SISTEMA', 'GERENCIA', 'MESERO', 'RECEPCION')",
     );
     expect(readController('servicio-inventario')).toContain(
-      "@Roles('ADMIN', 'SISTEMA', 'GERENCIA', 'CAJERO', 'MESERO')",
+      "@Roles('ADMIN', 'SISTEMA', 'GERENCIA', 'CAJERO', 'MESERO', 'COCINA')",
     );
   });
 

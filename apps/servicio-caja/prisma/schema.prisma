@@ -29,6 +29,12 @@ model Transaccion {
   // cobro — evita mostrar el mesaId (UUID) crudo en la auditoría de caja.
   mesaNumero    String?
   mesaUnidaCon  String?
+  // Tipo de comprobante elegido por el cajero al cobrar: BOLETA pide DNI del
+  // cliente, FACTURA pide RUC. clienteDocumento queda vacío si el cliente no
+  // lo da (dato informativo, este documento no es el comprobante electrónico
+  // SUNAT — ver BoletaInterna.tsx).
+  tipoComprobante   String   @default("BOLETA")
+  clienteDocumento  String?
   createdAt     DateTime @default(now())
 
   turno       TurnoCaja? @relation(fields: [turnoId], references: [id])

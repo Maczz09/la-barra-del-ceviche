@@ -147,6 +147,13 @@ export class SedeDto {
   @IsString()
   direccion?: string | null;
 
+  // RUC fiscal de la sede, impreso en la boleta de venta interna. Puede
+  // repetirse entre sedes de un mismo cliente (misma razón social) — no es
+  // unique a propósito, decisión del admin.
+  @IsOptional()
+  @IsString()
+  ruc?: string | null;
+
   @IsBoolean()
   activa: boolean;
 }
@@ -159,6 +166,10 @@ export class CrearSedeCommand {
   @IsOptional()
   @IsString()
   direccion?: string;
+
+  @IsOptional()
+  @IsString()
+  ruc?: string;
 }
 
 export class ActualizarSedeCommand {
@@ -169,6 +180,10 @@ export class ActualizarSedeCommand {
   @IsOptional()
   @IsString()
   direccion?: string | null;
+
+  @IsOptional()
+  @IsString()
+  ruc?: string | null;
 
   @IsOptional()
   @IsBoolean()

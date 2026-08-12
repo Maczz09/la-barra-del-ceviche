@@ -48,6 +48,8 @@ export interface TransaccionDto {
   meseroNombre?: string | null;
   mesaNumero?: string | null;
   mesaUnidaCon?: string | null;
+  tipoComprobante?: string | null;
+  clienteDocumento?: string | null;
   createdAt: string;
 }
 

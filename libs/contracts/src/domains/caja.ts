@@ -73,6 +73,16 @@ export class TransaccionDto {
   @IsString()
   mesaUnidaCon?: string;
 
+  // Tipo de comprobante elegido por el cajero al cobrar; BOLETA pide DNI del
+  // cliente, FACTURA pide RUC (ambos opcionales, informativos).
+  @IsOptional()
+  @IsString()
+  tipoComprobante?: string;
+
+  @IsOptional()
+  @IsString()
+  clienteDocumento?: string;
+
   @IsString()
   createdAt: string;
 }

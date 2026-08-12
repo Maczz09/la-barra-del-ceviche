@@ -33,6 +33,7 @@ model Sede {
   id        String    @id @default(uuid())
   nombre    String    @unique
   direccion String?
+  ruc       String?
   activa    Boolean   @default(true)
   usuarios  Usuario[]
   createdAt DateTime  @default(now())
