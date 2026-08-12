@@ -4,6 +4,7 @@ import { useMesasQuery } from './queries/useMesasQuery';
 import { usePedidosQuery } from './queries/usePedidosQuery';
 import { useCajaQuery } from './queries/useCajaQuery';
 import { useReportesQuery } from './queries/useReportesQuery';
+import { useSedeActualQuery } from './queries/useSedesQuery';
 import { useReservasQuery } from './queries/useReservasQuery';
 import { useInventarioQuery } from './queries/useInventarioQuery';
 import type { IconName } from '../components/ui/icons';
@@ -26,7 +27,8 @@ export function useInicioData() {
   const { mesas } = useMesasQuery();
   const { pedidos } = usePedidosQuery();
   const { resumen: caja } = useCajaQuery();
-  const { resumen: reporte } = useReportesQuery();
+  const { sede } = useSedeActualQuery();
+  const { resumen: reporte } = useReportesQuery({ sedeId: sede?.id });
   const { reservas } = useReservasQuery({ fecha: hoy });
   const { productos } = useInventarioQuery();
 

@@ -6,14 +6,16 @@
 
 import { useMemo, useState } from 'react';
 import { useReportesQuery } from '../../hooks/queries/useReportesQuery';
+import { useSedeActualQuery } from '../../hooks/queries/useSedesQuery';
 import { fmt } from '../../utils/format';
 import { PERIODOS_TOP, rangoDePeriodo, type PeriodoTop } from '../../utils/periodos';
 
 export function TopProductosPanel() {
   const [periodo, setPeriodo] = useState<PeriodoTop>('dia');
+  const { sede } = useSedeActualQuery();
 
   const { desde, hasta } = useMemo(() => rangoDePeriodo(periodo), [periodo]);
-  const { resumen, loading } = useReportesQuery({ desde, hasta });
+  const { resumen, loading } = useReportesQuery({ desde, hasta, sedeId: sede?.id });
   const topProductos = resumen?.topProductos ?? [];
 
   const periodoLabel = PERIODOS_TOP.find((p) => p.value === periodo)?.label ?? 'Hoy';

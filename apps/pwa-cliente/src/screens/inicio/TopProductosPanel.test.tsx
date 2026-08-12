@@ -3,13 +3,18 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TopProductosPanel } from './TopProductosPanel';
 import { useReportesQuery } from '../../hooks/queries/useReportesQuery';
+import { useSedeActualQuery } from '../../hooks/queries/useSedesQuery';
 
 vi.mock('../../hooks/queries/useReportesQuery', () => ({
   useReportesQuery: vi.fn(),
 }));
+vi.mock('../../hooks/queries/useSedesQuery', () => ({
+  useSedeActualQuery: vi.fn(),
+}));
 
 describe('TopProductosPanel', () => {
   beforeEach(() => {
+    vi.mocked(useSedeActualQuery).mockReturnValue({ sede: null, loading: false } as any);
     vi.mocked(useReportesQuery).mockReturnValue({
       resumen: { topProductos: [] } as any,
       loading: false,
@@ -71,5 +76,12 @@ describe('TopProductosPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Año' }));
     expect(screen.getByRole('button', { name: 'Año' }).className).toContain('on');
     expect(screen.getByRole('button', { name: 'Hoy' }).className).not.toContain('on');
+  });
+
+  it('escopa el resumen a la sede actual (bug: Top productos mezclaba ventas de todas las sedes)', () => {
+    vi.mocked(useSedeActualQuery).mockReturnValue({ sede: { id: 'sede-1' }, loading: false } as any);
+    render(<TopProductosPanel />);
+    const ultimaLlamada = vi.mocked(useReportesQuery).mock.calls.at(-1)?.[0];
+    expect(ultimaLlamada?.sedeId).toBe('sede-1');
   });
 });

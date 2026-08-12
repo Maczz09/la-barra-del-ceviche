@@ -20,8 +20,12 @@ vi.mock('./queries/usePedidosQuery', () => ({
 vi.mock('./queries/useCajaQuery', () => ({
   useCajaQuery: () => ({ resumen: mockCaja }),
 }));
+const mockUseReportesQuery = vi.fn();
 vi.mock('./queries/useReportesQuery', () => ({
-  useReportesQuery: () => ({ resumen: mockReportes }),
+  useReportesQuery: (...args: unknown[]) => { mockUseReportesQuery(...args); return { resumen: mockReportes }; },
+}));
+vi.mock('./queries/useSedesQuery', () => ({
+  useSedeActualQuery: () => ({ sede: { id: 'sede-1' }, loading: false }),
 }));
 vi.mock('./queries/useReservasQuery', () => ({
   useReservasQuery: () => ({ reservas: mockReservas }),
@@ -127,5 +131,10 @@ describe('useInicioData', () => {
     expect(result.current.cuentas).toBe(10);
     expect(result.current.turnoAbierto).toBe(true);
     expect(result.current.ventasHora).toEqual([]);
+  });
+
+  it('escopa el resumen de reportes a la sede actual (bug: Inicio mezclaba ventas de todas las sedes)', () => {
+    renderHook(() => useInicioData());
+    expect(mockUseReportesQuery).toHaveBeenCalledWith({ sedeId: 'sede-1' });
   });
 });
