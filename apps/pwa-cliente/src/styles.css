@@ -156,6 +156,22 @@ input, select, textarea { font-family: inherit; }
 }
 .brand { display: flex; align-items: center; gap: 11px; padding: 17px 18px 15px; border-bottom: 1px solid var(--border); }
 .brand-logo { width: 36px; height: 36px; border-radius: 10px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: 800; font-size: 18px; flex: none; }
+/* Fondo claro fijo (no var(--surface-2)): el logo del cliente trae sus
+   propios colores y necesita una placa neutra detrás en cualquier tema,
+   no el fondo oscuro del sidebar/login. */
+.brand-logo.has-img { background: rgba(255, 255, 255, 0.92); padding: 3px; }
+.brand-logo img { width: 100%; height: 100%; object-fit: contain; }
+
+/* Cliente con logo propio: el logo ES el nombre (trae su propio wordmark),
+   así que no se repite el nombre en texto al lado — solo el logo grande,
+   centrado, y debajo la ubicación + atribución a la plataforma. */
+.brand.brand-logo-only { flex-direction: column; padding: 12px 14px 10px; gap: 4px; }
+/* 120px (no 168px): en laptops de 13" el nav se comía ítems antes de hacer
+   scroll con el logo grande. Sigue siendo perfectamente legible. */
+.brand-logo-big { width: 100%; max-width: 120px; height: auto; object-fit: contain; }
+/* Atribución a la plataforma (RestoApp.pe), deliberadamente diminuta: es
+   crédito, no marca — no debe competir con el nombre/logo del cliente. */
+.brand-by { font-size: 8px; font-weight: 700; color: var(--faint); letter-spacing: .01em; white-space: nowrap; }
 .brand b { font-size: 15.5px; font-weight: 800; letter-spacing: -.01em; display: block; }
 .brand small { color: var(--muted); font-size: 11px; font-weight: 600; }
 .nav { flex: 1; overflow-y: auto; padding: 9px 9px 14px; }
@@ -288,7 +304,6 @@ table.dt tbody tr:last-child td { border-bottom: 0; }
 table.dt tbody tr:hover { background: var(--surface-2); }
 table.dt th.sortable { cursor: pointer; }
 table.dt th.sortable:hover { color: var(--text); }
-.dt-row-click { cursor: pointer; }
 
 /* ============================================================
    DRAWER / MODAL / SCRIM
@@ -311,10 +326,14 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .drawer-body { flex: 1; overflow-y: auto; padding: 18px 20px; overscroll-behavior: contain; }
 .drawer-foot { padding: 14px 18px; border-top: 1px solid var(--border); display: flex; gap: 10px; flex: none; }
 
-.modal-wrap { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 20px; }
+.modal-wrap { position: fixed; inset: 0; z-index: 85; display: grid; place-items: center; padding: 20px; }
 .modal-wrap > .scrim { z-index: 0; }
 .modal { position: relative; z-index: 1; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl); width: 440px; max-width: 100%; box-shadow: var(--shadow-lg); transform: scale(.96); opacity: 0; animation: pop .16s forwards; overflow: hidden; }
 @keyframes pop { to { transform: scale(1); opacity: 1; } }
+/* Variante ancha: modales con tabla adentro (p. ej. conteo físico del almacén),
+   donde 440px apretaría las 4 columnas hasta hacerlas ilegibles. En móvil la
+   media query de más abajo lo devuelve a 100% igual que a .modal. */
+.modal-lg { width: 720px; }
 .modal-icon { width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 14px; }
 .modal-body { padding: 22px; }
 .modal-body h3 { margin: 0 0 7px; font-size: 19px; font-weight: 800; }
@@ -538,6 +557,12 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   box-shadow: inset -20px 0 60px rgba(0, 0, 0, 0.4);
 }
 
+/* Cliente con logo propio: composición centrada logo+headline en vez del
+   reparto en 3 (brand chico arriba / headline / features abajo) — el logo
+   grande YA es la marca, no hace falta la fila chica separada arriba. */
+.login-art-big-logo { justify-content: center; gap: 44px; }
+.login-logo-big { display: block; width: 220px; max-width: 60%; height: auto; object-fit: contain; margin-bottom: 28px; filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.45)); }
+
 .login-art::before {
   content: '';
   position: absolute;
@@ -546,6 +571,23 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   background-size: 24px 24px;
   opacity: 0.5;
   pointer-events: none;
+}
+
+/* Crédito/atribución de la plataforma — deliberadamente sutil (opacidad
+   baja, tamaño chico) para no competir con la marca del cliente ni con
+   el CTA del formulario. Solo existe en .login-art (panel desktop); en
+   mobile ese panel se oculta entero, así que no hace falta una versión
+   aparte para no recargar el formulario. */
+.login-watermark {
+  position: absolute;
+  left: 60px;
+  right: 60px;
+  bottom: 20px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.28);
 }
 
 .login-form-side {
@@ -635,6 +677,8 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   flex: none;
 }
 
+.login-mobile-brand .brand-logo.has-img { background: rgba(255, 255, 255, 0.92); }
+
 .login-card .btn-primary {
   box-shadow: 0 4px 14px rgba(111, 155, 255, 0.15);
 }
@@ -685,6 +729,9 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 }
 .bottom-nav { display: none; }
 .mobile-only { display: none; }
+/* Logo chico en el header mobile (ver .top-logo abajo): toggleado junto con
+   el resto de .mobile-only en el media query de 920px. */
+.top-logo { height: 26px; width: auto; max-width: 60px; object-fit: contain; flex: none; }
 
 /* ── 920px: Sidebar → BottomNav ─────────────────────────────── */
 @media (max-width: 920px) {
@@ -756,9 +803,16 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   .toast { min-width: 0; max-width: none; }
   /* Botones de acción primaria full-width en móvil */
   .drawer-foot .btn-primary, .modal-foot .btn-primary { width: 100%; }
-  /* Chips de filtro hacen scroll horizontal, no rompen layout */
-  .filters { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
-  .canal-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+  /* Chips de filtro hacen scroll horizontal, no rompen layout.
+     (El override real de flex-wrap vive al final del archivo — ver
+     "GRUPO_F RESPONSIVE PATCH": estas declaraciones de acá quedan
+     shadowed por las reglas base sin media query de .filters/
+     .canal-tabs, que aparecen MÁS ABAJO en el archivo y ganan el
+     cascade por orden de aparición pese a estar fuera de cualquier
+     @media. overflow-x sí sobrevive porque no hay una declaración
+     de overflow-x en esas reglas base que la pise.) */
+  .filters { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+  .canal-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
 }
 
 /* ── 560px: Android gama media ──────────────────────────────── */
@@ -1240,15 +1294,31 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .cmd-head h2 { font-size: 18px; font-weight: 800; margin: 0; }
 .cmd-canal.seg button { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; }
 .cmd-body { flex: 1; display: grid; grid-template-columns: minmax(0,1fr) 384px; min-height: 0; }
-.cmd-catalog { display: flex; flex-direction: column; min-height: 0; padding: 16px; gap: 12px; }
+/* min-width: 0 — sin esto, .cmd-catalog (grid item de .cmd-body) hereda el
+   ancho intrínseco de .cmd-grid (que adentro es auto-fill/minmax(168px,1fr)
+   sin tope): con 12+ platos eso pide ~2260px, y ese ancho se propaga hacia
+   arriba en vez de constreñirse al viewport — en ≤920px .cmd-body ya
+   colapsa a 1fr, pero ese 1fr terminaba midiendo 2260px en vez de ~375px,
+   y todo quedaba scrolleable horizontalmente cuando debía wrap a 2
+   columnas. Mismo "grid blowout" ya documentado abajo para
+   .module-grid/.report-stack/.inventory-list — mismo fix. */
+.cmd-catalog { display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: 16px; gap: 12px; }
 .cmd-filters { display: flex; align-items: center; gap: 10px; }
-.cmd-cats { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.cmd-cats { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1; }
+/* Separador no clickeable entre categorías de Carta (Cocina/Barra) y las de
+   Inventario (Agua Mineral, Cerveza…) dentro del mismo cmd-cats — antes se
+   mezclaban alfabéticamente sin distinción visual. */
+.cmd-cats-sep { flex: none; padding-left: 8px; margin-left: 2px; border-left: 1px solid var(--border); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); white-space: nowrap; }
 .cmd-search { width: 220px; flex: none; }
 /* Sin -webkit-overflow-scrolling el arrastre táctil dentro de este
    overflow:auto anidado en un modal fixed se sentía trabado/estático en
    iOS Safari (no bajaba la lista de platos), aunque el scroll programático
-   sí funcionaba — activa el scroll con inercia nativo de WebKit. */
-.cmd-grid { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 11px; align-content: start; padding-bottom: 8px; }
+   sí funcionaba — activa el scroll con inercia nativo de WebKit.
+   min-height:0 — sin esto un flex:1 que también es contenedor de scroll
+   puede negarse a encoger por debajo del alto de su contenido (default
+   min-height:auto de flexbox); con 184 platos reales eso lo infla en vez
+   de scrollear "adentro". */
+.cmd-grid { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 11px; align-content: start; padding-bottom: 8px; }
 .dish-card { position: relative; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 13px; display: flex; flex-direction: column; gap: 8px; min-height: 96px; transition: border-color .1s, transform .1s, box-shadow .1s; color: var(--cmd-ink); }
 .dish-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
 .dish-card.has { border-color: var(--accent); background: var(--accent-soft); }
@@ -1611,6 +1681,21 @@ table.dt tbody tr.row-out:hover td { filter: brightness(.99); }
     transform: translateY(100%);
     animation: sheetup .24s cubic-bezier(.2,.8,.2,1) forwards;
   }
+  /* Medido en vivo (canal Delivery, 375px): .cmd-context llegaba a 295px de
+     alto porque Cliente y Teléfono (sin .grow, sin width propio) heredan el
+     ancho intrínseco por defecto del <input> (~222px) y no entran juntos en
+     una fila de 339px útiles — cada uno se va solo a su propia fila. Con
+     Proveedor + Cliente + Teléfono + Dirección/Referencia eso son 4 filas
+     apiladas, y le dejaban a .cmd-grid apenas ~145-245px de alto real: el
+     scroll interno seguía siendo técnicamente correcto (scrollTop
+     programático sí se movía) pero un swipe real con el dedo apenas tenía
+     margen para agarrar el gesto. :has(.input) alcanza solo a los campos de
+     texto (Cliente/Teléfono/Dirección/Referencia/Hora de retiro) sin tocar
+     Proveedor (.seg) ni Mesa/Comensales (Salón), que sí necesitan su ancho. */
+  .cmd-context { padding: 10px 14px; }
+  .ctx-row { gap: 8px 10px; }
+  .ctx-row .ctx-field:has(.input) { flex: 1 1 130px; min-width: 130px; }
+  .ctx-row .ctx-field:has(.input) .input { width: 100%; }
 }
 
 @media (max-width: 560px) {
@@ -1716,7 +1801,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   :root { --sidebar-w: 62px; }
   .sidebar { width: 62px; overflow: hidden; transition: width .18s ease; }
   .brand { justify-content: center; padding: 16px 0 14px; border-bottom: 1px solid var(--border); }
-  .brand b, .brand small { display: none; }
+  .brand b, .brand small, .brand-by { display: none; }
+  .brand-logo-big { max-width: 34px; }
   .nav-lbl { display: none; }
   .nav-item { justify-content: center; padding: 11px 0; gap: 0; }
   .nav-item span:not(.cnt) { display: none; }
@@ -1999,16 +2085,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
    "última actualización" cuando ya hay columna de fecha visible. */
 @media (max-width: 920px) {
   .col-mobile-hidden { display: none !important; }
-  /* Sin scroll horizontal en ninguna tabla ≤920px.
-     Si la tabla aún desborda, usar representación de tarjetas. */
-  .table-wrap { overflow: hidden; }
-  /* Tablas de Compras (Órdenes, Insumos): aun ocultando sus columnas
-     prescindibles, las que quedan (con botones de acción táctiles
-     ≥44px) no entran en ~360px — overflow:hidden de arriba las
-     recortaba en silencio, sin forma de verlas. Pendiente la vista
-     de tarjetas (nota original de este bloque); mientras tanto,
-     mejor swipe horizontal que datos invisibles. Reusar esta clase
-     en cualquier otra tabla que llegue al mismo punto. */
+  /* Antes: overflow:hidden acá recortaba en silencio CUALQUIER tabla
+     que desbordara ≤920px, en todos los módulos con .table-wrap
+     (Usuarios, Auditoría de Anulaciones, Facturación, Compras,
+     Inventario...) — no solo Compras, como decía la nota original;
+     confirmado por auditoría real en dispositivo 2026-08-14. La
+     única forma de llegar a esas columnas era la clase opt-in de
+     abajo, que ningún JSX aplicaba por defecto. Con .col-mobile-hidden
+     ya quitando lo prescindible, el resto siempre debe poder
+     alcanzarse — mejor swipe horizontal que datos invisibles. */
+  .table-wrap { overflow-x: auto; overflow-y: visible; }
+  /* Ya no hace falta como opt-in (el fix de arriba es ahora el
+     default), pero se deja definida por si algún JSX ya la referencia. */
   .table-wrap-scroll-fallback { overflow-x: auto; }
 }
 
@@ -2375,4 +2463,81 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
      (display:grid) y envuelve una .table-wrap ya scrolleable — sin
      min-width:0 el track hereda el ancho de la tabla igual que antes. */
   .inventory-list, .inventory-group { min-width: 0; }
+}
+
+/* ============================================================
+   === GRUPO_F RESPONSIVE PATCH (auditoría en dispositivo real,
+   2026-08-14) ===
+   ============================================================ */
+
+/* ── Filas de chips de categoría/filtro no hacían scroll horizontal ──
+   .filters y .canal-tabs ya tenían un fix de scroll horizontal
+   dentro de @media (max-width: 920px) (línea ~793 del archivo), pero
+   sus reglas BASE sin @media (.filters, .canal-tabs — mismo selector,
+   misma especificidad) aparecen DESPUÉS en el archivo: por orden de
+   cascada, la base (flex-wrap: wrap) le ganaba al fix aunque el media
+   query siguiera activo — confirmado en vivo, computed flex-wrap
+   daba "wrap" en un viewport de 375px pese al fix ya escrito.
+   Mismo problema en .cmd-cats (Comandero/Nuevo pedido), sin fix
+   previo: con ~19 categorías reales, el wrap ocupaba ~390px de alto
+   dentro de .cmd-catalog (flex column) y dejaba .cmd-grid (la lista
+   de platos, con su propio overflow-y:auto correcto) colapsada a
+   unos pocos px de alto — técnicamente scrolleable, visualmente
+   inutilizable: el mesero no podía ver ni un plato para agregarlo.
+   Estas reglas van al final del archivo a propósito: es la única
+   forma de ganarle a esas bases sin @media sin subir especificidad
+   ni usar !important — cualquier fix nuevo de flex-wrap/overflow-x
+   para una clase que ya tenga una regla base sin @media en otra
+   parte del archivo debe agregarse acá, no donde "debería" ir
+   temáticamente. */
+@media (max-width: 920px) {
+  .filters,
+  .canal-tabs,
+  .cmd-cats {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+  }
+}
+
+/* ── Patrón repetido en ~12 screens (Usuarios, HistorialCaja, Carta,
+   MenuDiarioPanel, Categorías, Compras, ComprobanteViewer, Facturación,
+   Cocina, Mesas, Pedidos, Sedes): el root de cada pantalla se monta con
+   `style={{ height: '100%', display: 'flex', flexDirection: 'column' }}`
+   — el hijo con la lista/tabla real usa flex:1 + overflow-y:auto para
+   scrollear "adentro" mientras cabecera/stats/tabs quedan fijos arriba.
+   En desktop hay espacio de sobra y funciona. En celular, la cabecera +
+   3 stat cards + tabs + fila de categorías + buscador ya ocupan casi
+   toda la pantalla, y a ese flex:1 casi no le queda alto: colapsa a
+   pocos px — técnicamente overflow-y:auto y scrollHeight correcto,
+   pero visualmente inutilizable (confirmado en Nuevo pedido, Carta/Menú,
+   tablero de Pedidos y Compras en auditoría real 2026-08-14, mismo
+   síntoma en los demás por compartir el patrón).
+   Como el height:100% viene de un inline style (máxima especificidad,
+   ni una regla de clase le gana sin !important), la única forma de
+   neutralizarlo desde esta hoja es !important — mismo criterio ya
+   usado en .col-mobile-hidden más arriba. Al liberar el height, el
+   flex:1 de adentro deja de tener "espacio fijo" del cual apropiarse
+   y su contenido mide su alto real; .content (que ya scrollea bien,
+   confirmado en toda la sesión) pasa a manejar el scroll de la
+   página completa — mismo criterio que ya se usó para la carta
+   pública (dale a la pantalla su propio scroll en vez de pelear
+   contra contenedores internos). Selector genérico (.content > div,
+   .content > section) porque el wrapper no tiene className propio;
+   no toca pantallas que no son hijas directas de .content (el KDS a
+   pantalla completa usa .kds-fs con position:fixed, ajeno a esto).
+   SIN @media: el colapso no es un problema de ancho, es de alto —
+   pasaba igual en una laptop con browser a resolución normal (no
+   angosta) apenas la cabecera+stats+tabs+chips sumaban más alto del
+   que le quedaba disponible a la lista. Confirmado en vivo: Carta/Menú
+   con 136 platos, ventana de escritorio normal, mismo síntoma que en
+   celular (nada visible bajo el buscador). Sacar el max-width:920px
+   no tiene contrapartida real: en pantallas con alto de sobra el
+   contenido de todos modos entra en una sola vista y .content no
+   necesita scrollear — el fix solo entra en juego cuando de verdad
+   hace falta. */
+.content > div,
+.content > section {
+  height: auto !important;
 }

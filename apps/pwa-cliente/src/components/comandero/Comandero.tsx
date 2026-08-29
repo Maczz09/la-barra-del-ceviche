@@ -80,6 +80,13 @@ export function Comandero({
     mesas, mesasFisicas, crear, toast, onCreated, onClose,
   });
 
+  // Categorías de área INVENTARIO (Agua Mineral, Cerveza, Gaseosas…) se
+  // sembraban mezcladas alfabéticamente entre las de Cocina/Barra en los
+  // chips de "Carta" — sin separación visual, un mesero no las distinguía
+  // de un plato de cocina. Se agrupan aparte, bajo "Abarrotes".
+  const categoriasCarta = useMemo(() => categorias.filter((c) => c.area !== 'INVENTARIO'), [categorias]);
+  const categoriasAbarrotes = useMemo(() => categorias.filter((c) => c.area === 'INVENTARIO'), [categorias]);
+
   const productosFiltrados = useMemo(
     () => productos.filter((p) => {
       const okCat = cat === 'TODAS' || p.categoriaNombre === cat;
@@ -166,9 +173,17 @@ export function Comandero({
               {vista === 'CARTA' && (
                 <div className="cmd-cats">
                   <button className={`chip ${cat === 'TODAS' ? 'on' : ''}`} onClick={() => setCat('TODAS')}>Todos</button>
-                  {categorias.map((c) => (
+                  {categoriasCarta.map((c) => (
                     <button key={c.id} className={`chip ${cat === c.nombre ? 'on' : ''}`} onClick={() => setCat(c.nombre)}>{c.nombre}</button>
                   ))}
+                  {categoriasAbarrotes.length > 0 && (
+                    <>
+                      <span className="cmd-cats-sep" aria-hidden="true">Abarrotes</span>
+                      {categoriasAbarrotes.map((c) => (
+                        <button key={c.id} className={`chip ${cat === c.nombre ? 'on' : ''}`} onClick={() => setCat(c.nombre)}>{c.nombre}</button>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
               <div className="input cmd-search"><Icons.Search s={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar plato…" /></div>

@@ -30,7 +30,9 @@ export function useInicioData() {
   const { sede } = useSedeActualQuery();
   const { resumen: reporte } = useReportesQuery({ sedeId: sede?.id });
   const { reservas } = useReservasQuery({ fecha: hoy });
-  const { productos } = useInventarioQuery();
+  // Los widgets de agotados/stock bajo necesitan el catálogo completo para no
+  // subcontar: sin paginar acá, limit alto cubre el menú real (~183 platos).
+  const { productos } = useInventarioQuery(undefined, { limit: 500 });
 
   const ventasHora = useMemo(() => reporte?.ventasPorHora ?? [], [reporte]);
 

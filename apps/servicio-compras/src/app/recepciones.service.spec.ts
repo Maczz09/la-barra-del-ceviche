@@ -32,6 +32,7 @@ describe('RecepcionesService', () => {
   let service: RecepcionesService;
   let mockPrisma: any;
   let mockOrdenes: any;
+  let mockMovimientos: any;
 
   beforeEach(() => {
     mockPrisma = {
@@ -45,7 +46,8 @@ describe('RecepcionesService', () => {
     mockPrisma.$transaction = jest.fn((callback: unknown) => (callback as (arg: unknown) => unknown)(mockPrisma));
 
     mockOrdenes = { findOrThrow: jest.fn() };
-    service = new RecepcionesService(mockPrisma as unknown as PrismaService, mockOrdenes);
+    mockMovimientos = { aplicarMovimiento: jest.fn().mockResolvedValue({ movimiento: {}, insumo: {} }) };
+    service = new RecepcionesService(mockPrisma as unknown as PrismaService, mockOrdenes, mockMovimientos);
   });
 
   describe('registrar', () => {
@@ -78,12 +80,19 @@ describe('RecepcionesService', () => {
         where: { id: 'it-001' },
         data: { cantidadRecibida: { increment: 5 } },
       });
-      // El stock propio del insumo (unidad de compra) sube con la recepción,
-      // tenga o no puente a un producto vendible.
-      expect(mockPrisma.insumo.update).toHaveBeenCalledWith({
-        where: { id: 'i-001' },
-        data: { stockActual: { increment: 5 } },
-      });
+      // T-50: el stock propio del insumo (unidad de compra) sube por la MISMA
+      // puerta que el consumo de cocina, para que la entrada quede en el kardex
+      // y apunte a la recepción que la originó.
+      expect(mockPrisma.insumo.update).not.toHaveBeenCalled();
+      expect(mockMovimientos.aplicarMovimiento).toHaveBeenCalledWith(
+        mockPrisma,
+        expect.objectContaining({
+          insumoId: 'i-001',
+          tipo: 'ENTRADA_COMPRA',
+          delta: 5,
+          recepcionId: 'rc-001',
+        }),
+      );
       expect(result.orden.estado).toBe('PARCIAL');
       expect(result.message).toContain('parcial');
     });

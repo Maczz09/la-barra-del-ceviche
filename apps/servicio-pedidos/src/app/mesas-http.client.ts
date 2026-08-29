@@ -8,6 +8,7 @@ import {
 import { getOrCreateCounter, OperableLog } from '@org/observabilidad';
 import { ServiceTokenService } from '@org/shared-auth';
 import { CircuitBreakerOptions, createBulkhead, retryAsync, retryAttemptsOf } from '@org/resiliencia';
+import { ActualizarEstadoMesaCommand } from '@org/contracts';
 import axios from 'axios';
 
 export interface MesaRemota {
@@ -140,6 +141,67 @@ export class MesasHttpClient {
         message: `Error inesperado consultando mesa: ${axiosError.message}`,
       } satisfies OperableLog);
       throw new InternalServerErrorException('No se pudo cargar la mesa desde mesas. Reintente.');
+    }
+  }
+
+  @CircuitBreakerOptions({
+    timeout: Number(process.env['MESAS_TIMEOUT_MS'] ?? 2000) + 500,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30_000,
+    errorFilter: (error: { response?: { status: number } }) =>
+      Boolean(error?.response?.status && error.response.status < 500),
+  })
+  private async patchEstadoMesa(mesaId: string, command: ActualizarEstadoMesaCommand, token: string): Promise<void> {
+    // Idempotente en destino: si mesas ya está en el estado pedido, el
+    // servicio devuelve "sin cambios" en vez de 409 — seguro reintentar.
+    await retryAsync(
+      () =>
+        axios.patch(`${this.MESAS_URL}/${mesaId}/estado`, command, {
+          timeout: this.READ_TIMEOUT_MS,
+          headers: { Authorization: `Bearer ${token}` },
+          httpAgent: this.bulkhead.httpAgent,
+          httpsAgent: this.bulkhead.httpsAgent,
+        }),
+      { retries: 1, baseMs: 250 },
+    );
+  }
+
+  /**
+   * CU-02: libera la mesa (LIBRE, sin cuenta asociada) tras anular su
+   * atención completa. No lanza si la mesa está caída/no responde — el
+   * pedido ya quedó cancelado en nuestra BD; solo se loguea para que alguien
+   * libere la mesa a mano si hace falta.
+   */
+  async liberarMesa(mesaId: string, estado: ActualizarEstadoMesaCommand['estado']): Promise<boolean> {
+    let token: string;
+    try {
+      token = this.getServiceToken();
+    } catch {
+      this.logger.warn({
+        operation: 'liberarMesa',
+        aggregateId: mesaId,
+        dependency: 'mesas',
+        errorCode: 'TOKEN_GENERATION_FAILED',
+        message: 'No se pudo generar token para liberar la mesa; requiere liberación manual.',
+      } satisfies OperableLog);
+      return false;
+    }
+
+    const start = Date.now();
+    try {
+      await this.bulkhead.run(() => this.patchEstadoMesa(mesaId, { estado, cuentaAsociada: null }, token));
+      return true;
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { status: number }; code?: string; message?: string };
+      this.logger.warn({
+        operation: 'liberarMesa',
+        aggregateId: mesaId,
+        dependency: 'mesas',
+        durationMs: Date.now() - start,
+        errorCode: axiosError.code ?? String(axiosError.response?.status ?? 'UNKNOWN'),
+        message: `No se pudo liberar la mesa automáticamente: ${axiosError.message}. Requiere liberación manual.`,
+      } satisfies OperableLog);
+      return false;
     }
   }
 }

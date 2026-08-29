@@ -3,6 +3,8 @@ import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { EventsController } from './events.controller';
 import { AppService } from './app.service';
+import { MesasHttpClient } from './mesas-http.client';
+import { CuentaMesaReconciliacionService } from './cuenta-mesa-reconciliacion.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { OutboxAdminModule, OutboxModule } from '@org/resiliencia';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,12 +25,14 @@ import { ScheduleModule } from '@nestjs/schedule';
     RabbitMQModule.forRoot({
       uri: process.env['RABBITMQ_URI'],
       queue: 'cuentas_queue',
-      bindings: ['pedido.creado', 'pedido.actualizado', 'pago.registrado']
+      bindings: ['pedido.creado', 'pedido.actualizado', 'pago.registrado', 'mesa.actualizada']
     })
   ],
   controllers: [AppController, EventsController],
   providers: [
     AppService,
+    MesasHttpClient,
+    CuentaMesaReconciliacionService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })

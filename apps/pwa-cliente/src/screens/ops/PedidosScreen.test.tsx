@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PedidosScreen } from './PedidosScreen';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
-import { usePedidosQuery } from '../../hooks/queries/usePedidosQuery';
+import { usePedidosQuery, useAnularPedidoMutation } from '../../hooks/queries/usePedidosQuery';
 import type { PedidoVM } from '../../types/pedido.types';
 
 vi.mock('../../hooks/useOnlineStatus');
@@ -26,8 +26,9 @@ describe('PedidosScreen', () => {
     (useOnlineStatus as any).mockReturnValue(true);
     (usePedidosQuery as any).mockReturnValue({
       pedidos: [], nextCursor: null, loading: false, loadingMore: false, error: null,
-      fetch: vi.fn(), fetchMore: vi.fn(), avanzarEstado: vi.fn(), avanzarItem: vi.fn()
+      fetch: vi.fn(), fetchMore: vi.fn(), avanzarEstado: vi.fn(), avanzarItem: vi.fn(), anularItemPreparado: vi.fn(),
     });
+    (useAnularPedidoMutation as any).mockReturnValue({ saving: false, anularPedido: vi.fn() });
   });
 
   it('renders loading state', () => {
@@ -100,5 +101,31 @@ describe('PedidosScreen', () => {
         fireEvent.click(modalAvanzarBtn);
         await waitFor(() => expect(avanzarEstado).toHaveBeenCalled());
     }
+  });
+
+  it('CU-01: anula un ítem ya preparado (ENTREGADO) con la elección de cobrar', async () => {
+    const anularItemPreparado = vi.fn().mockResolvedValue({ id: 'p1' });
+    const p1: PedidoVM = {
+      // El pedido en sí sigue en producción (otro ítem aún se prepara); este
+      // ítem puntual (DIRECTO/servido a mano) ya está ENTREGADO.
+      id: 'p1', estado: 'EN_PREPARACION', canal: 'SALON', total: 20, createdAt: new Date().toISOString(),
+      items: [{ id: 'i-1', nombre: 'Cerveza', cantidad: 1, subtotal: 20, estado: 'ENTREGADO', area: 'BAR' }],
+    } as any;
+    (usePedidosQuery as any).mockReturnValue({
+      pedidos: [p1], nextCursor: null, fetchMore: vi.fn(), avanzarEstado: vi.fn(), fetch: vi.fn(), anularItemPreparado,
+    });
+
+    render(<PedidosScreen />);
+    fireEvent.click(screen.getAllByRole('button', { name: /Ver detalle/ })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Anular 1× Cerveza \(ya preparado\)/ }));
+
+    // El modal pide motivo + decisión de cobro antes de habilitar "Confirmar anulación".
+    fireEvent.change(screen.getByLabelText('Motivo'), { target: { value: 'Se cayó al servirlo' } });
+    fireEvent.click(screen.getByText('Sí, mantener en la cuenta'));
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar anulación/ }));
+
+    await waitFor(() => expect(anularItemPreparado).toHaveBeenCalledWith(
+      'i-1', { motivo: 'Se cayó al servirlo', cobrar: true, observacion: undefined },
+    ));
   });
 });

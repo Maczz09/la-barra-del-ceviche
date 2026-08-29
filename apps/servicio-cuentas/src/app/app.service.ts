@@ -10,13 +10,17 @@ import {
   CuentaEstado,
   RoutingKeys,
   CuentaCerradaPayload,
+  CuentaAsociadaPayload,
+  CuentaCanceladaPayload,
   TicketGeneradoPayload,
   PedidoActualizadoPayload,
   PedidoCreadoPayload,
   PagoRegistradoPayload,
+  MesaActualizadaPayload,
   PedidoSnapshot,
   PedidoSnapshotItem,
   PedidoEstado,
+  EstadoItem,
 } from '@org/contracts';
 import { Prisma } from '../generated/prisma';
 import { resolveSedeId, SEDE_PRINCIPAL_ID } from '@org/shared-auth';
@@ -35,6 +39,7 @@ type CuentaRecord = {
   total: Prisma.Decimal | number | string;
   estado: CuentaEstado;
   ticket?: string | null;
+  correlativo?: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -49,6 +54,30 @@ export class AppService {
   constructor(
     private readonly prisma: PrismaService,
   ) {}
+
+  /**
+   * Cuentas ABIERTA de una sede, sin paginar (uso interno: servicio-caja lo
+   * llama antes de permitir el cierre de un turno — bloquea el cierre si
+   * queda algo por cobrar). No expone `pedidos` completo, solo lo necesario
+   * para nombrar la mesa en el mensaje de bloqueo.
+   */
+  async listarCuentasAbiertasPorSede(sedeId: string): Promise<{ cuentas: Array<{ id: string; mesaId: string; numeroMesa?: number; total: number }> }> {
+    const cuentas = await this.prisma.cuenta.findMany({
+      where: { sedeId, estado: CuentaEstado.Abierta },
+      orderBy: { createdAt: 'asc' },
+    });
+    return {
+      cuentas: cuentas.map((c) => {
+        const pedidos = this.parsePedidosSnapshot(c.pedidos);
+        return {
+          id: c.id,
+          mesaId: c.mesaId,
+          numeroMesa: pedidos[0]?.numeroMesa,
+          total: Number(c.total),
+        };
+      }),
+    };
+  }
 
   async listarCuentas(): Promise<{ cuentas: CuentaDto[] }> {
     const cuentas = await this.prisma.cuenta.findMany({
@@ -74,6 +103,15 @@ export class AppService {
     };
   }
 
+  private async siguienteCorrelativo(prisma: Prisma.TransactionClient, sedeId: string): Promise<string> {
+    const secuencia = await prisma.secuenciaCuenta.upsert({
+      where: { sedeId },
+      create: { sedeId, ultimo: 1 },
+      update: { ultimo: { increment: 1 } },
+    });
+    return `A${String(secuencia.ultimo).padStart(7, '0')}`;
+  }
+
   async abrirCuenta(
     command: AbrirCuentaCommand,
     usuarioSedeId?: string | null,
@@ -92,13 +130,15 @@ export class AppService {
         throw new BadRequestException('La mesa ya tiene una cuenta abierta.');
       }
 
+      const correlativo = await this.siguienteCorrelativo(prisma, sedeId);
       const c = await prisma.cuenta.create({
         data: {
           mesaId: command.mesaId,
           sedeId,
           estado: CuentaEstado.Abierta,
           pedidos: [],
-          total: 0
+          total: 0,
+          correlativo,
         }
       });
 
@@ -149,6 +189,23 @@ export class AppService {
         where: { mesaId: pedidoDto.mesaId, estado: CuentaEstado.Abierta },
       });
 
+      // Mismo caso que procesarPedidoActualizado: un PedidoCreado reentregado
+      // muy tarde (redelivery/backlog) de una atención vieja de esta mesa,
+      // llegando después de que se abrió una cuenta nueva, se descarta en
+      // vez de colarse en la cuenta nueva. Solo aplica cuando YA existía una
+      // cuenta abierta encontrada acá arriba — no toca el flujo normal de
+      // "primer pedido de una mesa nueva" (rama de creación de cuenta más
+      // abajo), donde este chequeo no tiene sentido.
+      if (cuenta && new Date(pedidoDto.createdAt).getTime() < cuenta.createdAt.getTime()) {
+        this.logger.warn({
+          operation: 'procesarPedidoCreado',
+          aggregateId: cuenta.id,
+          errorCode: 'PEDIDO_HUERFANO_DE_ATENCION_ANTERIOR',
+          message: `Pedido ${pedidoDto.id} (creado ${pedidoDto.createdAt}) es anterior a la cuenta ${cuenta.id} (abierta ${cuenta.createdAt.toISOString()}) — evento descartado, no pertenece a esta atención.`,
+        } satisfies OperableLog);
+        return;
+      }
+
       const origenCuentaAbierta = cuenta ? 'reconciliacion-pedido' : 'fallback';
 
       if (cuenta && pedidoDto.sedeId && cuenta.sedeId !== pedidoDto.sedeId) {
@@ -174,8 +231,12 @@ export class AppService {
             message: 'Evento PedidoCreado sin sedeId; se asigna Sede Principal.',
           } satisfies OperableLog);
         }
+        // Este es el camino real de la mayoría de cuentas (mesero crea el
+        // primer pedido de la mesa → esto reacciona), no abrirCuenta —
+        // por eso el correlativo se asigna también aquí, no solo ahí.
+        const correlativo = await this.siguienteCorrelativo(prisma, sedeId);
         cuenta = await prisma.cuenta.create({
-          data: { mesaId: pedidoDto.mesaId, sedeId, estado: CuentaEstado.Abierta, pedidos: [], total: 0 },
+          data: { mesaId: pedidoDto.mesaId, sedeId, estado: CuentaEstado.Abierta, pedidos: [], total: 0, correlativo },
         });
       }
 
@@ -188,6 +249,23 @@ export class AppService {
             sedeId: cuenta.sedeId,
             origen: origenCuentaAbierta,
           }),
+          status: 'PENDING',
+        },
+      });
+
+      // Backfill del correlativo de la atención hacia el pedido — ver
+      // CuentaAsociadaPayload. Se reemite en cada reentrega (idempotente:
+      // el handler del otro lado solo sobreescribe con el mismo valor).
+      const cuentaAsociadaPayload: CuentaAsociadaPayload = {
+        pedidoId: pedidoDto.id,
+        cuentaId: cuenta.id,
+        sedeId: cuenta.sedeId,
+        correlativo: cuenta.correlativo ?? undefined,
+      };
+      await prisma.outboxEvent.create({
+        data: {
+          routingKey: RoutingKeys.CuentaAsociada,
+          payload: JSON.stringify(cuentaAsociadaPayload),
           status: 'PENDING',
         },
       });
@@ -246,7 +324,16 @@ export class AppService {
 
     try {
       await this.prisma.$transaction(async (prisma) => {
-        await prisma.idempotencyKey.create({ data: { key: `pedido.actualizado:${pedidoDto.id}:${pedidoDto.estado}` } });
+        // Bug: dedupear solo por (id, estado del pedido) hace que dos updates
+        // REALES y distintos (p. ej. anular un ítem puntual, que no cambia el
+        // estado del PEDIDO) colisionen en la misma key — el segundo evento se
+        // descarta como "ya procesado" y el snapshot queda desactualizado
+        // (el ítem anulado nunca se refleja en cuenta actual/boleta). La huella
+        // de items hace que cada estado real del pedido tenga su propia key.
+        const huellaItems = (pedidoDto.items ?? []).map((it) => `${it.id ?? ''}=${it.estado ?? ''}`).join(',');
+        await prisma.idempotencyKey.create({
+          data: { key: `pedido.actualizado:${pedidoDto.id}:${pedidoDto.estado}:${pedidoDto.total}:${huellaItems}` },
+        });
         // M5: advisory lock por mesa
       // classid 1234 compartido entre servicios A PROPOSITO: cada servicio tiene su propia BD (database-per-service), el espacio de locks no se cruza.
       await prisma.$executeRaw`SELECT pg_advisory_xact_lock(1234, ('x' || substr(md5(${pedidoDto.mesaId}), 1, 8))::bit(32)::int)`;
@@ -258,6 +345,29 @@ export class AppService {
 
       const snapshot = this.parsePedidosSnapshot(cuenta.pedidos);
       const index = snapshot.findIndex((p) => p.id === pedidoDto.id);
+
+      // Bug: este handler resuelve la cuenta destino solo por mesaId+ABIERTA,
+      // sin verificar que el pedido pertenezca a ESTA atención. Un evento
+      // reentregado tarde (redelivery de RabbitMQ, backlog del outbox
+      // worker) de un pedido de una atención VIEJA de la misma mesa, que
+      // llega después de que la mesa se cerró y se reabrió con una cuenta
+      // nueva, encontraba la única cuenta ABIERTA para esa mesa (la nueva),
+      // no encontraba el pedido en su snapshot, y lo insertaba igual —
+      // "resucitando" una anulación/ítem de una cuenta anterior dentro de
+      // la cuenta nueva (bug reportado: item anulado de una atención vieja
+      // apareciendo en la cuenta actual de una mesa recién reutilizada).
+      // Si el pedido es anterior a la apertura de esta cuenta y todavía no
+      // estaba en su snapshot, es huérfano de una atención anterior — se
+      // descarta en vez de insertarlo.
+      if (index < 0 && new Date(pedidoDto.createdAt).getTime() < cuenta.createdAt.getTime()) {
+        this.logger.warn({
+          operation: 'procesarPedidoActualizado',
+          aggregateId: cuenta.id,
+          errorCode: 'PEDIDO_HUERFANO_DE_ATENCION_ANTERIOR',
+          message: `Pedido ${pedidoDto.id} (creado ${pedidoDto.createdAt}) es anterior a la cuenta ${cuenta.id} (abierta ${cuenta.createdAt.toISOString()}) y no estaba en su snapshot — evento descartado, no pertenece a esta atención.`,
+        } satisfies OperableLog);
+        return;
+      }
 
       if (index >= 0) {
         snapshot[index] = pedidoDto;
@@ -403,12 +513,16 @@ export class AppService {
         throw new BadRequestException('La cuenta ya fue cerrada por otra operación concurrente.');
       }
 
-      const allItems = pedidos.flatMap((p) => p.items || []);
+      const allItems = this.itemsCobrables(pedidos);
       const mappedItems = allItems.map((item) => ({
         productoId: item.productoId,
         nombre: item.nombre,
         cantidad: item.cantidad,
-        precioUnitario: Number(item.precioUnitario || 0)
+        precioUnitario: Number(item.precioUnitario || 0),
+        // Bug: sin esto, reportes no puede distinguir plato de Carta/Menú
+        // (COCINA/BAR) de producto de Inventario (DIRECTO) — todo caía en
+        // "Top platos" y "Top productos" quedaba vacío para siempre.
+        area: item.area,
       }));
       const meseroCuenta = this.obtenerMeseroCuenta(pedidos);
 
@@ -448,7 +562,7 @@ export class AppService {
       id: cierre.ticketId,
       cuentaId: id,
       mesaId: cierre.cuenta.mesaId,
-      items: cierre.pedidos.flatMap((p) => p.items || []),
+      items: this.itemsCobrables(cierre.pedidos),
       subtotal: cierre.subtotal.toNumber(),
       descuento: cierre.descuento.toNumber(),
       total: cierre.total.toNumber(),
@@ -463,6 +577,100 @@ export class AppService {
     } satisfies OperableLog);
 
     return { message: 'Cuenta cerrada exitosamente', ticket };
+  }
+
+  /**
+   * Cascada automática desde servicio-pedidos: todos los ítems de la
+   * atención quedaron anulados (uno por uno, o vía "Anular atención de
+   * mesa") sin que nada se cobrara. A diferencia de cerrarCuenta, no genera
+   * ticket ni exige que la cuenta tenga pedidos — puede llegar con total 0.
+   * Idempotente: si ya está CANCELADA (dos cancelaciones concurrentes desde
+   * servicio-pedidos, ej. el último ítem de dos pedidos distintos anulado
+   * casi al mismo tiempo) no falla, solo no repite el evento.
+   */
+  async cancelarCuenta(id: string): Promise<{ message: string }> {
+    const cuenta = await this.prisma.$transaction(async (prisma) => {
+      const cuentaBase = await prisma.cuenta.findUnique({ where: { id } });
+      if (!cuentaBase) throw new NotFoundException(`Cuenta con ID ${id} no encontrada`);
+      await prisma.$executeRaw`SELECT pg_advisory_xact_lock(1234, ('x' || substr(md5(${cuentaBase.mesaId}), 1, 8))::bit(32)::int)`;
+
+      const actual = await prisma.cuenta.findUnique({ where: { id } });
+      if (!actual) throw new NotFoundException(`Cuenta con ID ${id} no encontrada`);
+      if (actual.estado === CuentaEstado.Cancelada) return null;
+      if (actual.estado !== CuentaEstado.Abierta) {
+        throw new BadRequestException(`La cuenta no está abierta. Estado actual: ${actual.estado}`);
+      }
+
+      const actualizada = await prisma.cuenta.updateMany({
+        where: { id, estado: CuentaEstado.Abierta },
+        data: { estado: CuentaEstado.Cancelada },
+      });
+      if (actualizada.count !== 1) return null;
+
+      const payload: CuentaCanceladaPayload = { cuentaId: id, mesaId: actual.mesaId, sedeId: actual.sedeId };
+      await prisma.outboxEvent.create({
+        data: { routingKey: RoutingKeys.CuentaCancelada, payload: JSON.stringify(payload), status: 'PENDING' },
+      });
+
+      return actual;
+    });
+
+    if (!cuenta) {
+      return { message: 'La cuenta ya estaba cancelada.' };
+    }
+
+    this.logger.log({
+      operation: 'cancelarCuenta',
+      aggregateId: id,
+      resultingState: 'CANCELADA',
+      message: `Cuenta cancelada — todos sus ítems fueron anulados sin cobro.`,
+    } satisfies OperableLog);
+
+    return { message: 'Cuenta cancelada exitosamente' };
+  }
+
+  /**
+   * Reconciliación event-driven (solución definitiva al bug de cuentas
+   * huérfanas — ej. carrera de despliegue: una versión vieja del código
+   * procesó un evento y dejó una cuenta ABIERTA sin engancharse a la
+   * cascada de cancelación). servicio-mesas es la fuente de verdad de qué
+   * cuenta está realmente asociada a una mesa; cada vez que una mesa
+   * cambia (se libera, se reasigna, etc.) reemite MesaActualizada. Si acá
+   * encontramos una cuenta ABIERTA para esa mesa que la mesa ya no
+   * referencia como su `cuentaAsociada`, quedó huérfana — se cancela.
+   * Se dispara en CADA actualización de mesa (no solo al liberar) a
+   * propósito: así también se autocorrige cualquier drift futuro,
+   * cualquiera sea la causa, sin depender de un camino de código
+   * específico. findMany (no findFirst) por si alguna vez hay más de una
+   * cuenta ABIERTA huérfana para la misma mesa.
+   */
+  async procesarMesaActualizada(payload: MesaActualizadaPayload): Promise<void> {
+    const mesa = payload?.mesa;
+    if (!mesa?.id) return;
+
+    const cuentasAbiertas = await this.prisma.cuenta.findMany({
+      where: { mesaId: mesa.id, estado: CuentaEstado.Abierta },
+    });
+
+    for (const cuenta of cuentasAbiertas) {
+      if (mesa.cuentaAsociada === cuenta.id) continue;
+
+      this.logger.warn({
+        operation: 'procesarMesaActualizada',
+        aggregateId: cuenta.id,
+        errorCode: 'CUENTA_HUERFANA',
+        message: `Mesa ${mesa.id} ya no referencia la cuenta ${cuenta.id} (cuentaAsociada actual: ${mesa.cuentaAsociada ?? 'null'}) — se cancela por reconciliación.`,
+      } satisfies OperableLog);
+
+      await this.cancelarCuenta(cuenta.id).catch((e: unknown) => {
+        this.logger.error({
+          operation: 'procesarMesaActualizada',
+          aggregateId: cuenta.id,
+          errorCode: 'RECONCILIACION_FALLIDA',
+          message: `No se pudo cancelar la cuenta huérfana ${cuenta.id}: ${(e as Error)?.message}`,
+        } satisfies OperableLog);
+      });
+    }
   }
 
   async dividirCuenta(id: string, command: DividirCuentaCommand): Promise<DivisionCuentaResult> {
@@ -488,7 +696,7 @@ export class AppService {
 
     if (command.metodo === 'POR_ITEMS') {
       const partes: Record<number, number> = {};
-      const allItems = pedidos.flatMap((p) => p.items || []);
+      const allItems = this.itemsCobrables(pedidos);
       allItems.forEach((item) => {
         const comensal = item.comensal ?? item.identificadorComensal ?? 1;
         // A3: aritmética Decimal por ítem
@@ -508,6 +716,19 @@ export class AppService {
     throw new BadRequestException('Método de división no soportado');
   }
 
+  /**
+   * Ítems efectivamente cobrables de un snapshot: excluye pedidos enteros no
+   * cobrables (CANCELADO/RECHAZADO_SIN_STOCK) y, dentro de pedidos vigentes,
+   * los ítems anulados puntualmente (CU-01/CU-02). Usado para boleta/ticket
+   * y división de cuenta — la vista "Cuenta actual" sí debe seguir mostrando
+   * los ítems anulados (con su estado), así que no se usa para el mapeo a DTO.
+   */
+  private itemsCobrables(pedidos: PedidoSnapshot[]): PedidoSnapshotItem[] {
+    return pedidos
+      .filter((p) => !ESTADOS_NO_COBRABLES.has(p.estado))
+      .flatMap((p) => (p.items || []).filter((item) => item.estado !== EstadoItem.Cancelado));
+  }
+
   private mapToDto(c: CuentaRecord): CuentaDto {
     const pedidos = this.parsePedidosSnapshot(c.pedidos);
     return {
@@ -518,6 +739,7 @@ export class AppService {
       total: Number(c.total),
       estado: c.estado,
       ticket: c.ticket,
+      correlativo: c.correlativo ?? undefined,
       createdAt: this.requireDate(c.createdAt, 'createdAt', c.id).toISOString(),
       updatedAt: this.requireDate(c.updatedAt, 'updatedAt', c.id).toISOString(),
       // Para auditoría de caja (quién atendió la venta, no solo quién cobró):

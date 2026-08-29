@@ -20,6 +20,7 @@ describe('AppController (Cuentas)', () => {
       obtenerCuenta: jest.fn(),
       dividirCuenta: jest.fn(),
       cerrarCuenta: jest.fn(),
+      cancelarCuenta: jest.fn(),
     };
 
     const app: TestingModule = await Test.createTestingModule({
@@ -96,6 +97,16 @@ describe('AppController (Cuentas)', () => {
 
     const result = await appController.cerrarCuenta(id, command);
     expect(appService.cerrarCuenta).toHaveBeenCalledWith(id, command);
+    expect(result).toEqual(expectedResult);
+  });
+
+  it('cancelarCuenta debe llamar a appService.cancelarCuenta', async () => {
+    const id = 'c-1';
+    const expectedResult = { message: 'Cuenta cancelada exitosamente' };
+    jest.spyOn(appService, 'cancelarCuenta').mockResolvedValue(expectedResult as any);
+
+    const result = await appController.cancelarCuenta(id);
+    expect(appService.cancelarCuenta).toHaveBeenCalledWith(id);
     expect(result).toEqual(expectedResult);
   });
 });

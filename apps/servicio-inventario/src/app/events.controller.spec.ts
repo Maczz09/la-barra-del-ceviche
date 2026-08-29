@@ -3,7 +3,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventsController } from './events.controller';
 import { AppService } from './app.service';
-import { PedidoCreadoPayload, PedidoEstado } from '@org/contracts';
+import { PedidoCreadoPayload, PedidoEstado, PedidoItemAnuladoConMermaPayload, StockRestauradoPayload } from '@org/contracts';
 
 describe('EventsController (Inventario)', () => {
   let eventsController: EventsController;
@@ -12,6 +12,9 @@ describe('EventsController (Inventario)', () => {
   beforeEach(async () => {
     const mockAppService = {
       procesarPedidoCreado: jest.fn(),
+      procesarCompraRecibida: jest.fn(),
+      procesarItemAnuladoConMerma: jest.fn(),
+      procesarStockRestaurado: jest.fn(),
     };
 
     const app: TestingModule = await Test.createTestingModule({
@@ -66,5 +69,28 @@ describe('EventsController (Inventario)', () => {
     jest.spyOn(appService, 'procesarPedidoCreado').mockRejectedValue(new Error('fail'));
 
     await expect(eventsController.handlePedidoCreado(payload)).rejects.toThrow('fail');
+  });
+
+  it('handlePedidoItemAnuladoConMerma debe llamar a appService.procesarItemAnuladoConMerma con el payload', async () => {
+    const payload: PedidoItemAnuladoConMermaPayload = {
+      eventId: 'evt-1', pedidoId: 'pedido-1', itemId: 'item-1', productoId: 'p-1',
+      productoNombre: 'Cerveza', cantidad: 1, motivo: 'Cliente se retiró', cobrado: false,
+    };
+
+    jest.spyOn(appService, 'procesarItemAnuladoConMerma').mockResolvedValue(undefined);
+
+    await eventsController.handlePedidoItemAnuladoConMerma(payload);
+
+    expect(appService.procesarItemAnuladoConMerma).toHaveBeenCalledWith(payload);
+  });
+
+  it('handleStockRestaurado debe llamar a appService.procesarStockRestaurado con el payload', async () => {
+    const payload: StockRestauradoPayload = { eventId: 'evt-2', productoId: 'p-1', cantidad: 2, motivo: 'Mesa anulada' };
+
+    jest.spyOn(appService, 'procesarStockRestaurado').mockResolvedValue(undefined);
+
+    await eventsController.handleStockRestaurado(payload);
+
+    expect(appService.procesarStockRestaurado).toHaveBeenCalledWith(payload);
   });
 });

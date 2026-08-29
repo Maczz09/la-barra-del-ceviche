@@ -7,23 +7,31 @@ import { Roles, RolesGuard } from '@org/shared-auth';
 import { UsuarioActual } from '@org/observabilidad';
 import { IdempotencyInterceptor } from '@org/resiliencia';
 import {
+  ActualizarCategoriaInsumoCommand,
   ActualizarInsumoCommand,
   ActualizarOrdenCompraCommand,
   ActualizarProveedorCommand,
   AnularOrdenCommand,
   CerrarOrdenCommand,
+  CrearCategoriaInsumoCommand,
   CrearInsumoCommand,
   CrearOrdenCompraCommand,
   CrearProveedorCommand,
+  ListarCategoriasInsumoQuery,
   ListarComprobantesQuery,
   ListarInsumosQuery,
+  ListarMovimientosInsumoQuery,
   ListarOrdenesQuery,
   ListarProveedoresQuery,
+  RegistrarConteoInsumosCommand,
+  RegistrarMovimientoInsumoCommand,
   RegistrarRecepcionCommand,
   SubirComprobanteCommand,
 } from '@org/contracts';
 import { ProveedoresService } from './proveedores.service';
 import { InsumosService } from './insumos.service';
+import { CategoriasInsumoService } from './categorias-insumo.service';
+import { MovimientosInsumoService } from './movimientos-insumo.service';
 import { OrdenesService } from './ordenes.service';
 import { RecepcionesService } from './recepciones.service';
 import { ArchivoSubido, ComprobantesService } from './comprobantes.service';
@@ -47,6 +55,8 @@ export class AppController {
   constructor(
     private readonly proveedores: ProveedoresService,
     private readonly insumos: InsumosService,
+    private readonly categoriasInsumo: CategoriasInsumoService,
+    private readonly movimientos: MovimientosInsumoService,
     private readonly ordenes: OrdenesService,
     private readonly recepciones: RecepcionesService,
     private readonly comprobantes: ComprobantesService,
@@ -81,7 +91,46 @@ export class AppController {
     return this.proveedores.eliminar(id, usuarioSedeId);
   }
 
+  // ── Categorias del almacen de cocina (T-50) ──
+  // Taxonomia propia del almacen: nada que ver con las categorias de la carta,
+  // que viven en servicio-inventario. COCINA puede leerlas para filtrar.
+  @Roles('ADMIN', 'SISTEMA', 'GERENCIA', 'COCINA')
+  @Get('categorias-insumo')
+  listarCategoriasInsumo(
+    @Query() query: ListarCategoriasInsumoQuery,
+    @UsuarioActual('sedeId') usuarioSedeId: string | null,
+  ) {
+    return this.categoriasInsumo.listar(query, usuarioSedeId);
+  }
+
+  @Post('categorias-insumo')
+  crearCategoriaInsumo(
+    @Body() body: CrearCategoriaInsumoCommand,
+    @UsuarioActual('sedeId') usuarioSedeId: string | null,
+    @Query('sedeId') sedeId?: string,
+  ) {
+    return this.categoriasInsumo.crear(body, usuarioSedeId, sedeId);
+  }
+
+  @Patch('categorias-insumo/:id')
+  actualizarCategoriaInsumo(
+    @Param('id') id: string,
+    @Body() body: ActualizarCategoriaInsumoCommand,
+    @UsuarioActual('sedeId') usuarioSedeId: string | null,
+  ) {
+    return this.categoriasInsumo.actualizar(id, body, usuarioSedeId);
+  }
+
+  @Delete('categorias-insumo/:id')
+  eliminarCategoriaInsumo(@Param('id') id: string, @UsuarioActual('sedeId') usuarioSedeId: string | null) {
+    return this.categoriasInsumo.eliminar(id, usuarioSedeId);
+  }
+
   // ── Insumos ──
+  // COCINA entra acá (y solo acá, más los dos endpoints de movimiento de abajo)
+  // porque para descargar del almacén primero tiene que poder elegir el insumo.
+  // El resto de Compras — proveedores, órdenes, costos — le sigue vedado.
+  @Roles('ADMIN', 'SISTEMA', 'GERENCIA', 'COCINA')
   @Get('insumos')
   listarInsumos(@Query() query: ListarInsumosQuery, @UsuarioActual('sedeId') usuarioSedeId: string | null) {
     return this.insumos.listar(query, usuarioSedeId);
@@ -108,6 +157,67 @@ export class AppController {
   @Delete('insumos/:id')
   eliminarInsumo(@Param('id') id: string, @UsuarioActual('sedeId') usuarioSedeId: string | null) {
     return this.insumos.eliminar(id, usuarioSedeId);
+  }
+
+  // ── Movimientos de insumo (kardex del almacén de cocina, T-50) ──
+  // El Idempotency-Key evita que un doble toque en 3G descargue dos veces lo
+  // mismo: sin él, cada reintento del cliente sería un consumo real distinto.
+  @Roles('ADMIN', 'SISTEMA', 'GERENCIA', 'COCINA')
+  @UseInterceptors(IdempotencyInterceptor)
+  @Post('insumos/:id/movimientos')
+  registrarMovimientoInsumo(
+    @Param('id') id: string,
+    @Body() body: RegistrarMovimientoInsumoCommand,
+    @UsuarioActual() usuarioId: string | null,
+    @UsuarioActual('nombre') usuarioNombre: string | null,
+    @UsuarioActual('email') usuarioEmail: string | null,
+    @UsuarioActual('sedeId') usuarioSedeId: string | null,
+  ) {
+    return this.movimientos.registrar(id, body, usuarioDe(usuarioId, usuarioNombre, usuarioEmail), usuarioSedeId);
+  }
+
+  @Roles('ADMIN', 'SISTEMA', 'GERENCIA', 'COCINA')
+  @Get('insumos/:id/movimientos')
+  listarMovimientosDeInsumo(
+    @Param('id') id: string,
+    @Query() query: ListarMovimientosInsumoQuery,
+    @UsuarioActual('sedeId') usuarioSedeId: string | null,
+  ) {
+    return this.movimientos.listar({ ...query, insumoId: id }, usuarioSedeId);
+  }
+
+  @Roles('ADMIN', 'SISTEMA', 'GERENCIA', 'COCINA')
+  @Get('movimientos-insumo/:id')
+  obtenerMovimientoInsumo(@Param('id') id: string, @UsuarioActual('sedeId') usuarioSedeId: string | null) {
+    return this.movimientos.obtener(id, usuarioSedeId);
+  }
+
+  @Get('movimientos-insumo')
+  listarMovimientosInsumo(
+    @Query() query: ListarMovimientosInsumoQuery,
+    @UsuarioActual('sedeId') usuarioSedeId: string | null,
+  ) {
+    return this.movimientos.listar(query, usuarioSedeId);
+  }
+
+  // Cuadre físico en lote: lo cierra administración, no cocina — es el momento
+  // en que se acepta oficialmente una diferencia contra el sistema.
+  @UseInterceptors(IdempotencyInterceptor)
+  @Post('insumos/conteo')
+  registrarConteoInsumos(
+    @Body() body: RegistrarConteoInsumosCommand,
+    @UsuarioActual() usuarioId: string | null,
+    @UsuarioActual('nombre') usuarioNombre: string | null,
+    @UsuarioActual('email') usuarioEmail: string | null,
+    @UsuarioActual('sedeId') usuarioSedeId: string | null,
+    @Query('sedeId') sedeId?: string,
+  ) {
+    return this.movimientos.registrarConteo(
+      body,
+      usuarioDe(usuarioId, usuarioNombre, usuarioEmail),
+      usuarioSedeId,
+      sedeId,
+    );
   }
 
   // ── Órdenes de compra ──
@@ -236,6 +346,26 @@ export class AppController {
     const c = await this.comprobantes.obtenerComprobante(id, usuarioSedeId);
     const ruta = c.rutaMiniatura ?? c.rutaArchivo;
     this.enviarArchivo(ruta, 'image/webp', undefined, `${c.sha256}-thumb`, `${c.id}_thumb.webp`, req, res);
+  }
+
+  // PDF generado bajo demanda (no se persiste, ver ComprobantesService.generarPdf).
+  // `inline` (no `attachment`): abrir la URL renderiza el PDF en el visor
+  // nativo del navegador — descargarlo es una acción aparte del lado del
+  // cliente sobre el mismo blob, no algo que el servidor deba forzar.
+  @Get('comprobantes/:id/pdf')
+  async pdf(
+    @Param('id') id: string,
+    @UsuarioActual('sedeId') usuarioSedeId: string | null,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { buffer, filename } = await this.comprobantes.generarPdf(id, usuarioSedeId);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': String(buffer.length),
+      'Content-Disposition': `inline; filename="${filename}"`,
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+    });
+    res.end(buffer);
   }
 
   @Delete('comprobantes/:id')

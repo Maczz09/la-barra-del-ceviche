@@ -190,6 +190,23 @@ services:
               fault_tolerant: true
               hide_client_headers: false
 
+  # Carta pública/QR (T-XX): sin JWT — cualquiera con el link/QR la llama.
+  # Sin plugin jwt a propósito, igual que login/refresh/logout arriba.
+  - name: servicio-identidad-sede-publica
+    url: http://servicio-identidad:3000/api/sedes/publica
+    connect_timeout: 2000
+    read_timeout: 10000
+    write_timeout: 10000
+    retries: 1
+    routes:
+      - name: identidad-sede-publica
+        paths:
+          - /identidad/sedes/publica
+          - /v1/identidad/sedes/publica
+        strip_path: true
+        methods:
+          - GET
+
   - name: servicio-identidad
     url: http://servicio-identidad:3000/api
     connect_timeout: 2000
@@ -290,6 +307,22 @@ services:
         strip_path: true
 
   # ── Inventario ──
+  # Carta pública/QR (T-XX): sin JWT — cualquiera con el link/QR la llama.
+  - name: servicio-inventario-carta-publica
+    url: http://servicio-inventario:3000/api/carta-publica
+    connect_timeout: 2000
+    read_timeout: 10000
+    write_timeout: 10000
+    retries: 1
+    routes:
+      - name: inventario-carta-publica
+        paths:
+          - /inventario/carta-publica
+          - /v1/inventario/carta-publica
+        strip_path: true
+        methods:
+          - GET
+
   - name: servicio-inventario
     url: http://servicio-inventario:3000/api
     connect_timeout: 2000
@@ -310,11 +343,19 @@ services:
         strip_path: true
 
   # ── Notificaciones ──
+  # WebSocket (socket.io) vive en esta misma ruta: read/write_timeout altos
+  # a propósito, NO el default de 10s de los servicios REST. Un socket.io
+  # inactivo entre pings (pingInterval 25s) no manda bytes por ese lapso —
+  # con 10s Kong lo mataba por "read timeout" antes de que llegara el
+  # siguiente ping, y el cliente se veía reconectando en loop cada ~10s
+  # (handleConnection/handleDisconnect alternando sin parar en los logs).
+  # El propio heartbeat de socket.io sigue detectando conexiones realmente
+  # muertas; esto solo evita que Kong corte una conexión sana e inactiva.
   - name: servicio-notificaciones
     url: http://servicio-notificaciones:3000/api
     connect_timeout: 2000
-    read_timeout: 10000
-    write_timeout: 10000
+    read_timeout: 3600000
+    write_timeout: 3600000
     retries: 1
     plugins:
       - name: jwt
@@ -327,6 +368,24 @@ services:
     routes:
       - name: notificaciones
         paths: [/notificaciones, /v1/notificaciones]
+        strip_path: true
+
+  # Carta pública/QR (T-XX): WebSocket de disponibilidad sin JWT — path
+  # propio (no un namespace del socket.io de arriba, que SÍ exige jwt a
+  # nivel de todo el route) para que Kong pueda diferenciarlo por path
+  # literal, igual que /sedes/publica y /carta-publica. read/write_timeout
+  # altos por la misma razón que el socket.io del KDS (pings de socket.io).
+  - name: servicio-notificaciones-carta-socket
+    url: http://servicio-notificaciones:3000/api/carta-socket.io
+    connect_timeout: 2000
+    read_timeout: 3600000
+    write_timeout: 3600000
+    retries: 1
+    routes:
+      - name: notificaciones-carta-socket
+        paths:
+          - /notificaciones/carta-socket.io
+          - /v1/notificaciones/carta-socket.io
         strip_path: true
 
   # ── Caja ──

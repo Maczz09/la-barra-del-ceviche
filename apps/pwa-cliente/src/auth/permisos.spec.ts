@@ -14,8 +14,10 @@ describe('ACCESO_POR_ROL', () => {
     expect(ACCESO_POR_ROL.ADMIN.rutas).toEqual(TODAS_LAS_RUTAS);
   });
 
-  it('COCINA tiene acceso a cocina y carta (para desactivar platos)', () => {
-    expect(ACCESO_POR_ROL.COCINA.rutas).toEqual(['cocina', 'carta']);
+  it('COCINA tiene acceso a cocina, carta (para desactivar platos) e inventario (almacén)', () => {
+    // T-50: `inventario` es para el almacén de cocina — registrar consumos y
+    // mermas de insumos. Aterriza en esa pestaña, no en productos de venta.
+    expect(ACCESO_POR_ROL.COCINA.rutas).toEqual(['cocina', 'carta', 'inventario']);
     expect(ACCESO_POR_ROL.COCINA.home).toBe('cocina');
   });
 

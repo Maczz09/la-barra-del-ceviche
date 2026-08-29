@@ -14,6 +14,8 @@ export const RESERVAS_QUERY_KEY = ['reservas'];
 
 interface ReservasFilters {
   fecha?: string;
+  /** Busca por el código de la reserva ("R0000001" o un fragmento). */
+  search?: string;
 }
 
 function updateReserva(reservas: ReservaVM[], reserva: ReservaVM): ReservaVM[] {
@@ -32,6 +34,7 @@ export function useReservasQuery(filters: ReservasFilters = {}) {
       const response = await reservasApi.getPage({
         cursor: pageParam,
         fecha: filters.fecha,
+        search: filters.search || undefined,
         limit: 50,
       });
 

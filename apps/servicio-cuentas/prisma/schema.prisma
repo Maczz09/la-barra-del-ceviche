@@ -11,22 +11,39 @@ enum CuentaEstado {
   ABIERTA
   CERRADA
   PAGADA
+  CANCELADA
 }
 
 model Cuenta {
-  id        String       @id @default(uuid())
-  mesaId    String
-  sedeId    String
-  pedidos   Json
-  total     Decimal      @default(0) @db.Decimal(10, 2)
-  estado    CuentaEstado @default(ABIERTA)
-  ticket    String?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id          String       @id @default(uuid())
+  mesaId      String
+  sedeId      String
+  pedidos     Json
+  total       Decimal      @default(0) @db.Decimal(10, 2)
+  estado      CuentaEstado @default(ABIERTA)
+  ticket      String?
+  // Código legible de la atención completa ("A0000001"), asignado una sola
+  // vez al abrir la cuenta — nullable porque las cuentas creadas antes de
+  // este campo no tienen uno retroactivo. Único por sede, no global (dos
+  // sedes pueden tener ambas una A0000001).
+  correlativo String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
   @@index([mesaId, estado])
   @@index([sedeId])
+  @@unique([sedeId, correlativo])
   @@map("cuentas")
+}
+
+// Correlativo legible por sede ("A0000001"), mismo patrón que
+// SecuenciaOrden en servicio-compras: el UPDATE/upsert toma lock de fila →
+// serializa las aperturas de cuenta concurrentes de una misma sede.
+model SecuenciaCuenta {
+  sedeId String @id
+  ultimo Int    @default(0)
+
+  @@map("secuencias_cuenta")
 }
 
 model OutboxEvent {

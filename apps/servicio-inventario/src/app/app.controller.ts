@@ -2,7 +2,21 @@ import { Controller, Get, Post, Body, Param, Patch, Delete, Query, UseGuards } f
 import { Roles, RolesGuard } from '@org/shared-auth';
 import { UsuarioActual } from '@org/observabilidad';
 import { AppService } from './app.service';
-import { CrearCategoriaCommand, ActualizarCategoriaCommand, CrearProductoCommand, ActualizarProductoCommand, ActualizarDisponibilidadCommand, ListarProductosQuery, ObtenerProductosLoteCommand, AgregarAlMenuCommand, ActualizarMenuDiarioCommand, RegistrarMermaCommand, ListarMermasQuery } from '@org/contracts';
+import {
+  CrearCategoriaCommand,
+  ActualizarCategoriaCommand,
+  CrearProductoCommand,
+  ActualizarProductoCommand,
+  ActualizarDisponibilidadCommand,
+  ListarProductosQuery,
+  ObtenerProductosLoteCommand,
+  AgregarAlMenuCommand,
+  ActualizarMenuDiarioCommand,
+  RegistrarMermaCommand,
+  ActualizarMermaCommand,
+  EliminarMermaCommand,
+  ListarMermasQuery,
+} from '@org/contracts';
 
 // Lectura del catálogo: la usan inventario/carta (admin, sistema, gerencia) y
 // también el comandero del PWA (cajero, mesero) al armar pedidos. COCINA
@@ -169,5 +183,29 @@ export class AppController {
     @Query('sedeId') sedeId?: string,
   ) {
     return this.appService.registrarMerma(body, usuarioId, usuarioNombre, usuarioSedeId, sedeId);
+  }
+
+  @Roles('ADMIN', 'SISTEMA', 'GERENCIA')
+  @Patch('mermas/:id')
+  actualizarMerma(
+    @Param('id') id: string,
+    @Body() body: ActualizarMermaCommand,
+    @UsuarioActual('sedeId') usuarioSedeId: string | null,
+    @Query('sedeId') sedeId?: string,
+  ) {
+    return this.appService.actualizarMerma(id, body, usuarioSedeId, sedeId);
+  }
+
+  // POST en vez de DELETE-con-body: algunos proxies/Kong descartan el body
+  // de un DELETE, y la justificación es obligatoria para esta operación.
+  @Roles('ADMIN', 'SISTEMA', 'GERENCIA')
+  @Post('mermas/:id/eliminar')
+  eliminarMerma(
+    @Param('id') id: string,
+    @Body() body: EliminarMermaCommand,
+    @UsuarioActual('sedeId') usuarioSedeId: string | null,
+    @Query('sedeId') sedeId?: string,
+  ) {
+    return this.appService.eliminarMerma(id, body.justificacion, usuarioSedeId, sedeId);
   }
 }

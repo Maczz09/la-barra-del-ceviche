@@ -3,21 +3,22 @@ import { useEffect } from 'react';
 import { Icons } from '../ui/icons';
 import { fmt, elapsedLabel } from '../../utils/format';
 import { FLOW_PEDIDO } from '../../domain/pedido.flow';
-import type { PedidoVM } from '../../types/pedido.types';
+import type { PedidoVM, PedidoItemVM } from '../../types/pedido.types';
 import { CANAL_META, nextLabelFor } from './pedidos.meta';
 
 interface DetallePedidoProps {
   pedido: PedidoVM;
   onClose: () => void;
   onAvanzar: (p: PedidoVM) => void;
-  onAnularItem: (itemId: string) => void;
+  onAnularItem: (item: PedidoItemVM) => void;
+  onAnularPedido: (p: PedidoVM) => void;
   actionLoading: string | null;
   online: boolean;
   now: number;
 }
 
-/** No tiene sentido anular un ítem ya entregado o ya anulado. */
-const NO_ANULABLE = new Set(['ENTREGADO', 'CANCELADO', 'RECHAZADO_SIN_STOCK']);
+/** Ya anulado o rechazado: no hay nada más que hacer con el ítem. */
+const NO_ANULABLE = new Set(['CANCELADO', 'RECHAZADO_SIN_STOCK']);
 
 function flowStepCls(i: number, curIdx: number): string {
   if (i < curIdx) return 'done';
@@ -25,11 +26,16 @@ function flowStepCls(i: number, curIdx: number): string {
   return '';
 }
 
-export function DetallePedido({ pedido: p, onClose, onAvanzar, onAnularItem, actionLoading, online, now }: Readonly<DetallePedidoProps>) {
+// Mismos estados terminales que valida el backend (anularPedido): ya no
+// tiene sentido ofrecer "Anular pedido" sobre un pedido ya cerrado.
+const ESTADOS_TERMINALES = new Set(['CANCELADO', 'PAGADO', 'RECHAZADO_SIN_STOCK']);
+
+export function DetallePedido({ pedido: p, onClose, onAvanzar, onAnularItem, onAnularPedido, actionLoading, online, now }: Readonly<DetallePedidoProps>) {
   const meta = CANAL_META[p.canal];
   const Ic = Icons[meta.ic];
   const nextLabel = nextLabelFor(p);
   const curIdx = FLOW_PEDIDO.findIndex((f) => f.estado === p.estado);
+  const puedeAnular = !ESTADOS_TERMINALES.has(p.estado);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -43,7 +49,9 @@ export function DetallePedido({ pedido: p, onClose, onAvanzar, onAnularItem, act
       <dialog open className="drawer" aria-modal="true" aria-label={`Detalle del pedido ${p.id.slice(0, 8)}`}>
         <div className="panel-h" style={{ padding: '16px 20px' }}>
           <span className={`tag-canal ${meta.cls}`}><Ic s={12} /> {meta.label}</span>
-          <h3 style={{ fontSize: 17, marginLeft: 4 }}>{p.id.slice(0, 8)}</h3>
+          <h3 style={{ fontSize: 17, marginLeft: 4 }} title={p.cuentaCorrelativo ? `ID interno ${p.id}` : undefined}>
+            {p.cuentaCorrelativo ?? p.id.slice(0, 8)}
+          </h3>
           <span className="spacer" />
           <button className="icon-btn" aria-label="Cerrar detalle" onClick={onClose}><Icons.Close s={17} /></button>
         </div>
@@ -92,12 +100,13 @@ export function DetallePedido({ pedido: p, onClose, onAvanzar, onAnularItem, act
                   {!NO_ANULABLE.has(it.estado) && (
                     <button
                       className="icon-btn"
-                      title="Anular ítem"
-                      aria-label={`Anular ${it.cantidad}× ${it.nombre}`}
+                      style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                      title={it.estado === 'ENTREGADO' ? 'Anular ítem ya preparado (decide si se cobra)' : 'Anular ítem'}
+                      aria-label={`Anular ${it.cantidad}× ${it.nombre}${it.estado === 'ENTREGADO' ? ' (ya preparado)' : ''}`}
                       disabled={!online}
-                      onClick={() => onAnularItem(it.id)}
+                      onClick={() => onAnularItem(it)}
                     >
-                      <Icons.Close s={14} />
+                      {it.estado === 'ENTREGADO' ? <Icons.Alert s={14} /> : <Icons.Close s={14} />}
                     </button>
                   )}
                 </div>
@@ -108,6 +117,17 @@ export function DetallePedido({ pedido: p, onClose, onAvanzar, onAnularItem, act
         <div className="modal-foot" style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
           <div><div className="hint">Total</div><b className="mono" style={{ fontSize: 18 }}>{fmt(p.total)}</b></div>
           <span className="spacer" />
+          {puedeAnular && (
+            <button
+              className="btn btn-ghost"
+              style={{ color: 'var(--danger)', borderColor: 'var(--danger-soft)' }}
+              aria-label={`Anular pedido ${p.id.slice(0, 6)}`}
+              disabled={!online}
+              onClick={() => onAnularPedido(p)}
+            >
+              <Icons.Alert s={15} /> Anular pedido
+            </button>
+          )}
           {nextLabel && (
             <button
               className="btn btn-primary"

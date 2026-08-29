@@ -2,7 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OperableLog } from '@org/observabilidad';
 import { SEDE_PRINCIPAL_ID } from '@org/shared-auth';
 import { PrismaService } from '../prisma/prisma.service';
-import { CuentaCerradaPayload, PedidoSnapshotItem } from '@org/contracts';
+import { CuentaCerradaPayload, ItemArea, PedidoSnapshotItem } from '@org/contracts';
+import { calcularEstadisticasTicket } from './estadisticas';
+
+const MENOS_VENDIDOS_LIMITE = 5;
 
 @Injectable()
 export class AppService {
@@ -87,14 +90,32 @@ export class AppService {
         lte: query.hasta ? this.parseFechaLimite(query.hasta, 'fin') : new Date(),
       };
     }
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    return { gte: hoy, lte: new Date() };
+    // "Hoy" tiene que anclarse al mismo día calendario de Lima que usa
+    // parseFechaLimite arriba. hoy.setHours(0,0,0,0) usaba la zona horaria
+    // del contenedor (UTC en Docker) — medianoche UTC son las 19:00 de AYER
+    // en Lima, así que el rango "de hoy" arrancaba 5 horas antes de tiempo y
+    // arrastraba ventas de la noche anterior.
+    const hoyLima = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date());
+    return { gte: this.parseFechaLimite(hoyLima, 'inicio'), lte: new Date() };
+  }
+
+  // fecha.getHours() usa la zona horaria del contenedor (UTC en Docker,
+  // igual que el bug ya documentado arriba en rango()) — una venta de las
+  // 16:00 Lima queda leída como las 21:00. Mismo remedio: leer la hora vía
+  // Intl con el timezone anclado explícitamente en vez de confiar en el TZ
+  // del proceso.
+  private horaLima(fecha: Date): number {
+    const horaStr = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Lima',
+      hour: '2-digit',
+      hour12: false,
+    }).format(fecha);
+    return Number(horaStr) % 24;
   }
 
   /** Deriva el turno a partir de la hora de la venta (plan 6.3). */
   private turnoDe(fecha: Date): 'ALMUERZO' | 'CENA' | 'OTRO' {
-    const h = fecha.getHours();
+    const h = this.horaLima(fecha);
     if (h >= 12 && h < 17) return 'ALMUERZO';
     if (h >= 18) return 'CENA';
     return 'OTRO';
@@ -195,10 +216,9 @@ export class AppService {
     }
     
     for (const v of ventas) {
-      const fechaVenta = new Date(v.fecha);
-      const hora = fechaVenta.getHours();
+      const hora = this.horaLima(new Date(v.fecha));
       const horaKey = `${String(hora).padStart(2, '0')}:00`;
-      
+
       horasMap.set(horaKey, (horasMap.get(horaKey) || 0) + Number(v.total));
     }
 
@@ -207,32 +227,47 @@ export class AppService {
       total,
     }));
 
-    // 2. Generar Ranking de Productos determinista según ventas reales del día
-    const productStats = new Map<string, { nombre: string; cantidad: number; ingresos: number }>();
+    // 2. Ranking de ventas determinista, separado por origen: un plato de
+    // Carta/Menú (área COCINA o BARRA, pasa por producción) es un negocio
+    // distinto de un producto de Inventario (área DIRECTO, reventa sin
+    // preparación) — mezclarlos en un solo ranking no le sirve al dueño para
+    // decidir qué cocinar más ni qué reponer más.
+    const platoStats = new Map<string, { nombre: string; cantidad: number; ingresos: number }>();
+    const inventarioStats = new Map<string, { nombre: string; cantidad: number; ingresos: number }>();
 
     for (const v of ventas) {
       if (Array.isArray(v.items)) {
         for (const item of v.items as PedidoSnapshotItem[]) {
           const pid = item.productoId;
           if (!pid) continue;
-          const current = productStats.get(pid) || { nombre: item.nombre || pid, cantidad: 0, ingresos: 0 };
+          const stats = item.area === ItemArea.Directo ? inventarioStats : platoStats;
+          const current = stats.get(pid) || { nombre: item.nombre || pid, cantidad: 0, ingresos: 0 };
           current.cantidad += Number(item.cantidad || 0);
           current.ingresos += Number(item.cantidad || 0) * Number(item.precioUnitario || 0);
-          productStats.set(pid, current);
+          stats.set(pid, current);
         }
       }
     }
 
-    const topProductos = Array.from(productStats.entries())
-      .map(([productoId, stats]) => ({
-        productoId,
-        nombre: stats.nombre,
-        cantidad: stats.cantidad,
-        ingresos: stats.ingresos,
-      }))
-      .filter(p => p.cantidad > 0)
-      .sort((a, b) => b.cantidad - a.cantidad)
-      .slice(0, 10);
+    const ordenarStats = (stats: Map<string, { nombre: string; cantidad: number; ingresos: number }>) =>
+      Array.from(stats.entries())
+        .map(([productoId, s]) => ({ productoId, nombre: s.nombre, cantidad: s.cantidad, ingresos: s.ingresos }))
+        .filter((p) => p.cantidad > 0);
+
+    const platosOrdenados = ordenarStats(platoStats);
+    const inventarioOrdenado = ordenarStats(inventarioStats);
+
+    const topPlatos = [...platosOrdenados].sort((a, b) => b.cantidad - a.cantidad).slice(0, 10);
+    const topProductos = [...inventarioOrdenado].sort((a, b) => b.cantidad - a.cantidad).slice(0, 10);
+    // Menos vendidos: solo entre platos que SÍ se vendieron al menos una vez —
+    // uno que nunca se pidió no está en platoStats (viene de ventas reales,
+    // no del catálogo completo de la carta), así que esto no reemplaza un
+    // reporte de "platos sin ninguna venta". Queda acotado a Carta/Menú
+    // (igual que antes de separar los rankings): es la lista que sirve para
+    // decidir qué sacar de la carta, no para decidir stock de inventario.
+    const productosMenosVendidos = [...platosOrdenados].sort((a, b) => a.cantidad - b.cantidad).slice(0, MENOS_VENDIDOS_LIMITE);
+
+    const estadisticasTicket = calcularEstadisticasTicket(ventas.map((v) => Number(v.total)));
 
     return {
       fecha: gte,
@@ -240,6 +275,9 @@ export class AppService {
       totalVentas: ventas.length,
       ingresosTotales: totalIngresos,
       ventasPorHora,
+      productosMenosVendidos,
+      estadisticasTicket,
+      topPlatos,
       topProductos,
     };
   }

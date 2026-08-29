@@ -4,6 +4,8 @@ import type {
   CambiarRolPayload,
   CambiarEstadoPayload,
   CrearUsuarioPayload,
+  ActualizarUsuarioPayload,
+  CambiarPasswordUsuarioPayload,
   UsuarioDto,
   ListarUsuariosQuery,
   UsuarioListResponse,
@@ -42,6 +44,22 @@ export async function cambiarRol(id: string, payload: CambiarRolPayload): Promis
 export async function cambiarEstado(id: string, payload: CambiarEstadoPayload): Promise<UsuarioDto> {
   const response = await client.patch<UsuarioDto | { usuario: UsuarioDto }>(
     `/identidad/usuarios/${id}/estado`,
+    payload,
+  );
+  return unwrapEntity<UsuarioDto>(response, 'usuario');
+}
+
+export async function actualizar(id: string, payload: ActualizarUsuarioPayload): Promise<UsuarioDto> {
+  const response = await client.patch<UsuarioDto | { usuario: UsuarioDto }>(
+    `/identidad/usuarios/${id}`,
+    payload,
+  );
+  return unwrapEntity<UsuarioDto>(response, 'usuario');
+}
+
+export async function cambiarPassword(id: string, payload: CambiarPasswordUsuarioPayload): Promise<UsuarioDto> {
+  const response = await client.patch<UsuarioDto | { usuario: UsuarioDto }>(
+    `/identidad/usuarios/${id}/password`,
     payload,
   );
   return unwrapEntity<UsuarioDto>(response, 'usuario');

@@ -28,7 +28,11 @@ model Mesa {
   // Unir mesas: todas las mesas de un mismo grupo (incluida la anfitriona)
   // comparten el mismo grupoId = id de la mesa anfitriona. null = no unida.
   grupoId        String?
-  grupo          Mesa?      @relation("GrupoMesas", fields: [grupoId], references: [id])
+  // onDelete Restrict explicito (no el default SetNull de una FK opcional):
+  // asi lo creo la migracion 20260809040000_unir_mesas y hay una razon de
+  // negocio para no cambiarlo — borrar una mesa que sigue siendo anfitriona
+  // de un grupo debe fallar, no des-agrupar en silencio a las demas mesas.
+  grupo          Mesa?      @relation("GrupoMesas", fields: [grupoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   mesasDelGrupo  Mesa[]     @relation("GrupoMesas")
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt

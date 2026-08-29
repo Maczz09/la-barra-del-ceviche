@@ -53,7 +53,9 @@ vi.mock('../../components/ui/icons', () => ({
     Check: () => <svg data-testid="icon-check" />,
     Pedidos: () => <svg data-testid="icon-pedidos" />,
     Close: () => <svg data-testid="icon-close" />,
-    Layers: () => <svg data-testid="icon-layers" />
+    Layers: () => <svg data-testid="icon-layers" />,
+    Cocina: () => <svg data-testid="icon-cocina" />,
+    Drink: () => <svg data-testid="icon-drink" />
   }
 }));
 
@@ -62,8 +64,8 @@ vi.mock('../../components/ui/Stat', () => ({
 }));
 
 const mockCategorias = [
-  { id: 'cat1', nombre: 'Platos de Fondo' },
-  { id: 'cat2', nombre: 'Bebidas' }
+  { id: 'cat1', nombre: 'Platos de Fondo', area: 'COCINA' },
+  { id: 'cat2', nombre: 'Bebidas', area: 'BARRA' }
 ];
 
 const mockProductos = [
@@ -103,6 +105,31 @@ describe('CartaScreen', () => {
     
     // Search
     fireEvent.change(screen.getByPlaceholderText('Buscar plato…'), { target: { value: 'Lomo' } });
+  });
+
+  it('el filtro de estación (Cocina/Barra) oculta las categorías y platos de la otra área', () => {
+    render(<CartaScreen />);
+
+    // Ambas categorías visibles con "Todas las estaciones"
+    expect(screen.getAllByText(/Platos de Fondo/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Bebidas/i).length).toBeGreaterThan(0);
+    expect(screen.getByText('Lomo Saltado')).toBeInTheDocument();
+    expect(screen.getByText('Chicha')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Cocina/i }));
+
+    // Solo la categoría/plato de Cocina queda visible
+    expect(screen.getAllByText(/Platos de Fondo/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Bebidas/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Lomo Saltado')).toBeInTheDocument();
+    expect(screen.queryByText('Chicha')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Barra$/i }));
+
+    expect(screen.queryByText(/Platos de Fondo/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Bebidas/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Lomo Saltado')).not.toBeInTheDocument();
+    expect(screen.getByText('Chicha')).toBeInTheDocument();
   });
 
   it('muestra "Padre › Hijo" para platos en una subcategoría', () => {

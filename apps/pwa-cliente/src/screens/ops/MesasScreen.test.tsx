@@ -8,6 +8,7 @@ import { useAuthStore } from '../../store/auth.store';
 import { useMesasQuery } from '../../hooks/queries/useMesasQuery';
 import { useUbicacionesQuery } from '../../hooks/queries/useUbicacionesQuery';
 import { useCuentasQuery } from '../../hooks/queries/useCuentasQuery';
+import { useAnularAtencionMesaMutation, useAnularItemMutations } from '../../hooks/queries/usePedidosQuery';
 import { useToast } from '../../components/ui/ToastProvider';
 import { BrowserRouter } from 'react-router-dom';
 
@@ -17,6 +18,7 @@ vi.mock('../../store/auth.store');
 vi.mock('../../hooks/queries/useMesasQuery');
 vi.mock('../../hooks/queries/useUbicacionesQuery');
 vi.mock('../../hooks/queries/useCuentasQuery');
+vi.mock('../../hooks/queries/usePedidosQuery');
 vi.mock('../../components/ui/ToastProvider', () => ({ useToast: vi.fn() }));
 vi.mock('../../components/comandero/Comandero', () => ({
   Comandero: (props: any) => (
@@ -44,6 +46,8 @@ describe('MesasScreen', () => {
       crearUbicacion: vi.fn(), actualizarUbicacion: vi.fn(), eliminarUbicacion: vi.fn(), clearFeedback: vi.fn(),
     });
     (useCuentasQuery as any).mockReturnValue({ cuentaActiva: null, loading: false });
+    (useAnularAtencionMesaMutation as any).mockReturnValue({ saving: false, anularAtencionMesa: vi.fn().mockResolvedValue({ itemsCancelados: 0, itemsConMerma: 0, itemsMantenidosParaCobro: 0, mesaLiberada: true }) });
+    (useAnularItemMutations as any).mockReturnValue({ saving: false, avanzarItem: vi.fn().mockResolvedValue(undefined), anularItemPreparado: vi.fn().mockResolvedValue({}) });
     (useToast as any).mockReturnValue({ toast: vi.fn() });
   });
 
@@ -240,6 +244,68 @@ describe('MesasScreen', () => {
     fireEvent.click(tiles[0]);
 
     expect(screen.getByRole('button', { name: 'Separar' })).toBeDisabled();
+  });
+
+  it('CU-02: anula la atención de una mesa ocupada y muestra el resultado', async () => {
+    const anularAtencionMesa = vi.fn().mockResolvedValue({ itemsCancelados: 1, itemsConMerma: 0, itemsMantenidosParaCobro: 1, mesaLiberada: false });
+    const toast = vi.fn();
+    (useAnularAtencionMesaMutation as any).mockReturnValue({ saving: false, anularAtencionMesa });
+    (useToast as any).mockReturnValue({ toast });
+    (useMesasQuery as any).mockReturnValue({
+      mesas: [{ id: 'm1', numero: '01', numeroRaw: 1, capacidad: 4, ubicacion: 'Terraza', estado: 'OCUPADA' }],
+      fetch: vi.fn(), crearMesa: vi.fn(), unirMesas: vi.fn(), separarMesas: vi.fn(), clearFeedback: vi.fn(),
+    });
+    (useCuentasQuery as any).mockReturnValue({
+      cuentaActiva: {
+        pedidos: [{
+          meseroNombre: 'Ana', createdAt: new Date().toISOString(),
+          items: [{ id: 'i-1', nombre: 'Cerveza', cantidad: 1, subtotal: 10, estado: 'ENTREGADO', area: 'DIRECTO' }],
+        }],
+      },
+      loading: false,
+    });
+
+    renderScreen();
+    const tiles = screen.getAllByRole('button').filter((b) => b.className.includes('mesa-tile'));
+    fireEvent.click(tiles[0]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Anular atención de esta mesa' }));
+    fireEvent.change(screen.getByLabelText('Motivo'), { target: { value: 'Cliente se retiró' } });
+    fireEvent.click(screen.getByRole('button', { name: /Anular atención de mesa/ }));
+
+    await waitFor(() => expect(anularAtencionMesa).toHaveBeenCalledWith('m1', { motivo: 'Cliente se retiró', itemsConsumidos: [] }));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Atención de mesa anulada' })));
+  });
+
+  it('anula un ítem puntual desde el panel "Cuenta actual" de la mesa (mismo flujo que Pedidos)', async () => {
+    const avanzarItem = vi.fn().mockResolvedValue(undefined);
+    const toast = vi.fn();
+    (useAnularItemMutations as any).mockReturnValue({ saving: false, avanzarItem, anularItemPreparado: vi.fn() });
+    (useToast as any).mockReturnValue({ toast });
+    (useMesasQuery as any).mockReturnValue({
+      mesas: [{ id: 'm1', numero: '01', numeroRaw: 1, capacidad: 4, ubicacion: 'Terraza', estado: 'OCUPADA' }],
+      fetch: vi.fn(), crearMesa: vi.fn(), unirMesas: vi.fn(), separarMesas: vi.fn(), clearFeedback: vi.fn(),
+    });
+    (useCuentasQuery as any).mockReturnValue({
+      cuentaActiva: {
+        pedidos: [{
+          meseroNombre: 'Ana', createdAt: new Date().toISOString(),
+          items: [{ id: 'i-1', nombre: 'Ceviche', cantidad: 1, subtotal: 30, estado: 'PENDIENTE', area: 'COCINA' }],
+        }],
+      },
+      loading: false,
+    });
+
+    renderScreen();
+    const tiles = screen.getAllByRole('button').filter((b) => b.className.includes('mesa-tile'));
+    fireEvent.click(tiles[0]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Anular 1× Ceviche' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mala digitación' }));
+    fireEvent.click(screen.getByRole('button', { name: /Anular ítem/ }));
+
+    await waitFor(() => expect(avanzarItem).toHaveBeenCalledWith('i-1', 'CANCELADO', 'Mala digitación', 'm1'));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Ítem anulado' })));
   });
 
   it('atencion multiple waiters', () => {

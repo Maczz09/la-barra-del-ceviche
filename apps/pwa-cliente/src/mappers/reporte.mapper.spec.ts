@@ -84,6 +84,17 @@ describe('mapResumen', () => {
     expect(vm.topProductos).toEqual([]);
   });
 
+  it('propaga topPlatos tal cual', () => {
+    const platos = [{ nombre: 'Ceviche', cantidad: 3 }];
+    const vm = mapResumen(dto({ topPlatos: platos }));
+    expect(vm.topPlatos).toEqual(platos);
+  });
+
+  it('topPlatos es array vacío si no viene en el DTO', () => {
+    const vm = mapResumen(dto({ topPlatos: undefined }));
+    expect(vm.topPlatos).toEqual([]);
+  });
+
   it('rangoLabel coincide con fechaLabel cuando hasta es el mismo día (o no viene)', () => {
     const sinHasta = mapResumen(dto({ fecha: '2026-06-07' }));
     expect(sinHasta.rangoLabel).toBe(sinHasta.fechaLabel);
@@ -101,6 +112,36 @@ describe('mapResumen', () => {
   it('rangoLabel cae a fechaLabel si hasta es inválida', () => {
     const vm = mapResumen(dto({ fecha: '2026-06-07', hasta: 'NO_VALIDA' }));
     expect(vm.rangoLabel).toBe(vm.fechaLabel);
+  });
+
+  it('propaga productosMenosVendidos tal cual, o array vacío si no viene', () => {
+    const menos = [{ nombre: 'Chicha', cantidad: 1 }];
+    expect(mapResumen(dto({ productosMenosVendidos: menos })).productosMenosVendidos).toEqual(menos);
+    expect(mapResumen(dto({ productosMenosVendidos: undefined })).productosMenosVendidos).toEqual([]);
+  });
+
+  it('mapea estadisticasTicket con labels formateados en moneda', () => {
+    const vm = mapResumen(dto({ estadisticasTicket: { media: 50, mediana: 45, moda: 40 } }));
+    expect(vm.estadisticasTicket.mediana).toBe(45);
+    expect(vm.estadisticasTicket.moda).toBe(40);
+    expect(vm.estadisticasTicket.medianaLabel).not.toBe('Sin ventas');
+    expect(vm.estadisticasTicket.modaLabel).not.toBe('Sin moda repetida');
+  });
+
+  it('estadisticasTicket sin moda (null) muestra "Sin moda repetida"', () => {
+    const vm = mapResumen(dto({ estadisticasTicket: { media: 50, mediana: 45, moda: null } }));
+    expect(vm.estadisticasTicket.modaLabel).toBe('Sin moda repetida');
+  });
+
+  it('estadisticasTicket ausente en el DTO cae a valores por defecto', () => {
+    const vm = mapResumen(dto({ estadisticasTicket: undefined }));
+    expect(vm.estadisticasTicket).toEqual({
+      media: 0,
+      mediana: 0,
+      moda: null,
+      medianaLabel: 'Sin ventas',
+      modaLabel: 'Sin moda repetida',
+    });
   });
 });
 

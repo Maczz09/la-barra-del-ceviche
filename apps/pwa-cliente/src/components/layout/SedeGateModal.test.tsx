@@ -21,7 +21,7 @@ vi.mock('../../api/client', () => ({
   setSedeSeleccionada: vi.fn(),
 }));
 
-const sedeA = { id: 's1', nombre: 'Salitral 1', direccion: 'Av. Salitral 123', activa: true };
+const sedeA = { id: 's1', nombre: 'Sede Central', direccion: 'Av. Principal 123', activa: true };
 const sedeB = { id: 's2', nombre: 'Sede Principal', direccion: null, activa: true };
 const sedeInactiva = { id: 's3', nombre: 'Sede Cerrada', direccion: null, activa: false };
 
@@ -70,7 +70,7 @@ describe('SedeGateModal', () => {
     setup({ sedes: [sedeA, sedeB, sedeInactiva] });
     render(<SedeGateModal />);
     expect(screen.getByText('¿Con qué sede vas a trabajar?')).toBeInTheDocument();
-    expect(screen.getByText('Salitral 1')).toBeInTheDocument();
+    expect(screen.getByText('Sede Central')).toBeInTheDocument();
     expect(screen.getByText('Sede Principal')).toBeInTheDocument();
     expect(screen.queryByText('Sede Cerrada')).not.toBeInTheDocument();
   });
@@ -78,7 +78,7 @@ describe('SedeGateModal', () => {
   it('elegir una sede la guarda, invalida las queries y cierra el modal', () => {
     setup();
     render(<SedeGateModal />);
-    fireEvent.click(screen.getByText('Salitral 1'));
+    fireEvent.click(screen.getByText('Sede Central'));
 
     expect(setSedeSeleccionada).toHaveBeenCalledWith('s1');
     expect(queryClient.invalidateQueries).toHaveBeenCalled();

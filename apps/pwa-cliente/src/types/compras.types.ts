@@ -11,8 +11,19 @@ import type {
   CrearOrdenCompraCommand,
   CrearProveedorCommand,
   InsumoDto as ContractInsumoDto,
+  ActualizarCategoriaInsumoCommand,
+  CategoriaInsumoDto as ContractCategoriaInsumoDto,
+  ConteoInsumosResultadoDto as ContractConteoInsumosResultadoDto,
+  CrearCategoriaInsumoCommand,
+  ConteoInsumoDiferenciaDto as ContractConteoInsumoDiferenciaDto,
   ListarInsumosQuery,
+  ListarMovimientosInsumoQuery,
   ListarOrdenesQuery,
+  MovimientoInsumoDto as ContractMovimientoInsumoDto,
+  MovimientoInsumoTipo as ContractMovimientoInsumoTipo,
+  MovimientoInsumoTipoManual as ContractMovimientoInsumoTipoManual,
+  RegistrarConteoInsumosCommand,
+  RegistrarMovimientoInsumoCommand,
   ListarProveedoresQuery,
   OrdenCompraDto as ContractOrdenCompraDto,
   OrdenCompraEstado as ContractOrdenCompraEstado,
@@ -52,6 +63,37 @@ export type CrearOrdenPayload = CrearOrdenCompraCommand;
 export type ActualizarOrdenPayload = ActualizarOrdenCompraCommand;
 export type RegistrarRecepcionPayload = RegistrarRecepcionCommand;
 
+// ── Categorías del almacén de cocina (T-50) ──────────────────────
+// Taxonomía PROPIA del almacén: no son las CategoriaDto de la carta, que
+// ordenan lo que se vende y viven en otro servicio.
+
+export type CategoriaInsumoDto = ContractCategoriaInsumoDto;
+export type CrearCategoriaInsumoPayload = CrearCategoriaInsumoCommand;
+export type ActualizarCategoriaInsumoPayload = ActualizarCategoriaInsumoCommand;
+
+// ── Movimientos de insumo / almacén de cocina (T-50) ──────────────
+
+export const MovimientoInsumoTipo = {
+  EntradaCompra: 'ENTRADA_COMPRA',
+  EntradaManual: 'ENTRADA_MANUAL',
+  EntradaDevolucion: 'ENTRADA_DEVOLUCION',
+  SalidaConsumo: 'SALIDA_CONSUMO',
+  SalidaMerma: 'SALIDA_MERMA',
+  AjusteConteo: 'AJUSTE_CONTEO',
+} as const satisfies Record<string, ContractMovimientoInsumoTipo>;
+export type MovimientoInsumoTipo = ContractMovimientoInsumoTipo;
+
+/** Los tipos que se registran a mano. ENTRADA_COMPRA la escribe solo la
+ *  recepción de una OC, y AJUSTE_CONTEO solo el cuadre en lote. */
+export type MovimientoInsumoTipoManual = ContractMovimientoInsumoTipoManual;
+
+export type MovimientoInsumoDto = ContractMovimientoInsumoDto;
+export type ConteoInsumosResultadoDto = ContractConteoInsumosResultadoDto;
+export type ConteoInsumoDiferenciaDto = ContractConteoInsumoDiferenciaDto;
+export type RegistrarMovimientoInsumoPayload = RegistrarMovimientoInsumoCommand;
+export type RegistrarConteoInsumosPayload = RegistrarConteoInsumosCommand;
+export type ListarMovimientosInsumoPayload = ListarMovimientosInsumoQuery;
+
 // ── ViewModels (campos derivados para la UI) ──────────────────────
 
 export interface ProveedorVM extends ProveedorDto {
@@ -78,6 +120,17 @@ export interface OrdenCompraVM extends Omit<OrdenCompraDto, 'items'> {
   puedeCerrar: boolean;
   puedeAnular: boolean;
   puedeEditar: boolean;
+}
+
+export interface MovimientoInsumoVM extends MovimientoInsumoDto {
+  tipoLabel: string;
+  tipoClass: string;
+  /** Delta con signo explícito ("−2.5 kg" / "+10 kg"): en un kardex el sentido
+   *  del movimiento tiene que leerse de un vistazo. */
+  deltaLabel: string;
+  esSalida: boolean;
+  costoTotalLabel: string;
+  fechaLabel: string;
 }
 
 export interface OrdenDetalle {

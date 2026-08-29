@@ -9,7 +9,8 @@ import { useSedesQuery } from '../../hooks/queries/useSedesQuery';
 import { useAuthStore } from '../../store/auth.store';
 import { Icons } from '../../components/ui/icons';
 import { StatKpi } from '../../components/ui/StatKpi';
-import type { CrearUsuarioPayload, RolUsuario } from '../../types/usuario.types';
+import { EditarUsuarioModal } from './EditarUsuarioModal';
+import type { CrearUsuarioPayload, RolUsuario, UsuarioVM } from '../../types/usuario.types';
 
 const ROLES: { value: RolUsuario; label: string }[] = [
   { value: 'ADMIN', label: 'Admin' },
@@ -37,6 +38,7 @@ const INITIAL_FORM: CrearUsuarioPayload = {
   password: '',
   rol: 'MESERO',
   sedeId: '',
+  telefono: '',
 };
 
 function iniciales(nombre: string): string {
@@ -50,6 +52,7 @@ export function UsuariosScreen() {
   const [form, setForm] = useState<CrearUsuarioPayload>(INITIAL_FORM);
   const [search, setSearch] = useState('');
   const [rolFiltro, setRolFiltro] = useState<string>('');
+  const [editando, setEditando] = useState<UsuarioVM | null>(null);
 
   const filters = useMemo(
     () => ({
@@ -72,8 +75,14 @@ export function UsuariosScreen() {
     crear,
     cambiarRol,
     cambiarEstado,
+    actualizar,
+    cambiarPassword,
     clearFeedback,
   } = useUsuariosQuery(filters);
+
+  const usuarioEditando = editando
+    ? usuarios.find((u) => u.id === editando.id) ?? editando
+    : null;
 
   const { sedes } = useSedesQuery();
   const sedeNombrePorId = useMemo(() => new Map(sedes.map((s) => [s.id, s.nombre])), [sedes]);
@@ -106,6 +115,7 @@ export function UsuariosScreen() {
       nombre: form.nombre.trim(),
       email: form.email.trim(),
       sedeId: form.rol === 'ADMIN' ? undefined : form.sedeId,
+      telefono: form.telefono?.trim() || undefined,
     });
     setForm(INITIAL_FORM);
   };
@@ -221,6 +231,7 @@ export function UsuariosScreen() {
                       <th className="col-mobile-hidden">Creado</th>
                       {puedeGestionar && <th className="cell-action">Cambiar rol</th>}
                       {puedeGestionar && <th className="cell-action">Acceso</th>}
+                      {puedeGestionar && <th className="cell-action">Editar</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -278,6 +289,19 @@ export function UsuariosScreen() {
                             </button>
                           </td>
                         )}
+                        {puedeGestionar && (
+                          <td className="cell-action">
+                            <button
+                              className="icon-btn"
+                              disabled={saving || !online}
+                              title={`Editar a ${usuario.nombre}`}
+                              aria-label={`Editar a ${usuario.nombre}`}
+                              onClick={() => setEditando(usuario)}
+                            >
+                              <Icons.Edit s={16} />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -312,7 +336,13 @@ export function UsuariosScreen() {
                 <div className="field">
                   <label htmlFor="nu-email">Email</label>
                   <div className="input">
-                    <input id="nu-email" required type="email" value={form.email} onChange={(event) => updateForm('email', event.target.value)} placeholder="persona@restoapp.pe" />
+                    <input id="nu-email" required type="email" value={form.email} onChange={(event) => updateForm('email', event.target.value)} placeholder="persona@la-barra-del-ceviche.pe" />
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="nu-telefono">Teléfono</label>
+                  <div className="input">
+                    <input id="nu-telefono" type="tel" value={form.telefono ?? ''} onChange={(event) => updateForm('telefono', event.target.value)} placeholder="Opcional · Ej. 987654321" />
                   </div>
                 </div>
                 <div className="field">
@@ -355,6 +385,20 @@ export function UsuariosScreen() {
           </aside>
         )}
       </div>
+
+      {usuarioEditando && (
+        <EditarUsuarioModal
+          usuario={usuarioEditando}
+          saving={saving}
+          onClose={() => setEditando(null)}
+          onGuardarTelefono={async (telefono) => {
+            await actualizar(usuarioEditando.id, { telefono: telefono || null });
+          }}
+          onCambiarPassword={async (password) => {
+            await cambiarPassword(usuarioEditando.id, password);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -4,7 +4,8 @@ import { Icons, type IconName } from '../../components/ui/icons';
 import { HeroStat } from '../../components/ui/Stat';
 import { fmt, elapsedMin } from '../../utils/format';
 import { useInicioData, type ActividadItem } from '../../hooks/useInicioData';
-import { TopProductosPanel } from './TopProductosPanel';
+import { TopVentasPanel } from './TopVentasPanel';
+import { CartaQrPanel } from './CartaQrPanel';
 
 export function InicioScreen() {
   const navigate = useNavigate();
@@ -16,6 +17,10 @@ export function InicioScreen() {
     items86, stockAlerts, STOCK_BAJO,
     reservasProx, actividad, atencionCount,
   } = useInicioData();
+
+  // IGV incluido en el precio (18%), no un cargo aparte — mismo criterio que
+  // la boleta interna (TicketContent.tsx) y el reporte Z de caja.
+  const igvDelDia = totalVentas - totalVentas / 1.18;
 
   return (
     <div>
@@ -52,6 +57,7 @@ export function InicioScreen() {
         <HeroStat icon="Pedidos" color="var(--purple)" soft="var(--purple-soft)" k="Cuentas del día" v={cuentas} sub={`${cocina.activos} pedido(s) en curso`} />
         <HeroStat icon="Mesas" color="var(--ok)" soft="var(--ok-soft)" k="Mesas ocupadas" v={`${salon.ocupadas}/${salon.total}`} sub={`${ocupPct}% de ocupación`} />
         <HeroStat icon="Clock" color={cocina.demora ? 'var(--danger)' : 'var(--warn)'} soft={cocina.demora ? 'var(--danger-soft)' : 'var(--warn-soft)'} k="Tiempo cocina" v={`${cocina.prom}m`} sub={cocina.demora ? `${cocina.demora} en demora` : 'sin demoras'} />
+        <HeroStat icon="Wallet" color="var(--warn)" soft="var(--warn-soft)" k="IGV del día" v={fmt(igvDelDia)} sub="18%, incluido en el precio" />
       </div>
 
       <div className="module-grid">
@@ -78,7 +84,8 @@ export function InicioScreen() {
             </div>
           </section>
 
-          <TopProductosPanel />
+          <TopVentasPanel titulo="Top platos" campo="topPlatos" />
+          <TopVentasPanel titulo="Top productos" campo="topProductos" />
 
           <PanelActividad actividad={actividad} />
         </div>
@@ -136,6 +143,8 @@ export function InicioScreen() {
               <button className="btn btn-soft btn-sm" onClick={() => go('caja')}>Ir a caja</button>
             </div>
           </section>
+
+          <CartaQrPanel />
 
           <section className="panel">
             <div className="panel-h"><h3>Próximas reservas</h3><span className="spacer" /><span className="pill-soft">hoy</span></div>

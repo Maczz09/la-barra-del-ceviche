@@ -10,6 +10,7 @@ import { useToast } from '../../components/ui/ToastProvider';
 import { useAuthStore } from '../../store/auth.store';
 import { useMesasQuery } from '../../hooks/queries/useMesasQuery';
 import { useCajaQuery } from '../../hooks/queries/useCajaQuery';
+import { useSedeActualQuery } from '../../hooks/queries/useSedesQuery';
 import { fmt, horaOf } from '../../utils/format';
 import { METODO_META, METODOS_ORDEN, computeKpis } from './cajaMeta';
 import { MovimientoModal } from './MovimientoModal';
@@ -22,6 +23,44 @@ import type { MesaVM } from '../../types/mesa.types';
 
 type Modal = null | 'apertura' | 'cierre' | 'egreso' | 'ingreso';
 
+interface GrupoCobro {
+  key: string;
+  /** Mesa anfitriona del grupo — el id que se usa para cobrar (resuelve la cuenta compartida). */
+  mesaId: string;
+  /** "01" sola, o "01 + 02" si están unidas. */
+  numero: string;
+  unida: boolean;
+  ubicacion: string;
+  capacidadTotal: number;
+}
+
+// Mesas unidas comparten una sola cuenta (ver MesaVM.grupoId — id de la mesa
+// anfitriona, compartido por todo el grupo incluida ella misma). Antes el
+// picker las listaba como filas independientes, dando a elegir entre "Mesa
+// 01" y "Mesa 02" para lo que en realidad es un solo cobro — se agrupan acá
+// para que el cajero vea y cobre la cuenta compartida de una sola vez.
+function agruparMesasParaCobro(mesas: MesaVM[]): GrupoCobro[] {
+  const porGrupo = new Map<string, MesaVM[]>();
+  for (const m of mesas) {
+    const key = m.grupoId ?? m.id;
+    const grupo = porGrupo.get(key);
+    if (grupo) grupo.push(m);
+    else porGrupo.set(key, [m]);
+  }
+  return Array.from(porGrupo.entries()).map(([key, grupo]) => {
+    const anfitriona = grupo.find((m) => m.id === key) ?? grupo[0];
+    const numeros = [...grupo].map((m) => m.numero).sort();
+    return {
+      key,
+      mesaId: anfitriona.id,
+      numero: numeros.join(' + '),
+      unida: grupo.length > 1,
+      ubicacion: anfitriona.ubicacion,
+      capacidadTotal: grupo.reduce((sum, m) => sum + m.capacidad, 0),
+    };
+  });
+}
+
 interface MesaCobropickerProps {
   mesas: MesaVM[];
   onSelect: (mesaId: string, mesaNumero?: string) => void;
@@ -29,6 +68,7 @@ interface MesaCobropickerProps {
 }
 
 function MesaCobroPicker({ mesas, onSelect, onClose }: Readonly<MesaCobropickerProps>) {
+  const grupos = useMemo(() => agruparMesasParaCobro(mesas), [mesas]);
   return (
     <div className="modal-wrap">
       <Scrim onClose={onClose} />
@@ -39,14 +79,15 @@ function MesaCobroPicker({ mesas, onSelect, onClose }: Readonly<MesaCobropickerP
           <button className="icon-btn" onClick={onClose}><Icons.Close s={17} /></button>
         </div>
         <div style={{ padding: 20, display: 'grid', gap: 9, maxHeight: '60vh', overflowY: 'auto' }}>
-          {mesas.length === 0 ? (
+          {grupos.length === 0 ? (
             <div className="muted" style={{ fontSize: 13, padding: 8 }}>No hay mesas ocupadas con cuenta para cobrar.</div>
-          ) : mesas.map((m) => (
-            <button key={m.id} className="rep-opt" onClick={() => onSelect(m.id, m.numero)}>
-              <span className="prov-ava" style={{ width: 38, height: 38, fontSize: 13 }}>{m.numero}</span>
+          ) : grupos.map((g) => (
+            <button key={g.key} className="rep-opt" onClick={() => onSelect(g.mesaId, g.numero)}>
+              <span className="prov-ava" style={{ width: 38, height: 38, fontSize: 13 }}>{g.numero}</span>
               <div style={{ flex: 1, textAlign: 'left' }}>
-                <b style={{ fontSize: 14 }}>Mesa {m.numero}</b>
-                <div className="muted" style={{ fontSize: 12 }}>{m.ubicacion} · {m.capacidad} pers</div>
+                <b style={{ fontSize: 14 }}>Mesa {g.numero}</b>
+                {g.unida && <span className="badge badge-info" style={{ marginLeft: 8, fontSize: 10 }}>Unidas · cuenta compartida</span>}
+                <div className="muted" style={{ fontSize: 12 }}>{g.ubicacion} · {g.capacidadTotal} pers</div>
               </div>
               <Icons.ArrowDown s={14} style={{ transform: 'rotate(-90deg)' }} />
             </button>
@@ -64,6 +105,7 @@ export function CajaScreen() {
   const cajero = useAuthStore((s) => s.user);
   const { mesas } = useMesasQuery();
   const { resumen, turno, loading, error, abrirTurno, crearMovimiento, cerrarTurno } = useCajaQuery();
+  const { sede } = useSedeActualQuery();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [modal, setModal] = useState<Modal>(null);
@@ -71,7 +113,13 @@ export function CajaScreen() {
   const [cobroPicker, setCobroPicker] = useState(false);
   const [detalleTx, setDetalleTx] = useState<{ transaccionId: string; cuentaId: string | null } | null>(null);
 
+  const [movSearch, setMovSearch] = useState('');
   const movs = resumen?.movimientos ?? [];
+  const movsFiltrados = useMemo(() => {
+    const q = movSearch.trim().toLowerCase();
+    if (!q) return movs;
+    return movs.filter((m) => (m.cuentaCorrelativo?.toLowerCase().includes(q) ?? false) || m.donde.toLowerCase().includes(q));
+  }, [movs, movSearch]);
   const k = useMemo(() => computeKpis(movs, resumen?.efectivoEsperado ?? 0), [movs, resumen?.efectivoEsperado]);
   const cajeroNombre = cajero?.nombre ?? 'Cajero';
 
@@ -169,7 +217,17 @@ export function CajaScreen() {
           <div className="panel-h">
             <h3>Movimientos del turno</h3>
             <span className="spacer" />
-            <span className="pill-soft">{movs.length} registros</span>
+            <div className="search-box" style={{ maxWidth: 200 }}>
+              <Icons.Search s={16} />
+              <input
+                type="search"
+                placeholder="Buscar por código (A0000001)…"
+                value={movSearch}
+                onChange={(e) => setMovSearch(e.target.value)}
+                aria-label="Buscar movimientos por código de atención"
+              />
+            </div>
+            <span className="pill-soft">{movsFiltrados.length} registros</span>
           </div>
           <div className="mov-table-wrap table-wrap table-wrap-flat">
             <table className="dt">
@@ -177,14 +235,14 @@ export function CajaScreen() {
                 <tr><th>Hora</th><th>Detalle</th><th className="col-mobile-hidden">TX</th><th className="col-mobile-hidden">Método</th><th style={{ textAlign: 'right' }}>Monto</th><th className="cell-action"></th></tr>
               </thead>
               <tbody>
-                {movs.map((m) => (
+                {movsFiltrados.map((m) => (
                   <MovRow key={m.id} m={m} onVerDetalle={m.tipo === 'VENTA' && m.transaccionId ? () => setDetalleTx({ transaccionId: m.transaccionId!, cuentaId: m.cuentaId }) : undefined} />
                 ))}
               </tbody>
             </table>
           </div>
           <div className="mov-list panel">
-            {movs.map((m) => {
+            {movsFiltrados.map((m) => {
               const verDetalle = m.tipo === 'VENTA' && m.transaccionId
                 ? () => setDetalleTx({ transaccionId: m.transaccionId!, cuentaId: m.cuentaId })
                 : undefined;
@@ -202,6 +260,7 @@ export function CajaScreen() {
                   <span className="mc-monto">{fmt(Math.abs(m.monto))}</span>
                   <div className="mc-meta">
                     <span className="badge badge-muted">{METODO_META[m.metodo]?.label ?? m.metodo}</span>
+                    {m.cuentaCorrelativo && <span className="muted mono" style={{ fontSize: 11 }}>{m.cuentaCorrelativo}</span>}
                     {verDetalle && <span className="muted" style={{ fontSize: 11 }}>Ver detalle</span>}
                   </div>
                 </div>
@@ -322,6 +381,7 @@ export function CajaScreen() {
         <CierreDrawer
           k={k}
           cajeroNombre={cajeroNombre}
+          sede={sede}
           onClose={() => setModal(null)}
           onDone={(...args) => { void (async (denominaciones) => {
             try {
@@ -368,7 +428,9 @@ function MovRow({ m, onVerDetalle }: Readonly<{ m: MovimientoCajaDto; onVerDetal
         </div>
       </td>
       <td className="col-mobile-hidden">
-        {m.transaccionId ? <span className="mono muted">{m.transaccionId.slice(0, 8)}</span> : <span className="muted">—</span>}
+        {m.transaccionId
+          ? <span className="mono muted">{m.cuentaCorrelativo ?? m.transaccionId.slice(0, 8)}</span>
+          : <span className="muted">—</span>}
       </td>
       <td className="col-mobile-hidden">{apertura ? <span className="muted">—</span> : <span className="row" style={{ gap: 7 }}><span className={`pay-ic ${meta.cls}`} style={{ width: 20, height: 20, fontSize: 10 }}>{meta.abbr}</span>{meta.label}</span>}</td>
       <td className="num">

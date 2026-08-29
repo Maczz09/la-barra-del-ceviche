@@ -5,7 +5,7 @@ import * as comanda from './comanda';
 import type { CartLine } from './comanda';
 import type { ProductoVM } from '../types/inventario.types';
 
-function producto(id: string, precio: number, categoriaNombre: string | null = 'Platos'): ProductoVM {
+function producto(id: string, precio: number, categoriaNombre: string | null = 'Platos', stockActual: number | null = null): ProductoVM {
   return {
     id,
     categoriaId: 'c1',
@@ -15,14 +15,14 @@ function producto(id: string, precio: number, categoriaNombre: string | null = '
     precio,
     precioLabel: `S/ ${precio}`,
     disponible: true,
-    stockActual: null,
+    stockActual,
     stockLabel: '',
     stockClass: '',
   };
 }
 
-function line(id: string, precio: number, cantidad: number, notas = '', categoriaNombre: string | null = 'Platos'): CartLine {
-  return { producto: producto(id, precio, categoriaNombre), cantidad, notas, noteOpen: false };
+function line(id: string, precio: number, cantidad: number, notas = '', categoriaNombre: string | null = 'Platos', stockActual: number | null = null): CartLine {
+  return { producto: producto(id, precio, categoriaNombre, stockActual), cantidad, notas, noteOpen: false };
 }
 
 describe('domain/comanda — reducers de líneas', () => {
@@ -93,15 +93,20 @@ describe('domain/comanda — contextoValido', () => {
 });
 
 describe('domain/comanda — buildItems', () => {
-  it('mapea a payload con área BAR para Bebidas y COCINA para el resto', () => {
+  it('mapea a payload con área BAR para productos con stock (Inventario) y COCINA para el resto (Carta)', () => {
     const items = comanda.buildItems([
-      line('a', 10, 2, 'sin hielo', 'Bebidas'),
-      line('b', 20, 1, '', 'Platos'),
+      line('a', 10, 2, 'sin hielo', 'Cerveza', 24),
+      line('b', 20, 1, '', 'Platos', null),
     ]);
     expect(items).toEqual([
       { productoId: 'a', cantidad: 2, area: 'BAR', notas: 'sin hielo' },
       { productoId: 'b', cantidad: 1, area: 'COCINA', notas: '' },
     ]);
+  });
+
+  it('un producto con stock en 0 sigue siendo BAR (0 no es null)', () => {
+    const items = comanda.buildItems([line('a', 10, 1, '', 'Gaseosas', 0)]);
+    expect(items[0].area).toBe('BAR');
   });
 });
 

@@ -5,7 +5,7 @@ import { useState, type SubmitEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth.store';
 import { ApiError } from '../../api/client';
-import { APP_NAME } from '../../config';
+import { APP_NAME, APP_LOGO, PLATFORM_CREDIT } from '../../config';
 
 export function LoginScreen() {
   const login = useAuthStore((s) => s.login);
@@ -47,15 +47,18 @@ export function LoginScreen() {
   return (
     <div className="login-wrap" data-screen-label="Login">
       {/* Panel izquierdo: branding premium con gradiente y grid */}
-      <div className="login-art">
-        <div className="row" style={{ gap: 12 }}>
-          <div className="brand-logo" style={{ width: 42, height: 42, fontSize: 21 }}>{APP_NAME.charAt(0)}</div>
-          <div>
-            <b style={{ fontSize: 19, fontWeight: 800 }}>{APP_NAME}</b>
-            <div style={{ opacity: 0.65, fontSize: 12, fontWeight: 600 }}>Sistema operativo de restobar</div>
+      <div className={`login-art${APP_LOGO ? ' login-art-big-logo' : ''}`}>
+        {!APP_LOGO && (
+          <div className="row" style={{ gap: 12 }}>
+            <div className="brand-logo" style={{ width: 42, height: 42, fontSize: 21 }}>{APP_NAME.charAt(0)}</div>
+            <div>
+              <b style={{ fontSize: 19, fontWeight: 800 }}>{APP_NAME}</b>
+              <div style={{ opacity: 0.65, fontSize: 12, fontWeight: 600 }}>Sistema operativo de restobar</div>
+            </div>
           </div>
-        </div>
+        )}
         <div>
+          {APP_LOGO && <img className="login-logo-big" src={APP_LOGO} alt={APP_NAME} />}
           <h2 style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-.03em', lineHeight: 1.1, maxWidth: 380, margin: 0 }}>
             La consola de operación de tu salón, cocina y caja.
           </h2>
@@ -71,6 +74,7 @@ export function LoginScreen() {
             <LockIcon /> Seguro por rol
           </span>
         </div>
+        <div className="login-watermark">{PLATFORM_CREDIT}</div>
       </div>
 
       {/* Panel derecho: formulario con efecto de tarjeta flotante y orbes de fondo */}
@@ -81,7 +85,9 @@ export function LoginScreen() {
         <form className="login-card" onSubmit={submit}>
           {/* Cabecera de marca para dispositivos móviles (se oculta en pantallas grandes) */}
           <div className="login-mobile-brand">
-            <div className="brand-logo" style={{ width: 38, height: 38, fontSize: 19 }}>{APP_NAME.charAt(0)}</div>
+            <div className={`brand-logo${APP_LOGO ? ' has-img' : ''}`} style={{ width: 38, height: 38, fontSize: 19 }}>
+              {APP_LOGO ? <img src={APP_LOGO} alt="" /> : APP_NAME.charAt(0)}
+            </div>
             <div>
               <b style={{ fontSize: 17, fontWeight: 800 }}>{APP_NAME}</b>
               <div style={{ opacity: 0.6, fontSize: 11, fontWeight: 600 }}>Sistema de restobar</div>
@@ -111,7 +117,7 @@ export function LoginScreen() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="tu@restoapp.pe"
+                placeholder="tu@la-barra-del-ceviche.pe"
                 required
                 autoComplete="email"
                 autoFocus

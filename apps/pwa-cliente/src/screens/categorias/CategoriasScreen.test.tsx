@@ -14,8 +14,8 @@ vi.mock('../../hooks/queries/useInventarioQuery', () => ({
 }));
 
 const mockCategorias = [
-  { id: 'cat1', nombre: 'Bebidas', descripcion: 'Frías y calientes' },
-  { id: 'cat2', nombre: 'Postres', descripcion: null },
+  { id: 'cat1', nombre: 'Bebidas', descripcion: 'Frías y calientes', area: 'COCINA' },
+  { id: 'cat2', nombre: 'Postres', descripcion: null, area: 'COCINA' },
 ];
 
 const mockProductos = [
@@ -46,10 +46,10 @@ describe('CategoriasScreen', () => {
     vi.mocked(useInventarioQuery).mockReturnValue(baseMock() as any);
   });
 
-  it('pide productos con un limit permitido por el backend (<=100)', () => {
+  it('pide productos con un limit permitido por el backend (<=500)', () => {
     render(<CategoriasScreen />);
     const [, options] = vi.mocked(useInventarioQuery).mock.calls[0];
-    expect((options as any).limit).toBeLessThanOrEqual(100);
+    expect((options as any).limit).toBeLessThanOrEqual(500);
   });
 
   it('renderiza la lista con el conteo de productos por categoría', () => {
@@ -73,7 +73,7 @@ describe('CategoriasScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Crear categoría/i }));
 
     await waitFor(() => {
-      expect(crearCategoria).toHaveBeenCalledWith({ nombre: 'Entradas', descripcion: undefined, parentId: undefined });
+      expect(crearCategoria).toHaveBeenCalledWith({ nombre: 'Entradas', descripcion: undefined, parentId: undefined, area: 'COCINA' });
     });
   });
 
@@ -87,7 +87,7 @@ describe('CategoriasScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Crear categoría/i }));
 
     await waitFor(() => {
-      expect(crearCategoria).toHaveBeenCalledWith({ nombre: 'Bebidas Calientes', descripcion: undefined, parentId: 'cat1' });
+      expect(crearCategoria).toHaveBeenCalledWith({ nombre: 'Bebidas Calientes', descripcion: undefined, parentId: 'cat1', area: 'COCINA' });
     });
   });
 

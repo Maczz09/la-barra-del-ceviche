@@ -1,6 +1,10 @@
-# RestoApp.pe — Plataforma de gestión para restobar
+# La Barra del Ceviche — sistema de gestión
 
-Monorepo **Nx** con una arquitectura de **microservicios event-driven** (NestJS) y una **PWA** (React + Vite). Cada servicio es dueño de su base de datos (database-per-service) y se comunica de forma asíncrona vía **RabbitMQ** (topic exchange) y, donde hace falta consistencia inmediata, de forma síncrona vía HTTP con circuit breaker. Todo el tráfico del cliente entra por un único **API Gateway (Kong)**.
+Proyecto basado en **RestoApp**, del **Ingeniero en Sistemas e Informática Max Alessandro García López**.
+
+Esta base fue preparada para La Barra del Ceviche y conserva la arquitectura funcional de RestoApp: monorepo **Nx**, microservicios event-driven en NestJS y una PWA React + Vite. Cada servicio es dueño de su base de datos y se comunica de forma asíncrona vía RabbitMQ; todo el tráfico del cliente entra por Kong.
+
+> La migración a aplicación de escritorio, servidor para la red local, dirección compartible, QR estable y estación de cocina está planteada en `docs/plan-tauri-servidor-local.md`. Su implementación queda detenida hasta aprobación.
 
 ```
 ┌──────────────┐      :8000 (Kong)        ┌────────────────────────────────────────┐
@@ -12,6 +16,7 @@ Monorepo **Nx** con una arquitectura de **microservicios event-driven** (NestJS)
         │                         ┌─────────────────────────────────────────────────┐
         └──── eventos en vivo ────│ identidad · mesas · pedidos · cuentas · reservas │
                                   │ inventario · notificaciones · caja · reportes    │
+                                  │ facturacion · compras                            │
                                   └───────┬───────────────────────┬──────────────────┘
                                           │ Outbox transaccional  │ Postgres por servicio
                                           ▼
@@ -24,7 +29,7 @@ Monorepo **Nx** con una arquitectura de **microservicios event-driven** (NestJS)
 
 | Carpeta | Contenido |
 |---------|-----------|
-| `apps/servicio-*` | 10 microservicios NestJS + sus suites e2e (`*-e2e`) |
+| `apps/servicio-*` | 11 microservicios NestJS + sus suites e2e (`*-e2e`) |
 | `apps/pwa-cliente` | Frontend PWA (React 19, Vite, React Query, React Router v7) |
 | `libs/contracts` | Contratos compartidos: comandos/queries por dominio, routing keys, envelope de eventos |
 | `libs/shared-auth` | Guard JWT + estrategia Passport + validación CSRF (double-submit) |
@@ -48,12 +53,13 @@ Monorepo **Nx** con una arquitectura de **microservicios event-driven** (NestJS)
 | caja | 3009 | Turnos, pagos, arqueo, cierre Z | CuentaAbierta, CuentaCerrada |
 | reportes | 3010 | Reportes de ventas | CuentaCerrada |
 | facturacion | 3011 | Boletas/facturas electrónicas SUNAT (firma XMLDSig, multi-RUC) | CuentaCerrada |
+| compras | 3012 | Proveedores, insumos, órdenes de compra, comprobantes (foto → WebP + PDF) | — |
 
-> **Frontend ↔ backend:** todos los módulos de la PWA consumen el backend real a través de Kong (`:8000`). **Excepción:** el módulo **Compras** es actualmente **mock** (`apps/pwa-cliente/src/data/compras.mock.ts`), sin microservicio asociado — alcance pendiente.
+> **Frontend ↔ backend:** todos los módulos de la PWA consumen el backend real a través de Kong (`:8000`) — no queda ningún módulo mock.
 
 ## Patrones clave
 
-- **Transactional Outbox** en los 9 servicios: el evento se persiste en la misma transacción que el cambio de estado y un `OutboxProcessor` (cron 1s) lo publica con reintentos (5 → `FAILED`), purga e idempotencia.
+- **Transactional Outbox** en los 11 servicios: el evento se persiste en la misma transacción que el cambio de estado y un `OutboxProcessor` (cron 1s) lo publica con reintentos (5 → `FAILED`), purga e idempotencia.
 - **Idempotencia de consumidores:** claim atómico de `idempotencyKey` (p.ej. por `pedido.id`) antes de procesar.
 - **Resiliencia:** retry interceptor en consumidores + circuit breaker en llamadas síncronas (pedidos→mesas, pedidos→inventario, caja→cuentas).
 - **Seguridad:** JWT en cookie `httpOnly`, CSRF double-submit (`X-CSRF-Token`), `helmet`, CORS restrictivo, `ValidationPipe` whitelist, `GlobalExceptionFilter`, Swagger solo fuera de producción, fail-fast sin `RABBITMQ_URI`/`CORS_ORIGIN` en prod, graceful shutdown.
@@ -61,7 +67,12 @@ Monorepo **Nx** con una arquitectura de **microservicios event-driven** (NestJS)
 ## Desarrollo
 
 ```sh
-# Infra (RabbitMQ, Postgres x9, Kong, Jaeger, Prometheus, Grafana)
+# Primera vez en esta máquina: genera infra/secrets/jwt-dev.env (par de claves
+# JWT RS256 de desarrollo) — sin esto, el compose falla porque Kong exige ese
+# env_file y no viene en el repo (son credenciales, van gitignored).
+npm run dev:keys
+
+# Infra (RabbitMQ, Postgres x11, Kong, Jaeger, Prometheus, Grafana)
 docker compose -f infra/docker-compose.yml --profile infra up -d
 
 # Servicio individual
@@ -72,7 +83,7 @@ npm exec nx serve pwa-cliente
 npm exec nx run-many -- --target=lint --all
 npm exec nx run-many -- --target=typecheck --all
 npm exec nx run-many -- --target=build --all
-npm exec nx run @org/source:test   # vitest raíz: recoge *.spec de servicios + pwa + shared-auth
+npm exec nx run @org/source:test   # vitest raíz: *.spec de pwa + shared-auth (los servicios NestJS corren su propia suite Jest vía su target `test` de nx, no acá)
 npm exec nx run-many -- --target=e2e --all --parallel=1   # contra stack Docker/Kong levantado
 ```
 
@@ -81,15 +92,25 @@ npm exec nx run-many -- --target=e2e --all --parallel=1   # contra stack Docker/
 
 > **Estado actual de Calidad:** 100% de tests exitosos en backend y PWA. Quality Gate de SonarQube certificado en **Excellence** (0 bugs, 0 code smells, 81% de cobertura). La cobertura tiene **pisos anti-regresión** en `vitest.config.mts` (objetivo: mantener sobre 80%).
 
-## Despliegue (producción)
+## Despliegue heredado de la base
+
+**CI/CD:** `.github/workflows/deploy.yml` construye y publica las 13 imágenes
+(11 servicios + Kong + PWA) a GHCR en cada push a `main`. `docker-compose.prod.yml`
+las consume por tag (`${REGISTRY}/<servicio>:latest`) y un `watchtower` con
+`--label-enable` las jala y reinicia automáticamente en el host. Este flujo se
+conserva para validación de la base; no es todavía el instalador local propuesto.
+
+Resumen de lo que hay que preparar antes del primer `up -d`:
 
 1. Copiar `.env.example` → `.env` y rellenar **todas** las variables obligatorias. El compose de prod usa `${VAR:?}` y **falla rápido** si faltan secretos.
 2. Variables clave: `DB_PASS`, `RABBITMQ_PASS`, las claves JWT RS256 (`JWT_PRIVATE_KEY` solo en identidad, `JWT_PUBLIC_KEY` + `KONG_JWT_PUBLIC_KEY` en todos), `SERVICE_JWT_SECRET` (tokens S2S), `CORS_ORIGIN` y `KONG_CORS_ORIGINS` (dominio https real de la PWA). Genera el par con `node scripts/generate-jwt-keys.mjs`.
-3. En `apps/pwa-cliente/.env.production`, fijar `VITE_API_BASE_URL` al **dominio https real** (con `secure:true` la cookie no viaja sobre http).
-4. Las migraciones se aplican solas al arrancar cada contenedor vía `prisma migrate deploy` (ver `infra/entrypoint.sh`). **Nunca** usar `db push --accept-data-loss` en prod.
+3. En GitHub → Settings → Actions → Variables, definir `VITE_API_BASE_URL` con el dominio https real: Vite lo hornea en el bundle **al construir la imagen** (no es algo que se lea en runtime ni un `.env.production` que edites a mano — ver `apps/pwa-cliente/Dockerfile`).
+4. `docker login ghcr.io` en el host de destino (los packages son privados) — Watchtower reusa esa misma sesión para los pulls automáticos.
+5. Las migraciones se aplican solas al arrancar cada contenedor vía `prisma migrate deploy` (ver `infra/entrypoint.sh`). **Nunca** usar `db push --accept-data-loss` en prod.
 
 ```sh
-docker compose -f infra/docker-compose.prod.yml up -d
+docker compose -f infra/docker-compose.prod.yml --env-file .env pull
+docker compose -f infra/docker-compose.prod.yml --env-file .env up -d
 ```
 
 ### Escalado horizontal del outbox
@@ -126,7 +147,6 @@ Health en vivo por servicio: `GET /api/health/live · /ready · /dependencies`. 
 
 ## Brechas conocidas
 
-- **Compras/Proveedores** es **mock** en la PWA (`apps/pwa-cliente/src/data/compras.mock.ts`), sin microservicio.
 - El arranque requiere `-f infra/docker-compose.yml --profile all` (no `docker compose up` pelado).
 - Jaeger no publica `16686` en producción (usar túnel — `docs/operacion/jaeger-prod.md`).
 - Alertmanager sin receiver activo.
@@ -138,8 +158,9 @@ Lista viva con owner y acción: [docs/ficha-validacion-operativa-s33.md §10](do
 `infra/docker-compose.yml` y `scripts/poblar-datos.ts` son solo para desarrollo: contienen credenciales demo y datos de prueba. Producción usa `infra/docker-compose.prod.yml` con `.env` real.
 
 ## Documentación
+- `docs/plan-tauri-servidor-local.md` — propuesta pendiente de aprobación para escritorio, LAN, QR, cocina e impresión.
 - `docs/ficha-validacion-operativa-s33.md` — **ficha de validación operativa (S33)**: gates, fitness functions y brechas.
-- `docs/catalogo-servicios.md` — catálogo de los 9 servicios (puertos, BD, eventos, health).
+- `docs/catalogo-servicios.md` — catálogo de los 11 servicios (puertos, BD, eventos, health).
 - `docs/matriz-resiliencia.md` — falla → mecanismo → evidencia → script.
 - `docs/matriz-auditoria.md` — evento crítico → correlationId → estado → actor → eventId.
 - `docs/operacion/` — levantar el sistema, base de datos, RabbitMQ, resiliencia, runbooks.

@@ -40,6 +40,7 @@ export function mapReserva(dto: ReservaDto): ReservaVM {
         }),
     usuarioNombre: dto.usuarioNombre ?? undefined,
     createdAt: dto.createdAt,
+    correlativo: dto.correlativo ?? undefined,
   };
 }
 

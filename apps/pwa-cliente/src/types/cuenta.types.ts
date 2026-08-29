@@ -127,7 +127,11 @@ export interface TransaccionDto {
 
 export interface RegistrarPagoResponse {
   message?: string;
-  transaccion: TransaccionDto;
+  // true cuando no había turno de caja abierto: el pago quedó en cola y se
+  // registrará solo en cuanto se abra un turno — no hay transaccion/ticket
+  // todavía.
+  queued?: boolean;
+  transaccion?: TransaccionDto;
   ticket?: TicketDto;
   // Saldo que queda por cobrar de la cuenta tras este pago; 0 cuando el pago
   // (parcial o único) completó el total y la cuenta quedó cerrada.

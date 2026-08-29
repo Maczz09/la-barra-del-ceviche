@@ -44,7 +44,7 @@ const cases = [
     consumer: 'servicio-pedidos',
     routingKey: RoutingKeys.ProductoActualizado,
     Payload: ProductoActualizadoPayload,
-    sample: { id: 'pr1', nombre: 'Hamburguesa', precio: 50, disponible: true, stockActual: 10 },
+    sample: { id: 'pr1', sedeId: 's1', nombre: 'Hamburguesa', precio: 50, disponible: true, stockActual: 10 },
     breakPath: (s: { id?: string }) => { delete s.id; },
   },
   {

@@ -20,6 +20,9 @@ export interface CuentaRemota {
   // quién cobró). Opcional: cuentas antiguas/sin pedido con mesero no lo traen.
   meseroId?: string;
   meseroNombre?: string;
+  // Código legible de la atención ("A0000001"). Ausente en cuentas
+  // anteriores a este campo.
+  correlativo?: string;
 }
 
 /**
@@ -95,6 +98,44 @@ export class CuentasHttpClient {
       return await this.bulkhead.run(() => this.cerrarCuentaConBreaker(cuentaId, descuento));
     } catch (error) {
       this.throwSiRedTransitoria(error, 'cerrarCuenta', cuentaId);
+      throw error;
+    }
+  }
+
+  // Usado por cerrarTurno para bloquear el cierre si queda algo por cobrar.
+  async listarCuentasAbiertas(sedeId: string): Promise<Array<{ id: string; mesaId: string; numeroMesa?: number; total: number }>> {
+    try {
+      return await this.bulkhead.run(() => this.listarCuentasAbiertasConBreaker(sedeId));
+    } catch (error) {
+      this.throwSiRedTransitoria(error, 'listarCuentasAbiertas', sedeId);
+      throw error;
+    }
+  }
+
+  @CircuitBreakerOptions({
+    timeout: Number(process.env['CUENTAS_TIMEOUT_MS'] ?? 2000) + 500,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30_000,
+  })
+  private async listarCuentasAbiertasConBreaker(sedeId: string): Promise<Array<{ id: string; mesaId: string; numeroMesa?: number; total: number }>> {
+    try {
+      const res = await retryAsync(
+        () =>
+          axios.get<{ cuentas: Array<{ id: string; mesaId: string; numeroMesa?: number; total: number }> }>(
+            `${this.CUENTAS_URL}/abiertas`,
+            {
+              params: { sedeId },
+              timeout: this.READ_TIMEOUT_MS,
+              headers: { Authorization: `Bearer ${this.getServiceToken()}` },
+              httpAgent: this.bulkhead.httpAgent,
+              httpsAgent: this.bulkhead.httpsAgent,
+            },
+          ),
+        { retries: 1, baseMs: 250 },
+      );
+      return res.data.cuentas;
+    } catch (error) {
+      this.contarTimeout(error);
       throw error;
     }
   }

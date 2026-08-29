@@ -1,21 +1,55 @@
 // @vitest-environment jsdom
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { BrowserRouter } from 'react-router-dom';
 import { InventarioScreen } from './InventarioScreen';
 import { ToastProvider } from '../../components/ui/ToastProvider';
 import * as onlineStatusHook from '../../hooks/useOnlineStatus';
 import * as inventarioQueryHook from '../../hooks/queries/useInventarioQuery';
 
 vi.mock('../../components/inventario/ProductoTable', () => ({
-  ProductoTable: ({ onToggleDisponible, onReponer, onReponerQuick, onLoadMore, onStockInput, stockInputs }: any) => (
+  ProductoTable: ({ onToggleDisponible, onReponer, onReponerQuick, onLoadMore, onStockInput, stockInputs, onEditar }: any) => (
     <div data-testid="producto-table">
       <button onClick={() => onToggleDisponible({ id: 'P1', disponible: true })}>Toggle P1</button>
       <button onClick={() => onReponer('P1')}>Reponer P1</button>
       <button onClick={() => onReponerQuick('P1', 5)}>Quick Reponer P1</button>
       <button onClick={() => onLoadMore()}>Load More</button>
       <input data-testid="stock-input-P1" value={stockInputs['P1'] || ''} onChange={(e) => onStockInput('P1', e.target.value)} />
+      <button onClick={() => onEditar({ id: 'P1', nombre: 'Producto 1', categoriaId: 'C1', precio: 10 })}>Editar P1</button>
     </div>
   )
+}));
+
+vi.mock('../../components/inventario/EditarProductoModal', () => ({
+  EditarProductoModal: ({ producto, onSave, onClose }: any) => (
+    <div data-testid="editar-producto-modal">
+      <span>Editando {producto.nombre}</span>
+      <button onClick={() => onSave({ nombre: 'Producto 1 editado', categoriaId: 'C1', precio: 12 })}>Guardar edición</button>
+      <button onClick={onClose}>Cerrar edición</button>
+    </div>
+  )
+}));
+
+// La pantalla lee la sede activa (para la cabecera del PDF) con react-query;
+// estos tests renderizan sin QueryClientProvider, así que se stubea el hook.
+const mockGetTodosLosProductos = vi.fn();
+vi.mock('../../api/inventario.api', () => ({
+  getTodosLosProductos: (...args: any[]) => mockGetTodosLosProductos(...args),
+}));
+
+const mockExportarInventarioPdf = vi.fn();
+vi.mock('../../utils/inventarioPdf', () => ({
+  exportarInventarioPdf: (...args: any[]) => mockExportarInventarioPdf(...args),
+}));
+
+vi.mock('../../hooks/queries/useSedesQuery', () => ({
+  useSedeActualQuery: () => ({ sede: { id: 'S1', nombre: 'Sede Centro' }, loading: false }),
+}));
+
+// La pestaña de almacén trae sus propias queries; acá solo se prueba la de
+// productos de venta, así que se reemplaza por un marcador.
+vi.mock('../../components/inventario/AlmacenCocinaTab', () => ({
+  AlmacenCocinaTab: () => <div data-testid="almacen-cocina-tab" />,
 }));
 
 vi.mock('../../hooks/queries/useMermasQuery', () => ({
@@ -42,9 +76,11 @@ vi.mock('../../components/inventario/NuevoProductoForm', () => ({
 
 function renderScreen() {
   return render(
-    <ToastProvider>
-      <InventarioScreen />
-    </ToastProvider>,
+    <BrowserRouter>
+      <ToastProvider>
+        <InventarioScreen />
+      </ToastProvider>
+    </BrowserRouter>,
   );
 }
 
@@ -60,7 +96,7 @@ describe('InventarioScreen', () => {
     vi.clearAllMocks();
     vi.spyOn(onlineStatusHook, 'useOnlineStatus').mockReturnValue(true);
     vi.spyOn(inventarioQueryHook, 'useInventarioQuery').mockReturnValue({
-      categorias: [{ id: 'C1', nombre: 'Categoría 1' }],
+      categorias: [{ id: 'C1', nombre: 'Categoría 1', area: 'INVENTARIO' }],
       productos: [
         { id: 'P1', nombre: 'Producto 1', categoriaId: 'C1', stockActual: 10, disponible: true, precio: 10, minStock: 5 },
         { id: 'P2', nombre: 'Producto 2', categoriaId: 'C1', stockActual: 0, disponible: false, precio: 5, minStock: 2 }
@@ -230,6 +266,45 @@ describe('InventarioScreen', () => {
     });
   });
 
+  it('abre el modal de edición, guarda y lo cierra', async () => {
+    renderScreen();
+
+    expect(screen.queryByTestId('editar-producto-modal')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Editar P1'));
+    expect(screen.getByTestId('editar-producto-modal')).toBeInTheDocument();
+    expect(screen.getByText('Editando Producto 1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Guardar edición'));
+    await waitFor(() => {
+      expect(mockActualizarProducto).toHaveBeenCalledWith('P1', { nombre: 'Producto 1 editado', categoriaId: 'C1', precio: 12 });
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('editar-producto-modal')).not.toBeInTheDocument();
+    });
+  });
+
+  it('cierra el modal de edición sin guardar', () => {
+    renderScreen();
+    fireEvent.click(screen.getByText('Editar P1'));
+    expect(screen.getByTestId('editar-producto-modal')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Cerrar edición'));
+    expect(screen.queryByTestId('editar-producto-modal')).not.toBeInTheDocument();
+  });
+
+  it('muestra error si falla la actualización del producto', async () => {
+    mockActualizarProducto.mockRejectedValueOnce(new Error('error actualizar'));
+    renderScreen();
+    fireEvent.click(screen.getByText('Editar P1'));
+    fireEvent.click(screen.getByText('Guardar edición'));
+    await waitFor(() => {
+      expect(screen.getByText('No se pudo actualizar el producto')).toBeInTheDocument();
+      expect(screen.getByText('error actualizar')).toBeInTheDocument();
+    });
+    // El modal se mantiene abierto para que el usuario pueda reintentar.
+    expect(screen.getByTestId('editar-producto-modal')).toBeInTheDocument();
+  });
+
   it('catches errors in handleReponer', async () => {
     mockReponerStock.mockRejectedValueOnce(new Error('error handle reponer'));
 
@@ -241,6 +316,84 @@ describe('InventarioScreen', () => {
     await waitFor(() => {
       expect(screen.getByText('No se pudo reponer el stock')).toBeInTheDocument();
       expect(screen.getByText('error handle reponer')).toBeInTheDocument();
+    });
+  });
+
+  describe('descarga de PDF (T-49)', () => {
+    beforeEach(() => {
+      mockGetTodosLosProductos.mockResolvedValue([
+        { id: 'P1', nombre: 'Producto 1', categoriaId: 'C1', stockActual: 10, disponible: true, precio: 10 },
+      ]);
+      mockExportarInventarioPdf.mockResolvedValue('inventario-cuadre_2026-08-24.pdf');
+    });
+
+    it('el botón PDF abre el modal de opciones', () => {
+      renderScreen();
+      fireEvent.click(screen.getByRole('button', { name: /PDF/i }));
+      expect(screen.getByLabelText('Descargar inventario en PDF')).toBeInTheDocument();
+    });
+
+    it('se deshabilita sin conexión: el PDF necesita recorrer todo el inventario', () => {
+      vi.spyOn(onlineStatusHook, 'useOnlineStatus').mockReturnValue(false);
+      renderScreen();
+      expect(screen.getByRole('button', { name: /PDF/i })).toBeDisabled();
+    });
+
+    it('exporta con TODO el inventario, no solo la página en pantalla', async () => {
+      renderScreen();
+      fireEvent.click(screen.getByRole('button', { name: /PDF/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'Descargar PDF' }));
+
+      await waitFor(() => {
+        expect(mockGetTodosLosProductos).toHaveBeenCalledWith({ conStock: true });
+      });
+      expect(mockExportarInventarioPdf).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.objectContaining({ formato: 'cuadre', sedeNombre: 'Sede Centro', filtroLabel: 'Todo el inventario' }),
+      );
+    });
+
+    it('cierra el modal y avisa con el nombre del archivo generado', async () => {
+      renderScreen();
+      fireEvent.click(screen.getByRole('button', { name: /PDF/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'Descargar PDF' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('inventario-cuadre_2026-08-24.pdf')).toBeInTheDocument();
+      });
+      expect(screen.queryByLabelText('Descargar inventario en PDF')).not.toBeInTheDocument();
+    });
+
+    it('avisa si la generación falla y deja el modal abierto para reintentar', async () => {
+      mockGetTodosLosProductos.mockRejectedValueOnce(new Error('sin red'));
+      renderScreen();
+      fireEvent.click(screen.getByRole('button', { name: /PDF/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'Descargar PDF' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('No se pudo generar el PDF')).toBeInTheDocument();
+      });
+      expect(screen.getByLabelText('Descargar inventario en PDF')).toBeInTheDocument();
+    });
+  });
+
+  describe('pestañas (T-50)', () => {
+    it('arranca en productos de venta y puede cambiar al almacén de cocina', () => {
+      renderScreen();
+      expect(screen.getByTestId('producto-table')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Almacén de cocina'));
+
+      expect(screen.getByTestId('almacen-cocina-tab')).toBeInTheDocument();
+      expect(screen.queryByTestId('producto-table')).not.toBeInTheDocument();
+    });
+
+    it('en el almacén no se ofrecen las acciones de productos de venta', () => {
+      renderScreen();
+      fireEvent.click(screen.getByText('Almacén de cocina'));
+
+      expect(screen.queryByRole('button', { name: /PDF/i })).not.toBeInTheDocument();
+      expect(screen.queryByText('Ver mermas')).not.toBeInTheDocument();
     });
   });
 });

@@ -6,7 +6,7 @@
 //     y tecnologías asistivas. Sin cambios en props ni arquitectura.
 
 import { useLocation, useNavigate } from 'react-router-dom';
-import { APP_CONFIG } from '../../config';
+import { APP_CONFIG, APP_LOGO, PLATFORM_NAME } from '../../config';
 import { useAuthStore } from '../../store/auth.store';
 import { puedeAcceder } from '../../auth/permisos';
 import { useSedeActualQuery } from '../../hooks/queries/useSedesQuery';
@@ -33,12 +33,22 @@ export function Sidebar() {
 
   return (
     <nav className="sidebar" aria-label="Navegación principal">
-      <div className="brand" aria-hidden="true">
-        <div className="brand-logo">{APP_CONFIG.nombreLocal.charAt(0)}</div>
-        <div>
-          <b>{APP_CONFIG.nombreLocal}</b>
-          <small>{ubicacion}</small>
-        </div>
+      <div className={`brand${APP_LOGO ? ' brand-logo-only' : ''}`} aria-hidden="true">
+        {APP_LOGO ? (
+          <>
+            <img className="brand-logo-big" src={APP_LOGO} alt={APP_CONFIG.nombreLocal} />
+            <small>{ubicacion}</small>
+            <span className="brand-by">by {PLATFORM_NAME}</span>
+          </>
+        ) : (
+          <>
+            <div className="brand-logo">{APP_CONFIG.nombreLocal.charAt(0)}</div>
+            <div>
+              <b>{APP_CONFIG.nombreLocal}</b>
+              <small>{ubicacion}</small>
+            </div>
+          </>
+        )}
       </div>
 
       <menu className="nav">

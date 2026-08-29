@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { EventsController } from './events.controller';
 import { AppService } from './app.service';
 import { MesasHttpClient } from './mesas-http.client';
+import { CuentasHttpClient } from './cuentas-http.client';
 import { InventarioHttpClient } from './inventario-http.client';
 import { PedidosSagaService } from './pedidos-saga.service';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -28,13 +29,14 @@ import { RoutingKeys } from '@org/contracts';
     RabbitMQModule.forRoot({
       uri: process.env['RABBITMQ_URI'],
       queue: 'pedidos_queue',
-      bindings: [RoutingKeys.PagoRegistrado, RoutingKeys.MesaCreada, RoutingKeys.MesaActualizada, RoutingKeys.ProductoCreado, RoutingKeys.ProductoActualizado, RoutingKeys.StockInsuficiente]
+      bindings: [RoutingKeys.PagoRegistrado, RoutingKeys.MesaCreada, RoutingKeys.MesaActualizada, RoutingKeys.ProductoCreado, RoutingKeys.ProductoActualizado, RoutingKeys.StockInsuficiente, RoutingKeys.CuentaAsociada]
     }),
   ],
   controllers: [AppController, EventsController],
   providers: [
     AppService,
     MesasHttpClient,
+    CuentasHttpClient,
     InventarioHttpClient,
     PedidosSagaService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },

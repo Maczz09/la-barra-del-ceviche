@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  REGISTRY_NAME: ghcr.io/${{ github.repository_owner }}/nachoppssoa
+  REGISTRY_NAME: ghcr.io/maczz09/la-barra-del-ceviche
 
 jobs:
   build-and-push:
@@ -16,6 +16,11 @@ jobs:
       contents: read
       packages: write
     strategy:
+      # Sin esto, un solo servicio que falla (p. ej. un blip transitorio de
+      # red/GHCR al hacer push) cancela el build-and-push de los otros 12 —
+      # se pierden pushes que sí habrían salido bien, y el log solo muestra
+      # "Cancelled" en vez de la causa real.
+      fail-fast: false
       matrix:
         service:
           - name: servicio-identidad
@@ -65,7 +70,7 @@ jobs:
           - name: pwa-cliente
             dockerfile: apps/pwa-cliente/Dockerfile
             context: .
-            build-args: VITE_API_BASE_URL=https://nachopps-app.duckdns.org
+            build-args: VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
           - name: kong
             dockerfile: infra/kong/Dockerfile
             context: infra/kong

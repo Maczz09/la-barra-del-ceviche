@@ -2,19 +2,28 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as soap from 'soap';
 import archiver from 'archiver';
 import { PassThrough } from 'node:stream';
+import { join } from 'node:path';
 
 export interface EnvioResultado {
   ticket?: string;
   cdrBase64?: string;
 }
 
+// WSDL de billService empaquetado localmente (no se fetchea en vivo): el
+// stack HTTP de `soap` (axios) recibe 401 de la pasarela de SUNAT al pedir
+// el import interno `billService?ns1.wsdl`, aunque la MISMA url responde 200
+// con curl o con `https.get` de Node — verificado a mano contra beta. El
+// contrato (operaciones, tipos) es estático y no cambia entre beta/producción,
+// así que se versiona una copia (`wsdl/billService.wsdl` + su import
+// `billService-ns1.wsdl` + `billService.xsd2.xsd`) y solo el endpoint real de
+// envío (`SUNAT_WSDL_URL`, sin el `?wsdl`) se toma del entorno.
+const WSDL_LOCAL = join(__dirname, 'wsdl/billService.wsdl');
+
 /**
  * Cliente SOAP para el `billService` de SUNAT (sendBill / sendSummary /
  * getStatus). Operaciones y nombres de parámetro (`fileName`, `contentFile`,
- * `ticket`) confirmados contra la documentación pública del servicio — pero
- * NO se pudieron ejercitar contra el WSDL real: hazlo tú en beta
- * (`SUNAT_WSDL_URL` de homologación) en cuanto tengas certificado y SOL de
- * al menos una empresa, antes de dar esto por definitivo.
+ * `ticket`, `applicationResponse`) verificados contra el WSDL/XSD real de
+ * beta (homologación) — confirmado que coinciden con lo que ya mandábamos.
  */
 @Injectable()
 export class SunatSoapClient {
@@ -28,7 +37,8 @@ export class SunatSoapClient {
     const wsdlUrl = process.env['SUNAT_WSDL_URL'];
     if (!wsdlUrl) throw new Error('SUNAT_WSDL_URL no configurado');
 
-    const client = await soap.createClientAsync(wsdlUrl);
+    const client = await soap.createClientAsync(WSDL_LOCAL);
+    client.setEndpoint(wsdlUrl.replace(/\?wsdl\s*$/i, ''));
     // Usuario SOL de SUNAT: se autentica como RUC + usuarioSOL en el campo
     // Username de WS-Security (convención del servicio, no un estándar WSS).
     client.setSecurity(new soap.WSSecurity(`${ruc}${solUsuario}`, solClave, { hasTimeStamp: false }));
@@ -64,7 +74,8 @@ export class SunatSoapClient {
     const zip = await this.zipear(params.nombreArchivo, params.xmlFirmado);
     const [result] = (await (client as unknown as { sendBillAsync: (args: unknown) => Promise<unknown[]> }).sendBillAsync({
       fileName: `${params.nombreArchivo}.zip`,
-      contentFile: zip,
+      // xs:base64Binary: `soap` no serializa Buffers solo — hay que mandar el string ya codificado.
+      contentFile: zip.toString('base64'),
     })) as [{ applicationResponse?: string } | undefined];
     this.logger.log(`sendBill ${params.nombreArchivo}: respuesta recibida`);
     return { cdrBase64: result?.applicationResponse };
@@ -82,7 +93,7 @@ export class SunatSoapClient {
     const zip = await this.zipear(params.nombreArchivo, params.xmlResumen);
     const [result] = (await (client as unknown as { sendSummaryAsync: (args: unknown) => Promise<unknown[]> }).sendSummaryAsync({
       fileName: `${params.nombreArchivo}.zip`,
-      contentFile: zip,
+      contentFile: zip.toString('base64'),
     })) as [{ ticket?: string } | undefined];
     return { ticket: result?.ticket };
   }

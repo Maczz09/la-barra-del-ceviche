@@ -74,12 +74,14 @@ export class EmisionService {
         razonSocial: empresa.razonSocial,
         nombreComercial: empresa.nombreComercial ?? undefined,
         direccion: empresa.direccion ?? undefined,
+        ubigeo: empresa.ubigeo ?? undefined,
+        codigoEstablecimiento: empresa.codigoEstablecimiento,
       },
       cliente: this.datosCliente(dto),
       items,
     });
 
-    const claves = this.certificado.clavesParaSlot(empresa.slot);
+    const claves = await this.certificado.clavesParaSlot(empresa.slot);
     const xmlFirmado = firmarComprobante(xmlSinFirmar, claves);
 
     const [comprobante] = await this.prisma.$transaction([

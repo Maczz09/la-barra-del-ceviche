@@ -23,6 +23,7 @@ export function mapUsuario(dto: UsuarioDto): UsuarioVM {
     createdAt: dto.createdAt,
     createdAtLabel: new Date(dto.createdAt).toLocaleDateString(),
     sedeId: dto.sedeId ?? null,
+    telefono: dto.telefono ?? null,
   };
 }
 

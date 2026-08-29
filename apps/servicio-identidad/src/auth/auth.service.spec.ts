@@ -216,6 +216,75 @@ describe('AuthService — Identidad', () => {
     });
   });
 
+  describe('actualizarUsuario', () => {
+    it('guarda el teléfono y registra auditoría', async () => {
+      mockPrisma.usuario.findUnique.mockResolvedValue(usuarioBase);
+      mockPrisma.usuario.update.mockResolvedValue({ ...usuarioBase, telefono: '987654321' });
+      mockPrisma.auditoriaLog.create.mockResolvedValue({});
+
+      const result = await service.actualizarUsuario('u-001', { telefono: '987654321' }, 'u-002');
+
+      expect(result.telefono).toBe('987654321');
+      expect(mockPrisma.usuario.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'u-001' }, data: { telefono: '987654321' } }),
+      );
+      expect(mockPrisma.auditoriaLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ accion: 'ACTUALIZAR_PERFIL:por:u-002' }) }),
+      );
+    });
+
+    it('vacía el teléfono (null) cuando se manda una cadena vacía o solo espacios', async () => {
+      mockPrisma.usuario.findUnique.mockResolvedValue(usuarioBase);
+      mockPrisma.usuario.update.mockResolvedValue({ ...usuarioBase, telefono: null });
+
+      await service.actualizarUsuario('u-001', { telefono: '   ' }, 'u-002');
+
+      expect(mockPrisma.usuario.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { telefono: null } }),
+      );
+    });
+
+    it('lanza NotFoundException si el usuario no existe', async () => {
+      mockPrisma.usuario.findUnique.mockResolvedValue(null);
+      await expect(
+        service.actualizarUsuario('inexistente', { telefono: '1' }, 'u-002'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('cambiarPasswordUsuario', () => {
+    it('hashea la nueva contraseña, revoca sesiones activas y registra auditoría', async () => {
+      mockPrisma.usuario.findUnique.mockResolvedValue(usuarioBase);
+      mockPrisma.usuario.update.mockResolvedValue({ ...usuarioBase, password: 'hashed_password' });
+      mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 2 });
+      mockPrisma.auditoriaLog.create.mockResolvedValue({});
+
+      const result = await service.cambiarPasswordUsuario('u-001', { password: 'nuevaClave123' }, 'u-002');
+
+      expect(result.id).toBe('u-001');
+      expect(bcrypt.hash).toHaveBeenCalledWith('nuevaClave123', 12);
+      expect(mockPrisma.usuario.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'u-001' },
+          data: expect.objectContaining({ password: 'hashed_password', failedLoginAttempts: 0, lockedUntil: null }),
+        }),
+      );
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId: 'u-001', revokedAt: null } }),
+      );
+      expect(mockPrisma.auditoriaLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ accion: 'RESET_PASSWORD:por:u-002' }) }),
+      );
+    });
+
+    it('lanza NotFoundException si el usuario no existe', async () => {
+      mockPrisma.usuario.findUnique.mockResolvedValue(null);
+      await expect(
+        service.cambiarPasswordUsuario('inexistente', { password: 'nuevaClave123' }, 'u-002'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('login — T-03 lockout', () => {
     it('rechaza usuario con lockedUntil en el futuro', async () => {
       mockPrisma.usuario.findUnique.mockResolvedValue({
@@ -379,6 +448,27 @@ describe('AuthService — Identidad', () => {
 
       expect(result.email).toBe('nuevo@test.com');
       expect(result.rol).toBe('MESERO');
+    });
+
+    it('guarda el teléfono si se lo pasan, y null si se omite o queda en blanco', async () => {
+      mockPrisma.usuario.findUnique.mockResolvedValue(null);
+      mockPrisma.sede.findUnique.mockResolvedValue({ id: 'sede-1', nombre: 'Sede Principal', activa: true });
+      mockPrisma.usuario.create.mockResolvedValue({ ...usuarioBase, sedeId: 'sede-1' });
+      mockPrisma.auditoriaLog.create.mockResolvedValue({});
+
+      await service.crearUsuario({
+        nombre: 'Nuevo', email: 'nuevo@test.com', password: '123456', rol: RolUsuario.Mesero, sedeId: 'sede-1', telefono: '987654321',
+      });
+      expect(mockPrisma.usuario.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ telefono: '987654321' }) }),
+      );
+
+      await service.crearUsuario({
+        nombre: 'Nuevo', email: 'nuevo2@test.com', password: '123456', rol: RolUsuario.Mesero, sedeId: 'sede-1',
+      });
+      expect(mockPrisma.usuario.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ telefono: null }) }),
+      );
     });
 
     it('debe crear un ADMIN sin sede fija aunque no se indique sedeId', async () => {
@@ -675,10 +765,10 @@ describe('AuthService — Identidad', () => {
 
   describe('sedeActual', () => {
     it('un usuario pineado recibe su propia sede, ignorando el query param', async () => {
-      mockPrisma.sede.findUnique.mockResolvedValue({ id: 's1', nombre: 'Salitral 1', direccion: 'Av. X 123', activa: true });
+      mockPrisma.sede.findUnique.mockResolvedValue({ id: 's1', nombre: 'Sede Central', direccion: 'Av. X 123', activa: true });
       const result = await service.sedeActual('s1', 's2');
       expect(mockPrisma.sede.findUnique).toHaveBeenCalledWith({ where: { id: 's1' } });
-      expect(result.sede?.nombre).toBe('Salitral 1');
+      expect(result.sede?.nombre).toBe('Sede Central');
     });
 
     it('un admin general sin sede fija recibe la sede del query param', async () => {
@@ -701,29 +791,53 @@ describe('AuthService — Identidad', () => {
     });
   });
 
-  describe('activarMeserosPorSede', () => {
-    it('activa a todos los MESERO de la sede', async () => {
-      mockPrisma.usuario.updateMany.mockResolvedValue({ count: 3 });
-
-      const count = await service.activarMeserosPorSede('sede-001', true);
-
-      expect(mockPrisma.usuario.updateMany).toHaveBeenCalledWith({
-        where: { sedeId: 'sede-001', rol: 'MESERO' },
-        data: { activo: true },
+  describe('sedePublica (carta pública/QR, sin auth)', () => {
+    it('devuelve solo id/nombre/direccion/telefono de una sede activa', async () => {
+      mockPrisma.sede.findUnique.mockResolvedValue({
+        id: 's1', nombre: 'Sede Central', direccion: 'Av. X 123', ruc: '12345678901', telefono: '987654321', activa: true,
       });
-      expect(count).toBe(3);
+      const result = await service.sedePublica('s1');
+      expect(result.sede).toEqual({ id: 's1', nombre: 'Sede Central', direccion: 'Av. X 123', telefono: '987654321' });
+      expect(result.sede).not.toHaveProperty('ruc');
+      expect(result.sede).not.toHaveProperty('activa');
     });
 
-    it('desactiva a todos los MESERO de la sede', async () => {
-      mockPrisma.usuario.updateMany.mockResolvedValue({ count: 2 });
+    it('devuelve sede null si la sede no existe', async () => {
+      mockPrisma.sede.findUnique.mockResolvedValue(null);
+      const result = await service.sedePublica('no-existe');
+      expect(result.sede).toBeNull();
+    });
 
-      const count = await service.activarMeserosPorSede('sede-001', false);
+    it('devuelve sede null si la sede está desactivada (el QR deja de funcionar)', async () => {
+      mockPrisma.sede.findUnique.mockResolvedValue({ id: 's1', nombre: 'Sede Central', direccion: null, ruc: null, telefono: null, activa: false });
+      const result = await service.sedePublica('s1');
+      expect(result.sede).toBeNull();
+    });
+  });
+
+  describe('activarMeserosPorSede', () => {
+    it('activa solo a los MESERO de la sede indicada', async () => {
+      mockPrisma.usuario.updateMany.mockResolvedValue({ count: 4 });
+
+      const count = await service.activarMeserosPorSede('sede-1', true);
 
       expect(mockPrisma.usuario.updateMany).toHaveBeenCalledWith({
-        where: { sedeId: 'sede-001', rol: 'MESERO' },
+        where: { sedeId: 'sede-1', rol: 'MESERO' },
+        data: { activo: true },
+      });
+      expect(count).toBe(4);
+    });
+
+    it('desactiva a los MESERO de la sede indicada', async () => {
+      mockPrisma.usuario.updateMany.mockResolvedValue({ count: 4 });
+
+      const count = await service.activarMeserosPorSede('sede-1', false);
+
+      expect(mockPrisma.usuario.updateMany).toHaveBeenCalledWith({
+        where: { sedeId: 'sede-1', rol: 'MESERO' },
         data: { activo: false },
       });
-      expect(count).toBe(2);
+      expect(count).toBe(4);
     });
   });
 });

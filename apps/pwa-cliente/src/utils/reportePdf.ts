@@ -2,11 +2,40 @@
 // jspdf/jspdf-autotable se cargan lazy (import dinámico) para no engordar
 // el bundle principal: solo se descargan cuando el usuario pulsa "Exportar".
 
-import type { ResumenVM } from '../types/reporte.types';
+import type { RankingProducto, ResumenVM } from '../types/reporte.types';
 import { APP_NAME } from '../config';
 
 function formatMoney(value: number): string {
   return new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' }).format(value);
+}
+
+// jspdf/jspdf-autotable no resuelven tipos de forma consistente en el import()
+// dinámico bajo este resolver de eslint (tsc sí los resuelve bien) — se tipan
+// acá solo los miembros que de verdad se usan, en vez de `any`.
+interface DocPdf {
+  setFontSize(size: number): void;
+  text(text: string, x: number, y: number): void;
+  lastAutoTable?: { finalY: number };
+}
+type AutoTableFn = (doc: unknown, options: Record<string, unknown>) => void;
+
+function agregarTablaProductos(doc: DocPdf, autoTable: AutoTableFn, titulo: string, items: RankingProducto, margenX: number, y: number): number {
+  if (items.length === 0) return y;
+  doc.setFontSize(12);
+  doc.text(titulo, margenX, y);
+  autoTable(doc, {
+    startY: y + 4,
+    head: [['Producto', 'Cantidad', 'Ingresos']],
+    body: items.map((p) => [
+      p.nombre,
+      String(p.cantidad),
+      p.ingresos == null ? '—' : formatMoney(p.ingresos),
+    ]),
+    margin: { left: margenX, right: margenX },
+    styles: { fontSize: 9 },
+    headStyles: { fillColor: [55, 65, 81] },
+  });
+  return (doc.lastAutoTable?.finalY ?? y) + 10;
 }
 
 export async function exportarResumenPdf(resumen: ResumenVM, nombreLocal = APP_NAME): Promise<void> {
@@ -33,7 +62,9 @@ export async function exportarResumenPdf(resumen: ResumenVM, nombreLocal = APP_N
   const kpis = [
     ['Ingresos', formatMoney(resumen.ingresosTotales)],
     ['Ventas cerradas', String(resumen.totalVentas)],
-    ['Ticket promedio', resumen.ticketPromedioLabel],
+    ['Ticket promedio (media)', resumen.ticketPromedioLabel],
+    ['Ticket mediana', resumen.estadisticasTicket.medianaLabel],
+    ['Moda del ticket', resumen.estadisticasTicket.modaLabel],
   ];
   for (const [label, value] of kpis) {
     doc.text(`${label}: ${value}`, margenX, y);
@@ -41,24 +72,9 @@ export async function exportarResumenPdf(resumen: ResumenVM, nombreLocal = APP_N
   }
   y += 4;
 
-  if (resumen.topProductos.length > 0) {
-    doc.setFontSize(12);
-    doc.text('Top productos', margenX, y);
-    autoTable(doc, {
-      startY: y + 4,
-      head: [['Producto', 'Cantidad', 'Ingresos']],
-      body: resumen.topProductos.map((p) => [
-        p.nombre,
-        String(p.cantidad),
-        p.ingresos == null ? '—' : formatMoney(p.ingresos),
-      ]),
-      margin: { left: margenX, right: margenX },
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [55, 65, 81] },
-    });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
-    y = ((doc as any).lastAutoTable?.finalY ?? y) + 10;
-  }
+  y = agregarTablaProductos(doc, autoTable, 'Top platos (Carta/Menú)', resumen.topPlatos, margenX, y);
+  y = agregarTablaProductos(doc, autoTable, 'Top productos (Inventario)', resumen.topProductos, margenX, y);
+  y = agregarTablaProductos(doc, autoTable, 'Productos menos vendidos', resumen.productosMenosVendidos, margenX, y);
 
   if (resumen.ventasPorHora.length > 0) {
     doc.setFontSize(12);

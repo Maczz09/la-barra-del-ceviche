@@ -5,9 +5,9 @@ import { useNow } from '../../hooks/useNow';
 import { usePedidosQuery } from '../../hooks/queries/usePedidosQuery';
 import { useToast } from '../../components/ui/ToastProvider';
 import { onPedidoUpdate } from '../../services/socket.service';
-import { Icons, type IconName } from '../../components/ui/icons';
+import { Icons } from '../../components/ui/icons';
 import { Metric, TicketCard } from '../../components/cocina/TicketCard';
-import type { PedidoVM, PedidoItemVM, EstadoItem, ItemArea } from '../../types/pedido.types';
+import type { PedidoVM, PedidoItemVM, EstadoItem } from '../../types/pedido.types';
 import {
   ETAPAS_PRODUCCION as COLS,
   ESTADOS_PRODUCCION,
@@ -21,12 +21,6 @@ interface PedidoItemAnuladoData {
   mesaId?: string;
 }
 
-const AREAS: { key: 'TODAS' | ItemArea; label: string; ic: IconName }[] = [
-  { key: 'TODAS', label: 'Todas', ic: 'Layers' },
-  { key: 'COCINA', label: 'Cocina', ic: 'Cocina' },
-  { key: 'BAR', label: 'Barra', ic: 'Drink' },
-];
-
 const elapsedMinF = (iso: string, now: number) => (now - new Date(iso).getTime()) / 60_000;
 
 export function CocinaScreen() {
@@ -34,7 +28,6 @@ export function CocinaScreen() {
   const now = useNow(4000);
   const { pedidos, loading, error, fetch, avanzarItem } = usePedidosQuery(undefined, { autoLoadAll: true });
   const { toast } = useToast();
-  const [area, setArea] = useState<'TODAS' | ItemArea>('TODAS');
   const [fs, setFs] = useState(false);
 
   // Notificación flotante: un mesero anuló un plato (área COCINA) — el
@@ -53,7 +46,14 @@ export function CocinaScreen() {
     });
   }, [toast]);
 
-  const matchArea = (it: PedidoItemVM) => area === 'TODAS' || it.area === area;
+  // Cocina solo maneja ítems de Carta/Menú: lo seleccionado de Inventario
+  // (área BAR) nace ENTREGADO en el backend — el mesero ya lo sirvió — y
+  // nunca debe aparecer en el tablero ni contar en sus métricas.
+  const esCocina = (it: PedidoItemVM) => it.area === 'COCINA';
+  // "Aún pendiente de cocina": ni listo, ni anulado, ni rechazado por falta
+  // de stock — un ítem CANCELADO no debe seguir sumando en tickets
+  // activos/conteo del día solo porque su estado "no es LISTO".
+  const enProduccion = (it: PedidoItemVM) => it.estado === 'PENDIENTE' || it.estado === 'EN_PREPARACION';
 
   const activos = useMemo(
     () => pedidos.filter((p) => ESTADOS_PRODUCCION.has(p.estado)),
@@ -76,33 +76,25 @@ export function CocinaScreen() {
     if (!online) return;
     const p = activos.find((x) => x.id === pid);
     if (!p) return;
-    const targets = p.items.filter((it) => matchArea(it) && NEXT_ITEM[it.estado]);
+    const targets = p.items.filter((it) => esCocina(it) && NEXT_ITEM[it.estado]);
     try { await Promise.all(targets.map((it) => avanzarItem(it.id, NEXT_ITEM[it.estado]!))); } catch { /* */ }
   };
 
   const metrics = useMemo(() => {
-    const act = activos.filter((p) => p.items.some((it) => it.estado !== 'LISTO'));
+    const act = activos.filter((p) => p.items.some((it) => esCocina(it) && enProduccion(it)));
     const tiempos = act.map((p) => elapsedMinF(p.createdAt, now));
     const prom = tiempos.length ? tiempos.reduce((a, b) => a + b, 0) / tiempos.length : 0;
     const demora = act.filter((p) => elapsedMinF(p.createdAt, now) >= SLA_MIN).length;
-    const listos = activos.reduce((s, p) => s + p.items.filter((it) => it.estado === 'LISTO').length, 0);
+    const listos = activos.reduce((s, p) => s + p.items.filter((it) => esCocina(it) && it.estado === 'LISTO').length, 0);
     return { activos: act.length, prom: Math.round(prom), demora, listos };
   }, [activos, now]);
 
   const allday = useMemo(() => {
     const map: Record<string, number> = {};
     activos.forEach((p) => p.items.forEach((it) => {
-      if (it.estado !== 'LISTO' && matchArea(it)) map[it.nombre] = (map[it.nombre] || 0) + it.cantidad;
+      if (esCocina(it) && enProduccion(it)) map[it.nombre] = (map[it.nombre] || 0) + it.cantidad;
     }));
     return Object.entries(map).map(([n, q]) => ({ n, q })).sort((a, b) => b.q - a.q);
-  }, [activos, area]);
-
-  const areaCounts = useMemo(() => {
-    const c: Record<string, number> = { TODAS: 0, COCINA: 0, BAR: 0 };
-    activos.forEach((p) => p.items.forEach((it) => {
-      if (it.estado !== 'LISTO') { c[it.area] = (c[it.area] || 0) + 1; c.TODAS++; }
-    }));
-    return c;
   }, [activos]);
 
   if (loading && pedidos.length === 0) {
@@ -133,19 +125,6 @@ export function CocinaScreen() {
     );
   }
 
-  const stationTabs = (
-    <div className="station-tabs">
-      {AREAS.map((a) => {
-        const Ic = Icons[a.ic];
-        return (
-          <button key={a.key} className={area === a.key ? 'on' : ''} onClick={() => setArea(a.key)}>
-            <Ic s={14} /> {a.label} <span className="cnt">{areaCounts[a.key] || 0}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-
   const body = (
     <>
       <div className="kds-metrics">
@@ -165,7 +144,7 @@ export function CocinaScreen() {
         {COLS.map((col) => {
           const cards: { p: PedidoVM; items: PedidoItemVM[] }[] = [];
           for (const p of activos) {
-            const items = p.items.filter((it) => matchArea(it) && it.estado === col.estado);
+            const items = p.items.filter((it) => esCocina(it) && it.estado === col.estado);
             if (items.length) cards.push({ p, items });
           }
           return (
@@ -195,7 +174,6 @@ export function CocinaScreen() {
       <div className="kds-fs">
         <div className="row kds-fs-head" style={{ marginBottom: 12 }}>
           <h1 style={{ fontSize: 22, margin: 0 }}>Cocina · KDS</h1>
-          <span className="kds-fs-tabs" style={{ marginLeft: 14 }}>{stationTabs}</span>
           <span className="spacer" />
           <button className="btn btn-ghost btn-sm" onClick={() => setFs(false)}><Icons.Minimize s={16} /> Salir</button>
         </div>
@@ -212,7 +190,6 @@ export function CocinaScreen() {
           <div className="sub">Tiempo real · tablet de cocina</div>
         </div>
         <span className="spacer" />
-        {stationTabs}
         <button className="btn btn-ghost btn-sm" onClick={() => fetch()} title="Refrescar" aria-label="Refrescar"><Icons.Refresh s={16} /></button>
         <button className="btn btn-ghost btn-sm" onClick={() => setFs(true)} title="Pantalla completa" aria-label="Pantalla completa"><Icons.Maximize s={16} /></button>
       </div>

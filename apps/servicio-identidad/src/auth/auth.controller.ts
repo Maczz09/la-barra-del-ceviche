@@ -26,6 +26,8 @@ import {
   CrearUsuarioCommand,
   CambiarRolCommand,
   CambiarEstadoUsuarioCommand,
+  ActualizarUsuarioCommand,
+  CambiarPasswordUsuarioCommand,
   ListarUsuariosQuery,
   UsuarioListResponse,
   CrearSedeCommand,
@@ -83,6 +85,13 @@ export class AuthController {
       maxAge: REFRESH_COOKIE_MAX_AGE_MS,
       path: '/',
     });
+  }
+
+  // Carta pública/QR (T-XX): sin JWT, cualquiera con el link la llama —
+  // igual que login/refresh, sin @UseGuards a propósito.
+  @Get('sedes/publica')
+  async sedePublica(@Query('sedeId') sedeId: string) {
+    return this.authService.sedePublica(sedeId);
   }
 
   @HttpCode(200)
@@ -189,6 +198,28 @@ export class AuthController {
     @Request() req: AuthenticatedRequest,
   ) {
     return this.authService.cambiarEstado(id, command, req.user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Patch('usuarios/:id')
+  async actualizarUsuario(
+    @Param('id') id: string,
+    @Body() command: ActualizarUsuarioCommand,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.authService.actualizarUsuario(id, command, req.user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Patch('usuarios/:id/password')
+  async cambiarPasswordUsuario(
+    @Param('id') id: string,
+    @Body() command: CambiarPasswordUsuarioCommand,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.authService.cambiarPasswordUsuario(id, command, req.user.sub);
   }
 
   /* ── Sede propia (cualquier usuario autenticado) ─────── */

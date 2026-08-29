@@ -30,6 +30,7 @@ export interface PedidoEntity {
   modalidad?: string | null;
   meseroId?: string | null;
   meseroNombre?: string | null;
+  cuentaCorrelativo?: string | null;
   createdAt: Date;
   items: PedidoItemEntity[];
 }

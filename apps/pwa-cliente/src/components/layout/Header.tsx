@@ -8,7 +8,7 @@
 //   - Sin otros cambios de markup; Header.tsx no necesitó refactoring.
 
 import { useAuthStore } from '../../store/auth.store';
-import { APP_CONFIG, getTurnoActual } from '../../config';
+import { APP_CONFIG, APP_LOGO, getTurnoActual } from '../../config';
 import { useNotificacionesQuery } from '../../hooks/queries/useNotificacionesQuery';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -103,6 +103,13 @@ export function Header() {
 
   return (
     <header className="topbar">
+      {/* En mobile (≤920px) el Sidebar desaparece entero (→ BottomNav) y con
+          él se pierde la única marca visible en toda la operación — solo
+          quedaba el login. Un ícono chico acá la devuelve sin ocupar el
+          espacio de un logo completo. */}
+      {APP_LOGO && (
+        <img className="top-logo mobile-only" src={APP_LOGO} alt={APP_CONFIG.nombreLocal} />
+      )}
       {/* Nombre del local — oculto en ≤1140px via CSS */}
       <span className="top-loc desktop-only">{APP_CONFIG.nombreLocal}</span>
       {/* Turno/hora — oculto en ≤1020px via CSS; visible en tablets ≥1021px */}

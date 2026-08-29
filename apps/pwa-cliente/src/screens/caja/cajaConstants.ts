@@ -1,10 +1,4 @@
 /* eslint-disable @typescript-eslint/no-misused-promises, @typescript-eslint/no-floating-promises */
-export const RESTO_FISCAL = {
-  nombre: 'RestoApp.pe',
-  zona: 'Barranco · Lima',
-  ruc: '20554879631',
-  dir: 'Av. Saenz Pena 234, Barranco',
-};
 
 export const BILLETES = [200, 100, 50, 20, 10];
 export const MONEDAS = [5, 2, 1, 0.5, 0.2, 0.1];

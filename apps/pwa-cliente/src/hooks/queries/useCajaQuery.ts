@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import * as cajaApi from '../../api/caja.api';
 import { queryClient, retrySalvo404, refetchSiError } from '../../api/queryClient';
+import { USUARIOS_QUERY_KEY } from './useUsuariosQuery';
 import type {
   AbrirTurnoPayload,
   CerrarTurnoPayload,
@@ -19,9 +20,18 @@ export function useCajaQuery() {
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: CAJA_QUERY_KEY });
 
+  // Abrir/cerrar turno activa/desactiva automáticamente a los MESERO de la
+  // sede (identidad, vía evento turno.abierto/turno.cerrado) — sin esto, la
+  // pantalla de Usuarios se queda mostrando el estado viejo hasta que algo
+  // más dispare un refetch (F5, cambiar de pantalla y volver).
+  const refreshConUsuarios = () => {
+    refresh();
+    void queryClient.invalidateQueries({ queryKey: USUARIOS_QUERY_KEY, exact: false });
+  };
+
   const abrirMutation = useMutation({
     mutationFn: (payload: AbrirTurnoPayload) => cajaApi.abrirTurno(payload),
-    onSuccess: refresh,
+    onSuccess: refreshConUsuarios,
   });
 
   const movimientoMutation = useMutation({
@@ -33,7 +43,7 @@ export function useCajaQuery() {
   const cierreMutation = useMutation({
     mutationFn: ({ turnoId, payload }: { turnoId: string; payload: CerrarTurnoPayload }) =>
       cajaApi.cerrarTurno(turnoId, payload),
-    onSuccess: refresh,
+    onSuccess: refreshConUsuarios,
   });
 
   return {

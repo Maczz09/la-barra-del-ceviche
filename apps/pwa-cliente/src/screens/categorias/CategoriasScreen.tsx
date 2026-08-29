@@ -12,7 +12,17 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useInventarioQuery } from '../../hooks/queries/useInventarioQuery';
 import type { CategoriaDto } from '../../types/inventario.types';
 
-const INITIAL_FORM = { nombre: '', descripcion: '', parentId: '' };
+const INITIAL_FORM = { nombre: '', descripcion: '', parentId: '', area: 'COCINA' as const };
+
+// El dueño elige el área acá — nunca se infiere del nombre — así el ruteo de
+// pedidos (qué pasa por Cocina/Barra y qué va directo a cuenta) es 100%
+// escalable a cualquier nombre de categoría futuro.
+const AREAS: { value: 'COCINA' | 'BARRA' | 'INVENTARIO'; label: string; hint: string }[] = [
+  { value: 'COCINA', label: 'Carta · Cocina', hint: 'Platos que se preparan en cocina' },
+  { value: 'BARRA', label: 'Carta · Barra', hint: 'Tragos/cócteles preparados en barra' },
+  { value: 'INVENTARIO', label: 'Inventario', hint: 'Productos con stock, se sirven directo (sin preparación)' },
+];
+const AREA_LABEL: Record<string, string> = Object.fromEntries(AREAS.map((a) => [a.value, a.label]));
 
 export function CategoriasScreen() {
   const online = useOnlineStatus();
@@ -28,14 +38,16 @@ export function CategoriasScreen() {
     actualizarCategoria,
     eliminarCategoria,
     clearFeedback,
-  // El backend valida limit <= 100 (ListarProductosQuery); 200 rompía la carga.
-  } = useInventarioQuery(undefined, { limit: 100 });
+  // Necesita el catálogo completo: "Con productos" y el bloqueo de borrado se
+  // calculan sobre `productos`, no solo la primera página.
+  } = useInventarioQuery(undefined, { limit: 500 });
 
   const [form, setForm] = useState(INITIAL_FORM);
   const [edit, setEdit] = useState<CategoriaDto | null>(null);
   const [editNombre, setEditNombre] = useState('');
   const [editDescripcion, setEditDescripcion] = useState('');
   const [editParentId, setEditParentId] = useState('');
+  const [editArea, setEditArea] = useState<'COCINA' | 'BARRA' | 'INVENTARIO'>('COCINA');
 
   const principales = useMemo(() => categorias.filter((c) => !c.parentId), [categorias]);
   const subcategoriasPorPadre = useMemo(() => {
@@ -85,6 +97,7 @@ export function CategoriasScreen() {
       nombre: form.nombre.trim(),
       descripcion: form.descripcion.trim() || undefined,
       parentId: form.parentId || undefined,
+      area: form.area,
     });
     setForm(INITIAL_FORM);
   };
@@ -94,6 +107,7 @@ export function CategoriasScreen() {
     setEditNombre(categoria.nombre);
     setEditDescripcion(categoria.descripcion ?? '');
     setEditParentId(categoria.parentId ?? '');
+    setEditArea(categoria.area);
   };
 
   const guardarEdicion = async () => {
@@ -102,6 +116,7 @@ export function CategoriasScreen() {
       nombre: editNombre.trim(),
       descripcion: editDescripcion.trim() || null,
       parentId: editParentId || null,
+      ...(editArea === edit.area ? {} : { area: editArea }),
     });
     setEdit(null);
   };
@@ -190,6 +205,7 @@ export function CategoriasScreen() {
                 <thead>
                   <tr>
                     <th>Nombre</th>
+                    <th className="col-mobile-hidden">Área</th>
                     <th className="col-mobile-hidden">Descripción</th>
                     <th style={{ textAlign: 'right' }}>Productos</th>
                     <th className="cell-action">Acciones</th>
@@ -206,6 +222,7 @@ export function CategoriasScreen() {
                           {esSub && <span className="muted" style={{ marginRight: 6 }}>↳</span>}
                           <strong>{categoria.nombre}</strong>
                         </td>
+                        <td className="col-mobile-hidden"><span className="pill-soft">{AREA_LABEL[categoria.area] ?? categoria.area}</span></td>
                         <td className="col-mobile-hidden muted">{categoria.descripcion || '—'}</td>
                         <td style={{ textAlign: 'right' }}><span className="pill-soft">{cuenta}</span></td>
                         <td className="cell-action">
@@ -270,6 +287,20 @@ export function CategoriasScreen() {
                 </div>
               </div>
               <div className="field">
+                <label htmlFor="cat-area">Área</label>
+                <div className="input">
+                  <select
+                    id="cat-area"
+                    value={form.area}
+                    onChange={(e) => setForm((f) => ({ ...f, area: e.target.value as typeof f.area }))}
+                    style={{ border: 0, background: 'transparent', width: '100%' }}
+                  >
+                    {AREAS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+                  </select>
+                </div>
+                <span className="hint">{AREAS.find((a) => a.value === form.area)?.hint}</span>
+              </div>
+              <div className="field">
                 <label htmlFor="cat-parent">Categoría padre</label>
                 <div className="input">
                   <select
@@ -314,6 +345,23 @@ export function CategoriasScreen() {
                 <div className="input">
                   <textarea id="cat-edit-descripcion" rows={3} value={editDescripcion} onChange={(e) => setEditDescripcion(e.target.value)} />
                 </div>
+              </div>
+              <div className="field" style={{ marginBottom: 12 }}>
+                <label htmlFor="cat-edit-area">Área</label>
+                <div className="input">
+                  <select
+                    id="cat-edit-area"
+                    value={editArea}
+                    disabled={(conteoPorCategoria.get(edit.id) ?? 0) > 0}
+                    onChange={(e) => setEditArea(e.target.value as typeof editArea)}
+                    style={{ border: 0, background: 'transparent', width: '100%' }}
+                  >
+                    {AREAS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+                  </select>
+                </div>
+                {(conteoPorCategoria.get(edit.id) ?? 0) > 0 && (
+                  <span className="hint">Tiene productos asociados — reasígnalos primero para cambiar el área.</span>
+                )}
               </div>
               <div className="field" style={{ marginBottom: 12 }}>
                 <label htmlFor="cat-edit-parent">Categoría padre</label>

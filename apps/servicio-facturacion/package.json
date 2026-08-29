@@ -11,7 +11,7 @@
           "{workspaceRoot}/dist/apps/servicio-facturacion"
         ],
         "options": {
-          "command": "tsc -p apps/servicio-facturacion/tsconfig.app.json && npx tsc-alias -p apps/servicio-facturacion/tsconfig.app.json && node -e \"const fs=require('fs'); if(fs.existsSync('apps/servicio-facturacion/src/generated')) fs.cpSync('apps/servicio-facturacion/src/generated', 'dist/apps/servicio-facturacion/apps/servicio-facturacion/src/generated', {recursive: true})\""
+          "command": "tsc -p apps/servicio-facturacion/tsconfig.app.json && npx tsc-alias -p apps/servicio-facturacion/tsconfig.app.json && node -e \"const fs=require('fs'); if(fs.existsSync('apps/servicio-facturacion/src/generated')) fs.cpSync('apps/servicio-facturacion/src/generated', 'dist/apps/servicio-facturacion/apps/servicio-facturacion/src/generated', {recursive: true}); fs.cpSync('apps/servicio-facturacion/src/sunat/wsdl', 'dist/apps/servicio-facturacion/apps/servicio-facturacion/src/sunat/wsdl', {recursive: true})\""
         },
         "configurations": {
           "production": {},

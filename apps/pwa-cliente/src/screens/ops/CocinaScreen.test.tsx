@@ -60,7 +60,9 @@ describe('CocinaScreen', () => {
       createdAt: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
       items: [
         { id: 'i1', nombre: 'Item 1', cantidad: 1, estado: 'PENDIENTE', area: 'COCINA' },
-        { id: 'i2', nombre: 'Item 2', cantidad: 3, estado: 'PENDIENTE', area: 'BAR' } // hot
+        // BAR (Inventario) nace ENTREGADO y nunca debería llegar a Cocina, pero
+        // aunque llegara con otro estado, el tablero no debe mostrarlo ni contarlo.
+        { id: 'i2', nombre: 'Item 2', cantidad: 3, estado: 'PENDIENTE', area: 'BAR' }
       ]
     } as any;
 
@@ -69,18 +71,17 @@ describe('CocinaScreen', () => {
     });
 
     render(<CocinaScreen />);
-    
-    // tabs
-    const barTab = screen.getByRole('button', { name: /Barra/ });
-    fireEvent.click(barTab);
+
+    // ya no hay tabs de área — Cocina solo muestra ítems de Carta/Menú
+    expect(screen.queryByRole('button', { name: /Barra/ })).not.toBeInTheDocument();
 
     // metric
     expect(screen.getAllByTestId('metric').length).toBe(4);
 
-    // card interactions
+    // card interactions — solo el ítem de COCINA (i1) aparece en el tablero
     const advanceBtn = screen.getAllByText('Advance')[0];
     fireEvent.click(advanceBtn);
-    await waitFor(() => expect(avanzarItem).toHaveBeenCalledWith('i2', 'EN_PREPARACION')); // next of PENDIENTE is EN_PREPARACION
+    await waitFor(() => expect(avanzarItem).toHaveBeenCalledWith('i1', 'EN_PREPARACION')); // next of PENDIENTE is EN_PREPARACION
 
     const regressBtn = screen.getAllByText('Regress')[0];
     fireEvent.click(regressBtn);
@@ -97,6 +98,26 @@ describe('CocinaScreen', () => {
     expect(screen.getByText('Salir')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Salir'));
     expect(screen.queryByText('Salir')).not.toBeInTheDocument();
+  });
+
+  it('un ítem CANCELADO no cuenta en el conteo del día ni en tickets activos', () => {
+    const p: PedidoVM = {
+      id: 'p1', estado: 'EN_PREPARACION', canal: 'SALON',
+      createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+      items: [
+        { id: 'i1', nombre: 'Arroz con Mariscos (Mediana)', cantidad: 1, estado: 'CANCELADO', area: 'COCINA' },
+        { id: 'i2', nombre: 'Caballa en Agua Caliente (Mediana)', cantidad: 1, estado: 'PENDIENTE', area: 'COCINA' },
+      ],
+    } as any;
+
+    (usePedidosQuery as any).mockReturnValue({
+      pedidos: [p], loading: false, error: null, fetch: vi.fn(), avanzarItem: vi.fn(),
+    });
+
+    render(<CocinaScreen />);
+
+    expect(screen.queryByText(/Arroz con Mariscos/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Caballa en Agua Caliente/)).toBeInTheDocument();
   });
 
   it('handles offline correctly', () => {

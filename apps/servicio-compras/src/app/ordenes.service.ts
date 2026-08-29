@@ -43,7 +43,7 @@ export class OrdenesService {
             }
           : {}),
       },
-      include: { items: true },
+      include: { items: true, _count: { select: { comprobantes: true } } },
       take: limit + 1,
       ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
       orderBy: [{ fechaEmision: 'desc' }, { id: 'asc' }],
@@ -133,7 +133,7 @@ export class OrdenesService {
           sedeId,
           codigo,
           proveedorId: command.proveedorId ?? null,
-          proveedorNombre: proveedorNombre!,
+          proveedorNombre,
           estado: OrdenCompraEstado.Borrador,
           fechaEntregaEsperada: command.fechaEntregaEsperada ? new Date(command.fechaEntregaEsperada) : null,
           notas: command.notas ?? null,

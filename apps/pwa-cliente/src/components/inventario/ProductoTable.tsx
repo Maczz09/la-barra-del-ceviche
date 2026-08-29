@@ -20,6 +20,7 @@ interface ProductoTableProps {
   onReponer: (id: string) => void;
   onReponerQuick: (id: string, cantidad: number) => void;
   onRegistrarMerma: (p: ProductoVM) => void;
+  onEditar: (p: ProductoVM) => void;
   nextCursor: string | null;
   loadingMore: boolean;
   onLoadMore: () => void;
@@ -28,7 +29,7 @@ interface ProductoTableProps {
 
 export function ProductoTable({
   grupos, stockInputs, onStockInput, saving, online,
-  onToggleDisponible, onReponer, onReponerQuick, onRegistrarMerma,
+  onToggleDisponible, onReponer, onReponerQuick, onRegistrarMerma, onEditar,
   nextCursor, loadingMore, onLoadMore, loading,
 }: Readonly<ProductoTableProps>) {
   if (loading) return <LoadingRows />;
@@ -62,7 +63,7 @@ export function ProductoTable({
                   <th>Stock</th>
                   <th>Disponible</th>
                   <th>Reponer</th>
-                  <th>Merma</th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -128,14 +129,24 @@ export function ProductoTable({
                         </div>
                       </td>
                       <td>
-                        <button
-                          className="btn btn-sm btn-ghost"
-                          disabled={saving || !online || (producto.stockActual ?? 0) <= 0}
-                          onClick={() => onRegistrarMerma(producto)}
-                          aria-label={`Registrar merma de ${producto.nombre}`}
-                        >
-                          Merma
-                        </button>
+                        <div className="row" style={{ gap: 6 }}>
+                          <button
+                            className="btn btn-sm btn-ghost"
+                            disabled={saving || !online || (producto.stockActual ?? 0) <= 0}
+                            onClick={() => onRegistrarMerma(producto)}
+                            aria-label={`Registrar merma de ${producto.nombre}`}
+                          >
+                            Merma
+                          </button>
+                          <button
+                            className="btn btn-sm btn-soft"
+                            disabled={saving || !online}
+                            onClick={() => onEditar(producto)}
+                            aria-label={`Editar ${producto.nombre}`}
+                          >
+                            <Icons.Edit s={14} /> Editar
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -164,7 +175,7 @@ function LoadingRows() {
         <thead>
           <tr>
             <th>Producto</th><th className="num">Precio</th>
-            <th>Stock</th><th>Disponible</th><th>Reponer</th><th>Merma</th>
+            <th>Stock</th><th>Disponible</th><th>Reponer</th><th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -175,7 +186,7 @@ function LoadingRows() {
               <td><div className="skel" style={{ width: 40, height: 16 }} /></td>
               <td><div className="skel" style={{ width: 48, height: 24 }} /></td>
               <td><div className="skel" style={{ width: 150, height: 30 }} /></td>
-              <td><div className="skel" style={{ width: 70, height: 24 }} /></td>
+              <td><div className="skel" style={{ width: 140, height: 24 }} /></td>
             </tr>
           ))}
         </tbody>

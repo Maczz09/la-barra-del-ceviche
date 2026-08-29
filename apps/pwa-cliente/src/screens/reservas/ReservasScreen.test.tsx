@@ -36,8 +36,8 @@ describe('ReservasScreen', () => {
     } as any);
     vi.spyOn(reservasQueryHook, 'useReservasQuery').mockReturnValue({
       reservas: [
-        { id: 'R1', hora: '20:00', clienteNombre: 'Juan', clienteTelefono: '123', mesaPreferida: 'M1', numComensales: 2, estado: 'PENDIENTE', estadoClass: 'warn', estadoLabel: 'Pendiente', usuarioNombre: 'Recepción Uno' },
-        { id: 'R2', hora: '21:00', clienteNombre: 'Ana', mesaPreferida: 'M99', numComensales: 4, estado: 'CANCELADA', estadoClass: 'err', estadoLabel: 'Cancelada' },
+        { id: 'R1', hora: '20:00', fechaHoraLabel: '15 ago, 20:00', clienteNombre: 'Juan', clienteTelefono: '123', mesaPreferida: 'M1', numComensales: 2, estado: 'PENDIENTE', estadoClass: 'warn', estadoLabel: 'Pendiente', usuarioNombre: 'Recepción Uno' },
+        { id: 'R2', hora: '21:00', fechaHoraLabel: '16 ago, 21:00', clienteNombre: 'Ana', mesaPreferida: 'M99', numComensales: 4, estado: 'CANCELADA', estadoClass: 'err', estadoLabel: 'Cancelada' },
       ],
       nextCursor: 'abc',
       loading: false,
@@ -69,6 +69,12 @@ describe('ReservasScreen', () => {
     render(<ReservasScreen />);
     expect(screen.getByText('Recepción Uno')).toBeInTheDocument();
     expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('muestra la fecha y hora agendada, no solo la hora (relevante al buscar por código entre varios días)', () => {
+    render(<ReservasScreen />);
+    expect(screen.getByText('15 ago, 20:00')).toBeInTheDocument();
+    expect(screen.getByText('16 ago, 21:00')).toBeInTheDocument();
   });
 
   it('shows error and success banners', () => {

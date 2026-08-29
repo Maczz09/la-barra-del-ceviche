@@ -42,7 +42,7 @@ describe('AppService — Reportes', () => {
 
   it('resume ingresos, horas y top productos del dia', async () => {
     jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-01-02T15:00:00.000Z'));
+    jest.setSystemTime(new Date('2026-01-02T15:00:00.000Z')); // 10:00 a.m. Lima
     prisma.ventaDiaria.findMany.mockResolvedValue([
       {
         total: 80,
@@ -61,12 +61,11 @@ describe('AppService — Reportes', () => {
 
     const resumen = await service.obtenerResumenDiario();
 
-    const inicioDiaLocal = new Date('2026-01-02T15:00:00.000Z');
-    inicioDiaLocal.setHours(0, 0, 0, 0);
+    const inicioDiaLima = new Date('2026-01-02T00:00:00.000-05:00');
     expect(prisma.ventaDiaria.findMany).toHaveBeenCalledWith({
-      where: { fecha: { gte: inicioDiaLocal, lte: new Date('2026-01-02T15:00:00.000Z') } },
+      where: { fecha: { gte: inicioDiaLima, lte: new Date('2026-01-02T15:00:00.000Z') } },
     });
-    expect(resumen.fecha).toEqual(inicioDiaLocal);
+    expect(resumen.fecha).toEqual(inicioDiaLima);
     expect(resumen.hasta).toEqual(new Date('2026-01-02T15:00:00.000Z'));
     expect(resumen.totalVentas).toBe(2);
     expect(resumen.ingresosTotales).toBe(100);
@@ -74,11 +73,99 @@ describe('AppService — Reportes', () => {
       hora: '13:00',
       total: 100,
     });
-    expect(resumen.topProductos[0]).toEqual({
+    // Ambos ítems sin `area` (legado/venta directa desde Comandero de prueba)
+    // caen en topPlatos por defecto — solo `area: 'DIRECTO'` va a topProductos.
+    expect(resumen.topPlatos[0]).toEqual({
       productoId: 'prod-1',
       nombre: 'Nachos',
       cantidad: 3,
       ingresos: 60,
+    });
+    expect(resumen.productosMenosVendidos[0]).toEqual({
+      productoId: 'prod-2',
+      nombre: 'Limonada',
+      cantidad: 1,
+      ingresos: 40,
+    });
+    expect(resumen.estadisticasTicket).toEqual({ media: 50, mediana: 50, moda: null });
+
+    jest.useRealTimers();
+  });
+
+  it('separa topPlatos (Carta/Menú) de topProductos (Inventario) según el área del ítem', async () => {
+    prisma.ventaDiaria.findMany.mockResolvedValue([
+      {
+        total: 58,
+        fecha: new Date('2026-01-02T18:00:00.000Z'),
+        items: [
+          { productoId: 'p1', nombre: 'Ceviche', cantidad: 2, precioUnitario: 25, area: 'COCINA' },
+          { productoId: 'p2', nombre: 'Mojito', cantidad: 1, precioUnitario: 20, area: 'BAR' },
+          { productoId: 'p3', nombre: 'Cristal', cantidad: 3, precioUnitario: 8, area: 'DIRECTO' },
+        ],
+      },
+    ]);
+
+    const resumen = await service.obtenerResumenDiario();
+
+    // Carta/Menú: cocina y barra van juntos a topPlatos (ambos pasan por producción).
+    expect(resumen.topPlatos.map((p) => p.productoId).sort()).toEqual(['p1', 'p2']);
+    // Inventario: solo lo que se sirve directo, sin preparación.
+    expect(resumen.topProductos).toEqual([
+      { productoId: 'p3', nombre: 'Cristal', cantidad: 3, ingresos: 24 },
+    ]);
+  });
+
+  it('resumen diario: productos menos vendidos y estadísticas de ticket (media/mediana/moda) del día', async () => {
+    prisma.ventaDiaria.findMany.mockResolvedValue([
+      {
+        total: 30,
+        fecha: new Date('2026-01-02T18:00:00.000Z'),
+        items: [
+          { productoId: 'p1', nombre: 'Nachos', cantidad: 5, precioUnitario: 5 },
+          { productoId: 'p2', nombre: 'Ceviche', cantidad: 1, precioUnitario: 30 },
+        ],
+      },
+      { total: 30, fecha: new Date('2026-01-02T19:00:00.000Z'), items: [] },
+      { total: 90, fecha: new Date('2026-01-02T20:00:00.000Z'), items: [] },
+    ]);
+
+    const resumen = await service.obtenerResumenDiario();
+
+    // El menos vendido es el de menor cantidad total (Ceviche: 1 unidad).
+    expect(resumen.productosMenosVendidos[0]).toEqual({
+      productoId: 'p2',
+      nombre: 'Ceviche',
+      cantidad: 1,
+      ingresos: 30,
+    });
+    expect(resumen.productosMenosVendidos.at(-1)).toEqual({
+      productoId: 'p1',
+      nombre: 'Nachos',
+      cantidad: 5,
+      ingresos: 25,
+    });
+    // Tickets: [30, 30, 90] → media 50, mediana 30, moda 30 (se repite).
+    expect(resumen.estadisticasTicket).toEqual({ media: 50, mediana: 30, moda: 30 });
+  });
+
+  it('rango "Hoy" sin filtro no arrastra ventas de la noche anterior (bug real: setHours usaba UTC del contenedor)', async () => {
+    jest.useFakeTimers();
+    // 09:35 a.m. Lima == 14:35 UTC. El bug original (hoy.setHours(0,0,0,0) en
+    // un proceso con TZ=UTC) anclaba "hoy" a 2026-08-11T00:00:00.000Z, que es
+    // 2026-08-10T19:00 Lima — 14.5h antes de lo correcto, colando toda la
+    // noche anterior (cena incluida) dentro del reporte de "hoy".
+    jest.setSystemTime(new Date('2026-08-11T14:35:00.000Z'));
+    prisma.ventaDiaria.findMany.mockResolvedValue([]);
+
+    await service.obtenerResumenDiario();
+
+    expect(prisma.ventaDiaria.findMany).toHaveBeenCalledWith({
+      where: {
+        fecha: {
+          gte: new Date('2026-08-11T00:00:00.000-05:00'),
+          lte: new Date('2026-08-11T14:35:00.000Z'),
+        },
+      },
     });
 
     jest.useRealTimers();
@@ -143,11 +230,17 @@ describe('AppService — Reportes', () => {
     });
 
     it('por-turno deriva ALMUERZO/CENA/OTRO de la hora', async () => {
+      // Offset -05:00 explícito (hora Lima) — sin él, `new Date('...T13:00:00')`
+      // se parsea en la zona horaria LOCAL del proceso que corre el test:
+      // en la máquina del dev eso "cancela" con turnoDe() leyendo también en
+      // local y el test pasa de pura casualidad, pero en el runner de CI
+      // (UTC) turnoDe() ahora sí convierte a Lima de verdad (ver horaLima())
+      // y esas mismas horas "sin offset" quedan interpretadas en UTC, no Lima.
       prisma.ventaDiaria.findMany.mockResolvedValue([
-        { total: 50, fecha: new Date('2026-01-02T13:00:00') },
-        { total: 30, fecha: new Date('2026-01-02T14:00:00') },
-        { total: 90, fecha: new Date('2026-01-02T20:00:00') },
-        { total: 20, fecha: new Date('2026-01-02T09:00:00') }, // antes del almuerzo → OTRO
+        { total: 50, fecha: new Date('2026-01-02T13:00:00-05:00') },
+        { total: 30, fecha: new Date('2026-01-02T14:00:00-05:00') },
+        { total: 90, fecha: new Date('2026-01-02T20:00:00-05:00') },
+        { total: 20, fecha: new Date('2026-01-02T09:00:00-05:00') }, // antes del almuerzo → OTRO
       ]);
       const r = await service.obtenerPorTurno({});
       const almuerzo = r.turnos.find((t) => t.turno === 'ALMUERZO');

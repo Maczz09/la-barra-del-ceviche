@@ -5,6 +5,7 @@ import { mapUsuario, mapUsuarios } from '../../mappers/usuario.mapper';
 import { primerMensaje } from '../../utils/feedback';
 import type {
   CrearUsuarioPayload,
+  ActualizarUsuarioPayload,
   RolUsuario,
   UsuarioVM,
 } from '../../types/usuario.types';
@@ -100,12 +101,53 @@ export function useUsuariosQuery(filters: UsuariosFilters = {}) {
     },
   });
 
-  const saving = mutationCrear.isPending || mutationCambiarRol.isPending || mutationCambiarEstado.isPending;
-  const error = usuariosQuery.error || mutationCrear.error || mutationCambiarRol.error || mutationCambiarEstado.error;
+  const mutationActualizar = useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload: ActualizarUsuarioPayload }) => {
+      const dto = await usuariosApi.actualizar(id, payload);
+      return mapUsuario(dto);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: USUARIOS_QUERY_KEY,
+        exact: false,
+        refetchType: 'active',
+      });
+    },
+  });
+
+  const mutationCambiarPassword = useMutation({
+    mutationFn: async ({ id, password }: { id: string; password: string }) => {
+      const dto = await usuariosApi.cambiarPassword(id, { password });
+      return mapUsuario(dto);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: USUARIOS_QUERY_KEY,
+        exact: false,
+        refetchType: 'active',
+      });
+    },
+  });
+
+  const saving =
+    mutationCrear.isPending ||
+    mutationCambiarRol.isPending ||
+    mutationCambiarEstado.isPending ||
+    mutationActualizar.isPending ||
+    mutationCambiarPassword.isPending;
+  const error =
+    usuariosQuery.error ||
+    mutationCrear.error ||
+    mutationCambiarRol.error ||
+    mutationCambiarEstado.error ||
+    mutationActualizar.error ||
+    mutationCambiarPassword.error;
   const success = primerMensaje(
     [mutationCrear.isSuccess, 'Usuario creado.'],
     [mutationCambiarRol.isSuccess, 'Rol actualizado.'],
     [mutationCambiarEstado.isSuccess, 'Estado actualizado.'],
+    [mutationActualizar.isSuccess, 'Datos del usuario actualizados.'],
+    [mutationCambiarPassword.isSuccess, 'Contraseña actualizada.'],
   );
 
   return {
@@ -131,10 +173,18 @@ export function useUsuariosQuery(filters: UsuariosFilters = {}) {
     cambiarEstado: async (id: string, activo: boolean) => {
       await mutationCambiarEstado.mutateAsync({ id, activo });
     },
+    actualizar: async (id: string, payload: ActualizarUsuarioPayload) => {
+      await mutationActualizar.mutateAsync({ id, payload });
+    },
+    cambiarPassword: async (id: string, password: string) => {
+      await mutationCambiarPassword.mutateAsync({ id, password });
+    },
     clearFeedback: () => {
       mutationCrear.reset();
       mutationCambiarRol.reset();
       mutationCambiarEstado.reset();
+      mutationActualizar.reset();
+      mutationCambiarPassword.reset();
     },
   };
 }

@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { EmisionController } from './emision.controller';
 import { EmisionService } from './emision.service';
+import { NotasService } from './notas.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { RabbitMQModule } from '@org/shared-rabbitmq';
@@ -17,6 +18,7 @@ import { CertificadoService } from '../sunat/certificado.service';
 import { CorrelativoService } from '../sunat/correlativo.service';
 import { SunatSoapClient } from '../sunat/sunat-soap.client';
 import { EnvioProcessor } from '../sunat/envio.processor';
+import { CredencialesCryptoService } from '../sunat/credenciales-crypto.service';
 
 @Module({
   imports: [
@@ -39,11 +41,13 @@ import { EnvioProcessor } from '../sunat/envio.processor';
   providers: [
     AppService,
     EmisionService,
+    NotasService,
     SunatConfigService,
     CertificadoService,
     CorrelativoService,
     SunatSoapClient,
     EnvioProcessor,
+    CredencialesCryptoService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })

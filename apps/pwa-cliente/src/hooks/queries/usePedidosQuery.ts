@@ -10,12 +10,16 @@ import type {
   EstadoPedido,
   EstadoItem,
   PedidoVM,
+  AnularItemPreparadoPayload,
+  AnularAtencionMesaPayload,
+  AnularAtencionMesaResultado,
+  AnularPedidoPayload,
 } from '../../types/pedido.types';
 import type { MesaVM } from '../../types/mesa.types';
 
 export const PEDIDOS_QUERY_KEY = ['pedidos'];
 const CUENTAS_QUERY_KEY = ['cuentas'];
-const POST_CREATE_REFETCH_DELAYS_MS = [800, 2500];
+const CONSISTENCY_REFETCH_DELAYS_MS = [800, 2500];
 
 interface PedidosPage {
   pedidos: PedidoVM[];
@@ -26,6 +30,8 @@ type PedidosData = InfiniteData<PedidosPage>;
 interface UsePedidosOptions {
   /** Carga progresivamente todas las páginas (KDS necesita todos los tickets activos). */
   autoLoadAll?: boolean;
+  /** Busca por el código de la atención ("A0000001" o un fragmento). */
+  search?: string;
 }
 
 /** Aplica `fn` al pedido `id` en toda la caché infinita. */
@@ -103,8 +109,13 @@ function invalidateOperationalData(mesaId?: string) {
   }
 }
 
-function schedulePostCreateConsistencyRefetch(mesaId?: string) {
-  POST_CREATE_REFETCH_DELAYS_MS.forEach((delay) => {
+// Cubre la ventana de eventual-consistency entre el 200 OK de la mutación y el
+// procesamiento asíncrono del evento (outbox → RabbitMQ → snapshot de cuentas):
+// un solo invalidate+refetch inmediato puede llegar antes de que el consumidor
+// haya escrito el nuevo estado, mostrando datos obsoletos (p. ej. un ítem que
+// ya se anuló pero la cuenta actual todavía no lo refleja).
+function scheduleConsistencyRefetch(mesaId?: string) {
+  CONSISTENCY_REFETCH_DELAYS_MS.forEach((delay) => {
     globalThis.setTimeout(() => invalidateOperationalData(mesaId), delay);
   });
 }
@@ -136,13 +147,15 @@ function applyAvanceItem(
 }
 
 export function usePedidosQuery(mesaId?: string, options: UsePedidosOptions = {}) {
+  const { search } = options;
   const query = useInfiniteQuery({
-    queryKey: [...PEDIDOS_QUERY_KEY, mesaId].filter(Boolean),
+    queryKey: [...PEDIDOS_QUERY_KEY, mesaId, search].filter(Boolean),
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
       const response = await pedidosApi.getPage({
         cursor: pageParam,
         mesaId,
+        search: search || undefined,
         limit: 50,
       });
       return {
@@ -184,7 +197,7 @@ export function usePedidosQuery(mesaId?: string, options: UsePedidosOptions = {}
       // Crear pedido dispara efectos asíncronos en cuentas/mesas. Refrescamos
       // ahora y repetimos poco después para no depender sólo del socket.
       invalidateOperationalData(payload.mesaId);
-      schedulePostCreateConsistencyRefetch(payload.mesaId);
+      scheduleConsistencyRefetch(payload.mesaId);
     },
   });
 
@@ -214,10 +227,12 @@ export function usePedidosQuery(mesaId?: string, options: UsePedidosOptions = {}
   });
 
   // Avance/retroceso de un ítem (cocina). Optimista: parchea el ítem y deriva el
-  // estado de producción del pedido igual que el backend.
+  // estado de producción del pedido igual que el backend. `motivo` solo
+  // aplica cuando estado=CANCELADO (Caso A: aún no se preparó) — queda en el
+  // registro de Auditoría de Anulaciones igual que CU-01.
   const mutationAvanzarItem = useMutation({
-    mutationFn: async ({ itemId, estado }: { itemId: string; estado: EstadoItem }) => {
-      await pedidosApi.avanzarItem(itemId, { estado });
+    mutationFn: async ({ itemId, estado, motivo }: { itemId: string; estado: EstadoItem; motivo?: string }) => {
+      await pedidosApi.avanzarItem(itemId, { estado, motivo });
     },
     onMutate: async ({ itemId, estado }) => {
       await queryClient.cancelQueries({ queryKey: PEDIDOS_QUERY_KEY });
@@ -234,6 +249,17 @@ export function usePedidosQuery(mesaId?: string, options: UsePedidosOptions = {}
     onError: (_e, _v, ctx) => {
       ctx?.prev?.forEach(([key, data]) => queryClient.setQueryData(key, data));
     },
+  });
+
+  // CU-01: anular un ítem ya preparado/servido (cobrar o no). Toca inventario
+  // (merma) y auditoría además del pedido — se invalida en vez de parchear
+  // optimista, el socket/refetch trae el estado final.
+  const mutationAnularItemPreparado = useMutation({
+    mutationFn: async ({ itemId, payload }: { itemId: string; payload: AnularItemPreparadoPayload }) => {
+      const dto = await pedidosApi.anularItemPreparado(itemId, payload);
+      return mapPedido(dto);
+    },
+    onSuccess: (pedido) => invalidateOperationalData(pedido.mesaId),
   });
 
   return {
@@ -255,8 +281,98 @@ export function usePedidosQuery(mesaId?: string, options: UsePedidosOptions = {}
     avanzarEstado: async (id: string, estado: EstadoPedido) => {
       return mutationAvanzarEstado.mutateAsync({ id, estado });
     },
-    avanzarItem: async (itemId: string, estado: EstadoItem) => {
-      return mutationAvanzarItem.mutateAsync({ itemId, estado });
+    avanzarItem: async (itemId: string, estado: EstadoItem, motivo?: string) => {
+      return mutationAvanzarItem.mutateAsync({ itemId, estado, motivo });
+    },
+    anularItemPreparado: async (itemId: string, payload: AnularItemPreparadoPayload) => {
+      return mutationAnularItemPreparado.mutateAsync({ itemId, payload });
+    },
+  };
+}
+
+/**
+ * CU-02: mutación aislada (sin la lista completa de pedidos) para anular la
+ * atención de una mesa desde MesasScreen — evita levantar el infinite query
+ * pesado de `usePedidosQuery` solo para disparar esta acción puntual.
+ */
+export function useAnularAtencionMesaMutation() {
+  const mutation = useMutation({
+    mutationFn: async ({ mesaId, payload }: { mesaId: string; payload: AnularAtencionMesaPayload }): Promise<AnularAtencionMesaResultado> =>
+      pedidosApi.anularAtencionMesa(mesaId, payload),
+    onSuccess: (_resultado, { mesaId }) => {
+      invalidateOperationalData(mesaId);
+      scheduleConsistencyRefetch(mesaId);
+    },
+  });
+
+  return {
+    saving: mutation.isPending,
+    anularAtencionMesa: async (mesaId: string, payload: AnularAtencionMesaPayload) => {
+      return mutation.mutateAsync({ mesaId, payload });
+    },
+  };
+}
+
+/**
+ * Anular UN pedido puntual desde el tablero de Pedidos (no toda la mesa) —
+ * salvavidas operativo: si un pedido queda atascado (o simplemente se
+ * quiere cancelar uno puntual sin tocar el resto de la mesa), esto lo saca
+ * de la vista sin depender de SQL manual.
+ */
+export function useAnularPedidoMutation() {
+  const mutation = useMutation({
+    mutationFn: async ({ pedidoId, payload }: { pedidoId: string; payload: AnularPedidoPayload }) =>
+      pedidosApi.anularPedido(pedidoId, payload),
+    onSuccess: (pedido) => {
+      invalidateOperationalData(pedido.mesaId);
+      scheduleConsistencyRefetch(pedido.mesaId);
+    },
+  });
+
+  return {
+    saving: mutation.isPending,
+    anularPedido: async (pedidoId: string, payload: AnularPedidoPayload) => {
+      return mutation.mutateAsync({ pedidoId, payload });
+    },
+  };
+}
+
+/**
+ * Anular un ítem puntual (Caso A: aún no se preparó, o Caso B: ya
+ * preparado/servido) desde cualquier pantalla que no quiera cargar el
+ * infinite query completo de `usePedidosQuery` — usado por MesasScreen
+ * (mismo flujo unificado que Pedidos/DetallePedido).
+ */
+export function useAnularItemMutations() {
+  const mutationAvanzarItem = useMutation({
+    mutationFn: async ({ itemId, estado, motivo, mesaId }: { itemId: string; estado: EstadoItem; motivo?: string; mesaId?: string }) => {
+      await pedidosApi.avanzarItem(itemId, { estado, motivo });
+      return mesaId;
+    },
+    onSuccess: (mesaId) => {
+      invalidateOperationalData(mesaId);
+      scheduleConsistencyRefetch(mesaId);
+    },
+  });
+
+  const mutationAnularItemPreparado = useMutation({
+    mutationFn: async ({ itemId, payload }: { itemId: string; payload: AnularItemPreparadoPayload }) => {
+      const dto = await pedidosApi.anularItemPreparado(itemId, payload);
+      return mapPedido(dto);
+    },
+    onSuccess: (pedido) => {
+      invalidateOperationalData(pedido.mesaId);
+      scheduleConsistencyRefetch(pedido.mesaId);
+    },
+  });
+
+  return {
+    saving: mutationAvanzarItem.isPending || mutationAnularItemPreparado.isPending,
+    avanzarItem: async (itemId: string, estado: EstadoItem, motivo?: string, mesaId?: string) => {
+      return mutationAvanzarItem.mutateAsync({ itemId, estado, motivo, mesaId });
+    },
+    anularItemPreparado: async (itemId: string, payload: AnularItemPreparadoPayload) => {
+      return mutationAnularItemPreparado.mutateAsync({ itemId, payload });
     },
   };
 }

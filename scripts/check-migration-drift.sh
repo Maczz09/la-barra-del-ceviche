@@ -27,6 +27,7 @@ services=(
   servicio-reportes
   servicio-notificaciones
   servicio-compras
+  servicio-facturacion
 )
 
 drift_found=0

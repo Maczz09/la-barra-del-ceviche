@@ -35,8 +35,14 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Los 9 servicios NestJS (pedidos, caja, cuentas, inventario, identidad,
+    // mesas, reservas, notificaciones, reportes) NO van acá: cada uno corre
+    // su propia suite completa vía Jest (`nx run <servicio>:test`, jest.config.ts
+    // propio) y sus specs usan `jest.*` (incl. `jest.mock()`, que depende del
+    // hoisting nativo de Jest). Barrerlos también aquí los hacía fallar
+    // (vitest no define `jest` como global) sin ganar cobertura real — ya
+    // corren, correctamente, por su cuenta.
     include: [
-      'apps/servicio-{pedidos,caja,cuentas,inventario,identidad,mesas,reservas,notificaciones,reportes}/src/**/*.spec.ts',
       'apps/pwa-cliente/src/**/*.spec.ts',
       'libs/shared-auth/src/**/*.spec.ts',
       'libs/resiliencia/src/**/*.spec.ts',
@@ -51,7 +57,6 @@ export default defineConfig({
       reporter: ['text', 'lcov'],
       reportsDirectory: 'coverage',
       include: [
-        'apps/servicio-{pedidos,caja,cuentas,inventario,identidad,mesas,reservas,notificaciones,reportes}/src/**/*.ts',
         'apps/pwa-cliente/src/**/*.ts',
         'libs/shared-auth/src/**/*.ts',
       ],
@@ -64,7 +69,7 @@ export default defineConfig({
         '**/types/**',
       ],
       // Pisos anti-regresión calibrados a la cobertura real actual del workspace
-      // (medida sobre *.ts de los 9 servicios + shared-auth + pwa-cliente).
+      // (medida sobre *.ts de shared-auth + pwa-cliente).
       // OBJETIVO: subir progresivamente hacia 80% a medida que se añaden pruebas.
       // No bajar estos números; solo subirlos cuando la cobertura real lo permita.
       // Escalón 1 (2026-06-07): +roles.guard, +helmet.config, +permisos,
@@ -75,12 +80,18 @@ export default defineConfig({
       // pwa-cliente (reescritura UI), el denominador de cobertura crece y los
       // porcentajes bajan ligeramente. Valores medidos en CI: stmts 52.88%,
       // lines 53.44%, branches 45.20%. Umbrales = medición − 1pp de margen.
-      // Escalón 3 (pendiente): use*Query + *.api.ts → objetivo ~60-70%.
+      // Recalibración (2026-08-12): se sacaron los 9 servicios NestJS de
+      // `include`/`coverage.include` (corrían duplicados e incompatibles bajo
+      // vitest — ver comentario en `test.include` — ya tienen su propia
+      // cobertura de Jest, que no se agrega a este reporte). El denominador
+      // se achica a solo shared-auth + pwa-cliente; medido: stmts 43.3%,
+      // lines 42.55%, branches 40.75%, functions 34.13%. Umbrales = medición
+      // − ~1pp, no comparables con las cifras de escalones anteriores.
       thresholds: {
-        branches: 45,
-        functions: 38,
-        lines: 53,
-        statements: 52,
+        branches: 39,
+        functions: 33,
+        lines: 41,
+        statements: 42,
       },
     },
   },

@@ -35,7 +35,7 @@ const transaccion: TransaccionDto = {
 describe('BoletaInterna', () => {
   it('muestra el nombre de la sede (o el nombre de marca si no hay sede) en el encabezado', () => {
     render(<BoletaInterna ticket={ticket} transaccion={transaccion} mesaNumero="5" propina={0} onCerrar={vi.fn()} />);
-    expect(screen.getByText('RESTOAPP.PE')).toBeInTheDocument();
+    expect(screen.getByText('LA BARRA DEL CEVICHE')).toBeInTheDocument();
     expect(screen.getByText('Boleta de venta')).toBeInTheDocument();
     expect(screen.getByText('Mesa 5')).toBeInTheDocument();
   });
@@ -47,11 +47,11 @@ describe('BoletaInterna', () => {
         transaccion={transaccion}
         mesaNumero="5"
         propina={0}
-        sede={{ id: 's1', nombre: 'Sede Dos', direccion: 'Av. Test 456', ruc: '20999999999', activa: true }}
+        sede={{ id: 's1', nombre: 'Sede Secundaria', direccion: 'Av. Test 456', ruc: '20999999999', activa: true }}
         onCerrar={vi.fn()}
       />,
     );
-    expect(screen.getByText('SEDE DOS')).toBeInTheDocument();
+    expect(screen.getByText('SEDE SECUNDARIA')).toBeInTheDocument();
     expect(screen.getByText('Av. Test 456')).toBeInTheDocument();
     expect(screen.getByText('RUC 20999999999')).toBeInTheDocument();
   });
@@ -99,7 +99,7 @@ describe('BoletaInterna', () => {
 
   it('al imprimir, abre la boleta en la pestaña dedicada (no imprime encima del modal)', () => {
     const onCerrar = vi.fn();
-    const sede = { id: 's1', nombre: 'Sede Dos', direccion: null, ruc: null, activa: true };
+    const sede = { id: 's1', nombre: 'Sede Secundaria', direccion: null, ruc: null, activa: true };
     render(<BoletaInterna ticket={ticket} transaccion={transaccion} mesaNumero="5" propina={0} sede={sede} onCerrar={onCerrar} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Imprimir boleta/i }));

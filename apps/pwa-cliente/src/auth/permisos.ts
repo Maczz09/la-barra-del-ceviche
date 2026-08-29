@@ -21,10 +21,13 @@ export const TODAS_LAS_RUTAS = [
   'carta',
   'compras',
   'inventario',
+  'mermas',
   'categorias',
   'reportes',
   'usuarios',
   'sedes',
+  'facturacion',
+  'auditoria-anulaciones',
 ] as const;
 
 export type RutaApp = (typeof TODAS_LAS_RUTAS)[number];
@@ -42,10 +45,13 @@ export const ACCESO_POR_ROL: Record<RolUsuario, AccesoRol> = {
   SISTEMA: { home: 'usuarios', rutas: TODAS_LAS_RUTAS },
   GERENCIA: {
     home: 'reportes',
-    rutas: ['reportes', 'inventario', 'categorias', 'compras', 'carta', 'reservas', 'usuarios'],
+    rutas: ['reportes', 'inventario', 'mermas', 'categorias', 'compras', 'carta', 'reservas', 'usuarios', 'auditoria-anulaciones'],
   },
   CAJERO: { home: 'caja', rutas: ['caja', 'mesas', 'pedidos'] },
-  COCINA: { home: 'cocina', rutas: ['cocina', 'carta'] },
+  // T-50: `inventario` para el almacén de cocina (registrar consumos y mermas
+  // de insumos). Aterriza en la pestaña de almacén: la de productos de venta no
+  // se le muestra, porque el backend le rechaza toda mutación sobre ellos.
+  COCINA: { home: 'cocina', rutas: ['cocina', 'carta', 'inventario'] },
   MESERO: { home: 'mesas', rutas: ['mesas', 'pedidos', 'reservas'] },
   RECEPCION: { home: 'reservas', rutas: ['reservas', 'mesas'] },
 };

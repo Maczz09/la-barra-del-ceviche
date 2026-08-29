@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TicketPrintPage } from './TicketPrintPage';
@@ -36,6 +37,18 @@ describe('TicketPrintPage', () => {
     expect(screen.getByText('Boleta de venta')).toBeInTheDocument();
     expect(screen.getByText('Mesa 5')).toBeInTheDocument();
     expect(localStorage.getItem(TICKET_PRINT_KEY)).toBeNull();
+  });
+
+  it('sigue renderizando el ticket bajo StrictMode (doble montaje del efecto en dev)', () => {
+    localStorage.setItem(TICKET_PRINT_KEY, JSON.stringify(payload));
+    render(
+      <StrictMode>
+        <TicketPrintPage />
+      </StrictMode>,
+    );
+
+    expect(screen.getByText('Mesa 5')).toBeInTheDocument();
+    expect(screen.queryByText(/No se encontró/i)).not.toBeInTheDocument();
   });
 
   it('llama a print() poco después de montar, y cierra la pestaña cuando termina de imprimir', () => {

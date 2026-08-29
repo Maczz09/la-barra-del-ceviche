@@ -1,6 +1,8 @@
 import {
+  CategoriaInsumoDto,
   ComprobanteCompraDto,
   InsumoDto,
+  MovimientoInsumoDto,
   OrdenCompraDto,
   OrdenCompraItemDto,
   ProveedorDto,
@@ -8,8 +10,10 @@ import {
   RecepcionCompraItemDto,
 } from '@org/contracts';
 import {
+  CategoriaInsumo,
   ComprobanteCompra,
   Insumo,
+  MovimientoInsumo,
   OrdenCompra,
   OrdenCompraItem,
   Proveedor,
@@ -33,7 +37,23 @@ export function toProveedorDto(p: Proveedor): ProveedorDto {
   };
 }
 
-export function toInsumoDto(i: Insumo & { proveedor?: Proveedor | null }): InsumoDto {
+export function toCategoriaInsumoDto(
+  c: CategoriaInsumo & { _count?: { insumos: number } },
+): CategoriaInsumoDto {
+  return {
+    id: c.id,
+    sedeId: c.sedeId,
+    nombre: c.nombre,
+    descripcion: c.descripcion,
+    activo: c.activo,
+    insumosCount: c._count?.insumos ?? 0,
+    createdAt: c.createdAt.toISOString(),
+  };
+}
+
+export function toInsumoDto(
+  i: Insumo & { proveedor?: Proveedor | null; categoria?: CategoriaInsumo | null },
+): InsumoDto {
   return {
     id: i.id,
     sedeId: i.sedeId,
@@ -44,6 +64,8 @@ export function toInsumoDto(i: Insumo & { proveedor?: Proveedor | null }): Insum
     costoUnitario: i.costoUnitario.toNumber(),
     proveedorId: i.proveedorId,
     proveedorNombre: i.proveedor?.nombre ?? null,
+    categoriaId: i.categoriaId,
+    categoriaNombre: i.categoria?.nombre ?? null,
     productoId: i.productoId,
     factorConversion: i.factorConversion.toNumber(),
     activo: i.activo,
@@ -63,7 +85,9 @@ function toOrdenCompraItemDto(item: OrdenCompraItem): OrdenCompraItemDto {
   };
 }
 
-export function toOrdenCompraDto(o: OrdenCompra & { items: OrdenCompraItem[] }): OrdenCompraDto {
+export function toOrdenCompraDto(
+  o: OrdenCompra & { items: OrdenCompraItem[]; _count?: { comprobantes: number } },
+): OrdenCompraDto {
   return {
     id: o.id,
     sedeId: o.sedeId,
@@ -82,6 +106,9 @@ export function toOrdenCompraDto(o: OrdenCompra & { items: OrdenCompraItem[] }):
     usuarioNombre: o.usuarioNombre,
     items: o.items.map(toOrdenCompraItemDto),
     createdAt: o.createdAt.toISOString(),
+    // No siempre viene cargado (crear/enviar/cerrar/anular no lo piden porque
+    // no lo muestran) — 0 es un default seguro, no un conteo real todavía.
+    comprobantesCount: o._count?.comprobantes ?? 0,
   };
 }
 
@@ -128,5 +155,31 @@ export function toComprobanteCompraDto(c: ComprobanteCompra): ComprobanteCompraD
     usuarioId: c.usuarioId,
     usuarioNombre: c.usuarioNombre,
     createdAt: c.createdAt.toISOString(),
+  };
+}
+
+export function toMovimientoInsumoDto(m: MovimientoInsumo & { insumo: Insumo }): MovimientoInsumoDto {
+  const delta = m.delta.toNumber();
+  const costoUnitario = m.costoUnitario ? m.costoUnitario.toNumber() : null;
+  return {
+    id: m.id,
+    sedeId: m.sedeId,
+    insumoId: m.insumoId,
+    insumoNombre: m.insumo.nombre,
+    unidad: m.insumo.unidad,
+    tipo: m.tipo,
+    delta,
+    stockAntes: m.stockAntes.toNumber(),
+    stockDespues: m.stockDespues.toNumber(),
+    costoUnitario,
+    // Valor absoluto: el costo de un movimiento es lo que vale lo que se movió,
+    // el sentido ya lo dice `delta`.
+    costoTotal: costoUnitario === null ? null : Math.abs(delta) * costoUnitario,
+    motivo: m.motivo,
+    observacion: m.observacion,
+    recepcionId: m.recepcionId,
+    usuarioId: m.usuarioId,
+    usuarioNombre: m.usuarioNombre,
+    createdAt: m.createdAt.toISOString(),
   };
 }

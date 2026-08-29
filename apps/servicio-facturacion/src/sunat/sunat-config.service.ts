@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
+import { PrismaService } from '../prisma/prisma.service';
+import { CredencialesCryptoService } from './credenciales-crypto.service';
 
 export interface CredencialesSunat {
   pfxBuffer: Buffer;
@@ -10,14 +12,27 @@ export interface CredencialesSunat {
 
 /**
  * Lee las credenciales SUNAT (certificado .pfx + SOL) de una de las dos
- * empresas desde variables de entorno, por convención de "slot" (1 o 2 —
- * ver Empresa.slot). Mientras el cajero/admin no haya tramitado el
- * certificado de una empresa, `credencialesParaSlot` lanza un error claro en
+ * empresas por "slot" (1 o 2 — ver Empresa.slot), en dos posibles fuentes:
+ *
+ * 1. Empresa en la BD (cargadas por el formulario "Configurar SUNAT" de
+ *    Facturación, cifradas — ver CredencialesCryptoService). Prioridad si
+ *    existen.
+ * 2. Variables de entorno / Docker secrets (SUNAT_*_EMPRESA_<slot>_*), el
+ *    mecanismo original — sigue funcionando para el despliegue que ya lo usa
+ *    así, sin tocar nada.
+ *
+ * Mientras el cajero/admin no haya configurado el certificado de una empresa
+ * por ninguna de las dos vías, `credencialesParaSlot` lanza un error claro en
  * vez de dejar caer todo el servicio: emitir() y EnvioProcessor lo capturan
  * y devuelven "no configurado" sin tumbar el resto de comprobantes.
  */
 @Injectable()
 export class SunatConfigService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly crypto: CredencialesCryptoService,
+  ) {}
+
   /**
    * Cada valor admite dos formas: `<VAR>` en claro (dev) o `<VAR>_FILE`
    * apuntando a un Docker secret (prod — ver
@@ -37,7 +52,21 @@ export class SunatConfigService {
     return process.env[nombreVar];
   }
 
-  credencialesParaSlot(slot: number): CredencialesSunat {
+  private async credencialesDesdeBd(slot: number): Promise<CredencialesSunat | null> {
+    if (!this.crypto.configurada()) return null;
+    const empresa = await this.prisma.empresa.findUnique({ where: { slot } });
+    if (!empresa?.solUsuario || !empresa.solClaveCifrada || !empresa.certificadoPfxCifrado || !empresa.certificadoPassCifrada) {
+      return null;
+    }
+    return {
+      pfxBuffer: this.crypto.desencriptar(Buffer.from(empresa.certificadoPfxCifrado)),
+      pfxPass: this.crypto.desencriptarTexto(empresa.certificadoPassCifrada),
+      solUsuario: empresa.solUsuario,
+      solClave: this.crypto.desencriptarTexto(empresa.solClaveCifrada),
+    };
+  }
+
+  private credencialesDesdeEnv(slot: number): CredencialesSunat {
     const pfxFile = process.env[`SUNAT_PFX_EMPRESA_${slot}_FILE`];
     const pfxPass = this.leerSecreto(`SUNAT_PFX_EMPRESA_${slot}_PASS`);
     const solUsuario = this.leerSecreto(`SUNAT_SOL_USER_EMPRESA_${slot}`);
@@ -64,9 +93,15 @@ export class SunatConfigService {
     return { pfxBuffer, pfxPass: pfxPass as string, solUsuario: solUsuario as string, solClave: solClave as string };
   }
 
-  tieneCredenciales(slot: number): boolean {
+  async credencialesParaSlot(slot: number): Promise<CredencialesSunat> {
+    const desdeBd = await this.credencialesDesdeBd(slot);
+    if (desdeBd) return desdeBd;
+    return this.credencialesDesdeEnv(slot);
+  }
+
+  async tieneCredenciales(slot: number): Promise<boolean> {
     try {
-      this.credencialesParaSlot(slot);
+      await this.credencialesParaSlot(slot);
       return true;
     } catch {
       return false;

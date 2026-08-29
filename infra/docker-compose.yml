@@ -253,7 +253,7 @@ services:
   # MICROSERVICIOS
   # ═══════════════════════════════════════════════════
   servicio-identidad:
-    image: infra-servicio-identidad
+    image: la-barra-del-ceviche-servicio-identidad
     container_name: nachopps-servicio-identidad
     # host 3001 choca con otro stack Docker de este host (medicitas_grafana);
     # Kong sigue enrutando internamente a servicio-identidad:3000, sin cambios.
@@ -326,7 +326,7 @@ services:
         condition: service_healthy
 
   servicio-mesas:
-    image: infra-servicio-mesas
+    image: la-barra-del-ceviche-servicio-mesas
     container_name: nachopps-servicio-mesas
     ports: ['3002:3000']
     env_file: *jwt_dev_env
@@ -390,7 +390,7 @@ services:
         condition: service_healthy
 
   servicio-pedidos:
-    image: infra-servicio-pedidos
+    image: la-barra-del-ceviche-servicio-pedidos
     container_name: nachopps-servicio-pedidos
     ports: ['3004:3000']
     env_file: *jwt_dev_env
@@ -456,7 +456,7 @@ services:
         condition: service_healthy
 
   servicio-cuentas:
-    image: infra-servicio-cuentas
+    image: la-barra-del-ceviche-servicio-cuentas
     container_name: nachopps-servicio-cuentas
     ports: ['3005:3000']
     env_file: *jwt_dev_env
@@ -494,6 +494,7 @@ services:
       RABBITMQ_URI: 'amqp://nachopps:nachopps_secret@rabbitmq:5672'
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       PEDIDOS_SERVICE_URL: 'http://servicio-pedidos:3000/api'
+      MESAS_SERVICE_URL: 'http://servicio-mesas:3000/api'
       SERVICE_JWT_SECRET: 'nachopps_service_secret_dev'
       CORS_ORIGIN: 'http://localhost:4200'
     profiles: ['all']
@@ -521,7 +522,7 @@ services:
         condition: service_healthy
 
   servicio-reservas:
-    image: infra-servicio-reservas
+    image: la-barra-del-ceviche-servicio-reservas
     container_name: nachopps-servicio-reservas
     ports: ['3006:3000']
     env_file: *jwt_dev_env
@@ -585,7 +586,7 @@ services:
         condition: service_healthy
 
   servicio-inventario:
-    image: infra-servicio-inventario
+    image: la-barra-del-ceviche-servicio-inventario
     container_name: nachopps-servicio-inventario
     ports: ['3007:3000']
     env_file: *jwt_dev_env
@@ -649,7 +650,7 @@ services:
         condition: service_healthy
 
   servicio-notificaciones:
-    image: infra-servicio-notificaciones
+    image: la-barra-del-ceviche-servicio-notificaciones
     container_name: nachopps-servicio-notificaciones
     ports: ['3008:3000']
     env_file: *jwt_dev_env
@@ -713,7 +714,7 @@ services:
         condition: service_healthy
 
   servicio-caja:
-    image: infra-servicio-caja
+    image: la-barra-del-ceviche-servicio-caja
     container_name: nachopps-servicio-caja
     ports: ['3009:3000']
     env_file: *jwt_dev_env
@@ -781,7 +782,7 @@ services:
         condition: service_healthy
 
   servicio-reportes:
-    image: infra-servicio-reportes
+    image: la-barra-del-ceviche-servicio-reportes
     container_name: nachopps-servicio-reportes
     ports: ['3010:3000']
     env_file: *jwt_dev_env
@@ -845,10 +846,20 @@ services:
         condition: service_healthy
 
   servicio-facturacion:
-    image: infra-servicio-facturacion
+    image: la-barra-del-ceviche-servicio-facturacion
     container_name: nachopps-servicio-facturacion
     ports: ['3011:3000']
-    env_file: *jwt_dev_env
+    # sunat-dev.env es opcional a proposito (required: false): igual que el
+    # .p12 del volumen de abajo, no existe en un checkout fresco (CI, otro
+    # dev) — el servicio ya esta preparado para arrancar "no configurado"
+    # (ver SunatConfigService) y sin esto docker compose up fallaba entero
+    # por un env_file requerido inexistente.
+    env_file:
+      - *jwt_dev_env
+      - path: ./secrets/sunat-dev.env
+        required: false
+    volumes:
+      - ../certificates:/app/certificates:ro
     environment:
       PORT: '3000'
       NODE_OPTIONS: '--max-old-space-size=400'
@@ -864,10 +875,21 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://otel-collector:4318'
       SERVICE_JWT_SECRET: 'nachopps_service_secret_dev'
       CORS_ORIGIN: 'http://localhost:4200'
-      # SUNAT: sin credenciales en dev por defecto — el servicio arranca igual
-      # (CertificadoService/EnvioProcessor detectan "no configurado" y no
-      # tumban nada); rellena por empresa cuando tengas certificado + SOL.
+      # SUNAT: credenciales de empresa 1 (Sede Central, RUC 20123456786) desde
+      # infra/secrets/sunat-dev.env (gitignorado); el .p12 se monta como
+      # volumen desde certificates/ (también gitignorado, nunca en la imagen).
+      # Empresa 2 queda "no configurada" hasta tramitar su propio certificado
+      # — CertificadoService/EnvioProcessor lo detectan sin tumbar el resto.
+      # A propósito en BETA/homologación, aunque prod ya usa el endpoint real
+      # (ver .env.example) — este stack es para desarrollo local; nunca debe
+      # poder enviar un comprobante real a SUNAT solo por estar probando algo.
       SUNAT_WSDL_URL: 'https://e-beta.sunat.gob.pe/ol-ti-itcpfegem-beta/billService?wsdl'
+      SUNAT_PFX_EMPRESA_1_FILE: '/app/certificates/empresa-1/certificado.p12'
+      # Cifra las credenciales SUNAT que se suban por el formulario "Configurar
+      # SUNAT" de Facturación (ver CredencialesCryptoService) — 32 bytes hex,
+      # SOLO de dev. En prod, un secret real generado con
+      # `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+      FACTURACION_CRED_ENCRYPTION_KEY: '165525fec81a294571de597b1110d6b17e5060da219c87dcb865da257e7f0d69'
     profiles: ['all']
     restart: unless-stopped
     mem_limit: 512m
@@ -884,7 +906,7 @@ services:
         condition: service_healthy
 
   servicio-compras:
-    image: infra-servicio-compras
+    image: la-barra-del-ceviche-servicio-compras
     container_name: nachopps-servicio-compras
     ports: ['3012:3000']
     env_file: *jwt_dev_env
@@ -936,7 +958,7 @@ services:
     build:
       context: kong
       dockerfile: Dockerfile
-    image: infra-kong
+    image: la-barra-del-ceviche-kong
     container_name: nachopps-kong
     env_file: *jwt_dev_env
     environment:
@@ -1120,7 +1142,7 @@ services:
     build:
       context: ../
       dockerfile: apps/pwa-cliente/Dockerfile
-    image: infra-pwa-cliente
+    image: la-barra-del-ceviche-pwa-cliente
     container_name: nachopps-pwa-cliente
     ports:
       - '4200:8080'

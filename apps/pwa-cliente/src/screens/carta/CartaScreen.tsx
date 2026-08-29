@@ -24,17 +24,24 @@ export function CartaScreen() {
   // COCINA solo puede marcar 86 (agotado/disponible), no crear ni editar platos.
   const soloDisponibilidad = rol === 'COCINA';
   const {
-    categorias,
+    categorias: todasLasCategorias,
     productos,
     loading,
     saving,
     crearProducto,
     actualizarProducto,
     actualizarDisponibilidad,
-  } = useInventarioQuery(undefined, { conStock: false });
+  // La carta se muestra completa de una vez (tabs de categoría con conteos
+  // en cliente), no paginada: limit alto para cubrir el menú real (~183 platos).
+  } = useInventarioQuery(undefined, { conStock: false, limit: 500 });
+
+  // Categorías de Inventario (área INVENTARIO) no son de Carta — se
+  // gestionan y muestran aparte, en el módulo Inventario.
+  const categorias = useMemo(() => todasLasCategorias.filter((c) => c.area !== 'INVENTARIO'), [todasLasCategorias]);
 
   const [modo, setModo] = useState<'CARTA' | 'MENU_DIA'>('CARTA');
   const [cat, setCat] = useState<string>('TODAS');
+  const [areaFiltro, setAreaFiltro] = useState<'TODAS' | 'COCINA' | 'BARRA'>('TODAS');
   const [q, setQ] = useState('');
   const [edit, setEdit] = useState<ProductoVM | null>(null);
   const [nuevo, setNuevo] = useState(false);
@@ -51,13 +58,29 @@ export function CartaScreen() {
     return mapa;
   }, [categorias]);
 
-  const filtrados = useMemo(
+  // Área (Cocina/Barra) de cada categoría — sirve para el filtro rápido y
+  // para saber a qué estación de producción va cada plato.
+  const areaPorCategoria = useMemo(() => new Map(categorias.map((c) => [c.id, c.area])), [categorias]);
+
+  const categoriasVisibles = useMemo(
+    () => areaFiltro === 'TODAS' ? categorias : categorias.filter((c) => c.area === areaFiltro),
+    [categorias, areaFiltro],
+  );
+
+  // Productos que matchean área + búsqueda, sin filtrar aún por categoría
+  // puntual — es lo que cuenta el tab "Todas" dentro de la estación elegida.
+  const enAreaYBusqueda = useMemo(
     () => productos.filter((p) => {
-      const okCat = cat === 'TODAS' || p.categoriaId === cat;
+      const okArea = areaFiltro === 'TODAS' || areaPorCategoria.get(p.categoriaId) === areaFiltro;
       const okQ = !q || p.nombre.toLowerCase().includes(q.toLowerCase());
-      return okCat && okQ;
+      return okArea && okQ;
     }),
-    [productos, cat, q],
+    [productos, areaFiltro, areaPorCategoria, q],
+  );
+
+  const filtrados = useMemo(
+    () => enAreaYBusqueda.filter((p) => cat === 'TODAS' || p.categoriaId === cat),
+    [enAreaYBusqueda, cat],
   );
 
   const kpis = useMemo(() => {
@@ -140,10 +163,31 @@ export function CartaScreen() {
         <MiniStat icon="Check" color="var(--ok)" soft="var(--ok-soft)" k="Disponibles" v={kpis.activos} d="visibles en comandero" />
       </div>
 
+      <div className="row" style={{ gap: 6, marginBottom: 10 }}>
+        <button
+          className={`chip ${areaFiltro === 'TODAS' ? 'on' : ''}`}
+          onClick={() => { setAreaFiltro('TODAS'); setCat('TODAS'); }}
+        >
+          Todas las estaciones
+        </button>
+        <button
+          className={`chip ${areaFiltro === 'COCINA' ? 'on' : ''}`}
+          onClick={() => { setAreaFiltro('COCINA'); setCat('TODAS'); }}
+        >
+          <Icons.Cocina s={14} /> Cocina
+        </button>
+        <button
+          className={`chip ${areaFiltro === 'BARRA' ? 'on' : ''}`}
+          onClick={() => { setAreaFiltro('BARRA'); setCat('TODAS'); }}
+        >
+          <Icons.Drink s={14} /> Barra
+        </button>
+      </div>
+
       <div className="canal-tabs-row" style={{ marginBottom: 14 }}>
         <div className="canal-tabs">
-          <button className={`canal-tab ${cat === 'TODAS' ? 'on' : ''}`} onClick={() => setCat('TODAS')}>Todas <span className="ct-count">{productos.length}</span></button>
-        {categorias.map((c) => (
+          <button className={`canal-tab ${cat === 'TODAS' ? 'on' : ''}`} onClick={() => setCat('TODAS')}>Todas <span className="ct-count">{enAreaYBusqueda.length}</span></button>
+        {categoriasVisibles.map((c) => (
           <button key={c.id} className={`canal-tab ${cat === c.id ? 'on' : ''}`} onClick={() => setCat(c.id)}>
             {nombrePorCategoria.get(c.id)} <span className="ct-count">{productos.filter((p) => p.categoriaId === c.id).length}</span>
           </button>

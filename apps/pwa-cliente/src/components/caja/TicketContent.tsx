@@ -30,6 +30,7 @@ export function TicketContent({ ticket, transaccion, mesaNumero, propina, sede }
     <div className="print-area">
       <div className="zticket">
         <div className="zc">
+          <img src="/logo.webp" alt="" style={{ width: 56, height: 'auto', marginBottom: 6 }} />
           <h4>{(sede?.nombre ?? APP_NAME).toUpperCase()}</h4>
           {sede?.direccion && <div style={{ fontSize: 11 }}>{sede.direccion}</div>}
           {sede?.ruc && <div style={{ fontSize: 11 }}>RUC {sede.ruc}</div>}

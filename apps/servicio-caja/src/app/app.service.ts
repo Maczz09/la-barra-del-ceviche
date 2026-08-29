@@ -80,7 +80,10 @@ export class AppService {
       orderBy: { abiertoAt: 'desc' },
     });
 
-    if (abierto) return this.mapTurno(abierto);
+    if (abierto) {
+      await this.procesarPagosPendientes(sedeId);
+      return this.mapTurno(abierto);
+    }
 
     const fondoInicial = this.money(command.fondoInicial ?? 0);
     let turno;
@@ -108,6 +111,8 @@ export class AppService {
           },
         });
 
+        // Identidad activa automáticamente al personal MESERO de esta sede
+        // al abrir turno (y los desactiva al cerrar — ver cerrarTurno).
         const payload: TurnoCajaAbiertoPayload = { turnoId: creado.id, sedeId };
         await prisma.outboxEvent.create({
           data: {
@@ -130,7 +135,10 @@ export class AppService {
           where: { estado: 'ABIERTA', sedeId },
           orderBy: { abiertoAt: 'desc' },
         });
-        if (existente) return this.mapTurno(existente);
+        if (existente) {
+          await this.procesarPagosPendientes(sedeId);
+          return this.mapTurno(existente);
+        }
       }
       throw error;
     }
@@ -140,11 +148,110 @@ export class AppService {
       aggregateId: turno.id,
       message: 'Turno de caja abierto.',
     } satisfies OperableLog);
+    await this.procesarPagosPendientes(sedeId);
     return this.mapTurno(turno);
   }
 
   private isUniqueConstraintViolation(error: unknown): boolean {
     return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
+  }
+
+  /**
+   * Bloquea el cierre de turno si queda alguna cuenta ABIERTA (sin cobrar)
+   * en la sede — el cajero debe cobrarla primero. Si la verificación misma
+   * falla (cuentas caída), NO se bloquea el cierre por eso: una caída
+   * transitoria de una dependencia no debe impedir cerrar la caja del día.
+   */
+  private async verificarSinCuentasAbiertas(sedeId: string): Promise<void> {
+    let abiertas: Array<{ id: string; mesaId: string; numeroMesa?: number; total: number }>;
+    try {
+      abiertas = await this.cuentasHttp.listarCuentasAbiertas(sedeId);
+    } catch (error) {
+      this.logger.warn({
+        operation: 'cerrarTurno',
+        aggregateId: sedeId,
+        dependency: 'cuentas',
+        errorCode: 'VERIFICACION_CUENTAS_ABIERTAS_FALLIDA',
+        message: `No se pudo verificar cuentas abiertas antes de cerrar turno: ${(error as Error).message}`,
+      } satisfies OperableLog);
+      return;
+    }
+    if (abiertas.length === 0) return;
+    const mesas = abiertas.map((c) => (c.numeroMesa != null ? `Mesa ${c.numeroMesa}` : c.mesaId)).join(', ');
+    throw new BadRequestException(
+      `No se puede cerrar el turno: hay ${abiertas.length} cuenta(s) sin cobrar (${mesas}). Cóbralas antes de cerrar caja.`,
+    );
+  }
+
+  /**
+   * Reintenta cada cobro que quedó en espera de esta sede (ver el brazo
+   * "sin turno" de registrarPago) ahora que hay un turno abierto. Cada fila
+   * se reclama con un UPDATE condicional (PENDIENTE → PROCESANDO) antes de
+   * procesarla, para que dos aperturas concurrentes de la misma sede no
+   * paguen la misma fila dos veces. Un fallo individual (la cuenta ya se
+   * cerró por otra vía, el monto ya no cuadra, etc.) NO debe tumbar la
+   * apertura de turno — se marca FALLIDO y se sigue con las demás.
+   */
+  private async procesarPagosPendientes(sedeId: string): Promise<void> {
+    const pendientes = await this.prisma.pagoPendiente.findMany({
+      where: { sedeId, estado: 'PENDIENTE' },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    for (const p of pendientes) {
+      const reclamado = await this.prisma.pagoPendiente.updateMany({
+        where: { id: p.id, estado: 'PENDIENTE' },
+        data: { estado: 'PROCESANDO' },
+      });
+      if (reclamado.count === 0) continue; // otra apertura concurrente ya se la llevó
+
+      const command: PagarCuentaCajaCommand = {
+        cuentaId: p.cuentaId,
+        montoRecibido: this.n(p.montoRecibido),
+        metodo: p.metodo as PagarCuentaCajaCommand['metodo'],
+        descuento: p.descuento != null ? this.n(p.descuento) : undefined,
+        propina: p.propina != null ? this.n(p.propina) : undefined,
+        mesaNumero: p.mesaNumero ?? undefined,
+        mesaUnidaCon: p.mesaUnidaCon ?? undefined,
+        referencia: p.referencia ?? undefined,
+        notas: p.notas ?? undefined,
+        tipoComprobante: (p.tipoComprobante as PagarCuentaCajaCommand['tipoComprobante']) ?? undefined,
+        clienteDocumento: p.clienteDocumento ?? undefined,
+      };
+
+      try {
+        const resultado = await this.registrarPago(command, p.usuarioId, p.cajeroNombre, sedeId);
+        if (resultado.queued) {
+          // No debería ocurrir (el turno se acaba de confirmar abierto),
+          // pero por seguridad: no la marques PROCESADO ni la dejes
+          // atascada en PROCESANDO — vuelve a PENDIENTE para el próximo intento.
+          await this.prisma.pagoPendiente.update({ where: { id: p.id }, data: { estado: 'PENDIENTE' } });
+          continue;
+        }
+        await this.prisma.pagoPendiente.update({
+          where: { id: p.id },
+          data: { estado: 'PROCESADO', transaccionId: resultado.transaccion?.id, procesadoAt: new Date() },
+        });
+        this.logger.log({
+          operation: 'procesarPagosPendientes',
+          aggregateId: p.id,
+          resultingState: 'PROCESADO',
+          message: `Pago en espera ${p.id} (cuenta ${p.cuentaId}) registrado al abrir turno.`,
+        } satisfies OperableLog);
+      } catch (error) {
+        await this.prisma.pagoPendiente.update({
+          where: { id: p.id },
+          data: { estado: 'FALLIDO', error: (error as Error).message, procesadoAt: new Date() },
+        });
+        this.logger.warn({
+          operation: 'procesarPagosPendientes',
+          aggregateId: p.id,
+          errorCode: 'PAGO_PENDIENTE_FALLIDO',
+          resultingState: 'FALLIDO',
+          message: `Pago en espera ${p.id} (cuenta ${p.cuentaId}) no se pudo registrar al abrir turno: ${(error as Error).message}`,
+        } satisfies OperableLog);
+      }
+    }
   }
 
   async obtenerTurnoActivo(usuarioSedeId?: string | null, sedeIdSolicitado?: string) {
@@ -238,10 +345,14 @@ export class AppService {
     }
   }
 
-  async listarMovimientosTurno(id: string, usuarioSedeId?: string | null) {
+  async listarMovimientosTurno(id: string, usuarioSedeId?: string | null, search?: string) {
     await this.assertTurnoDeSede(id, usuarioSedeId);
     const movimientos = await this.prisma.movimientoCaja.findMany({
-      where: { turnoId: id },
+      where: {
+        turnoId: id,
+        // Busca por el código de la atención ("A0000001" o un fragmento).
+        ...(search ? { cuentaCorrelativo: { contains: search, mode: 'insensitive' } } : {}),
+      },
       orderBy: { createdAt: 'desc' },
     });
     return { data: movimientos.map((m) => this.mapMovimiento(m)) };
@@ -310,6 +421,18 @@ export class AppService {
     usuarioId?: string | null,
     usuarioSedeId?: string | null,
   ) {
+    // Chequeo previo, FUERA de la transacción (igual que registrarPago hace
+    // fetchCuenta antes de su $transaction): no tiene sentido tener abierta
+    // una transacción de Postgres mientras se espera una llamada HTTP.
+    const turnoPrevio = await this.prisma.turnoCaja.findUnique({ where: { id } });
+    if (!turnoPrevio || (usuarioSedeId && turnoPrevio.sedeId !== usuarioSedeId)) {
+      throw new NotFoundException(`Turno ${id} no encontrado`);
+    }
+    if (turnoPrevio.estado !== 'ABIERTA') {
+      throw new BadRequestException('El turno ya está cerrado.');
+    }
+    await this.verificarSinCuentasAbiertas(turnoPrevio.sedeId);
+
     const cierre = await this.prisma.$transaction(async (prisma: import('../generated/prisma').Prisma.TransactionClient) => {
       const turno = await prisma.turnoCaja.findUnique({
         where: { id },
@@ -368,6 +491,8 @@ export class AppService {
         data: { estado: 'CERRADA', cerradoAt: new Date() },
       });
 
+      // Identidad desactiva automáticamente al personal MESERO de esta sede
+      // al cerrar turno — contraparte de TurnoCajaAbierto en abrirTurno.
       const payload: TurnoCajaCerradoPayload = { turnoId: id, sedeId: turno.sedeId };
       await prisma.outboxEvent.create({
         data: {
@@ -402,7 +527,7 @@ export class AppService {
     usuarioId?: string | null,
     cajeroNombre?: string | null,
     usuarioSedeId?: string | null,
-  ): Promise<{ message?: string; transaccion: TransaccionDto; ticket?: unknown; turno: unknown; pendiente: number }> {
+  ): Promise<{ message?: string; queued?: boolean; transaccion?: TransaccionDto; ticket?: unknown; turno: unknown; pendiente: number }> {
     // T-23 Fase 2: la sede de la operación la determina LA CUENTA, no el
     // usuario — se necesita para encontrar el turno abierto correcto. Por
     // eso fetchCuenta va antes del lookup de turno (orden invertido respecto
@@ -428,7 +553,40 @@ export class AppService {
       orderBy: { abiertoAt: 'desc' },
     });
     if (!turno) {
-      throw new BadRequestException('No hay turno de caja abierto en esta sede.');
+      // En vez de rechazar el cobro, se guarda tal cual el comando que el
+      // cajero ya llenó (mesa, monto, método, comprobante...) y se reintenta
+      // solo en cuanto abra el próximo turno de esta sede — ver
+      // procesarPagosPendientes, llamado desde abrirTurno.
+      const pendiente = await this.prisma.pagoPendiente.create({
+        data: {
+          sedeId,
+          cuentaId: command.cuentaId,
+          montoRecibido: this.money(command.montoRecibido),
+          metodo: command.metodo,
+          descuento: command.descuento != null ? this.money(command.descuento) : undefined,
+          propina: command.propina != null ? this.money(command.propina) : undefined,
+          mesaNumero: command.mesaNumero,
+          mesaUnidaCon: command.mesaUnidaCon,
+          referencia: command.referencia,
+          notas: command.notas,
+          tipoComprobante: command.tipoComprobante,
+          clienteDocumento: command.clienteDocumento,
+          usuarioId: usuarioId ?? undefined,
+          cajeroNombre: cajeroNombre ?? undefined,
+        },
+      });
+      this.logger.log({
+        operation: 'registrarPago',
+        aggregateId: command.cuentaId,
+        resultingState: 'EN_ESPERA_DE_TURNO',
+        message: `Pago ${pendiente.id} puesto en cola: no hay turno de caja abierto en la sede ${sedeId}.`,
+      } satisfies OperableLog);
+      return {
+        message: 'La caja está cerrada: el pago quedó en espera y se registrará automáticamente en cuanto se abra un turno.',
+        queued: true,
+        turno: null,
+        pendiente: this.money(command.montoRecibido).toNumber(),
+      };
     }
 
     const descuento = this.money(command.descuento ?? 0);
@@ -503,6 +661,9 @@ export class AppService {
           // así también queda en pagos parciales (T-16), no solo el final.
           meseroId: cuentaRemota.meseroId ?? undefined,
           meseroNombre: cuentaRemota.meseroNombre ?? undefined,
+          // Código legible de la atención ("A0000001"), denormalizado desde
+          // la cuenta remota al momento del cobro.
+          cuentaCorrelativo: cuentaRemota.correlativo ?? undefined,
           // Número de mesa legible (y hermanas si estaba unida) al momento
           // del cobro — mismo dato confiado del cliente que ya se usa para
           // MovimientoCaja.donde, ahora también en la Transaccion.
@@ -526,6 +687,7 @@ export class AppService {
           descuento,
           propina: this.money(command.propina ?? 0),
           motivo: command.notas,
+          cuentaCorrelativo: cuentaRemota.correlativo ?? undefined,
         },
       });
 
@@ -803,6 +965,7 @@ export class AppService {
       mesaUnidaCon: t.mesaUnidaCon || undefined,
       tipoComprobante: t.tipoComprobante,
       clienteDocumento: t.clienteDocumento || undefined,
+      cuentaCorrelativo: t.cuentaCorrelativo || undefined,
       createdAt: t.createdAt.toISOString(),
     };
   }
@@ -838,6 +1001,7 @@ export class AppService {
       descuento: this.n(m.descuento),
       propina: this.n(m.propina),
       motivo: m.motivo ?? null,
+      cuentaCorrelativo: m.cuentaCorrelativo ?? null,
       createdAt: m.createdAt.toISOString(),
     };
   }

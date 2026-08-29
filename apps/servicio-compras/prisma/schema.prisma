@@ -34,6 +34,25 @@ model Proveedor {
   @@map("proveedores")
 }
 
+// ── Categoría de insumo (taxonomía PROPIA del almacén de cocina) ─────────
+// Deliberadamente separada de `Categoria` en servicio-inventario (que ordena
+// lo que se VENDE): el almacén se agrupa por criterios de compra —Abarrotes,
+// Carnes, Limpieza, Gas— que no tienen por qué coincidir con la carta.
+model CategoriaInsumo {
+  id          String   @id @default(uuid())
+  sedeId      String
+  nombre      String
+  descripcion String?
+  activo      Boolean  @default(true)
+  insumos     Insumo[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([sedeId, nombre])
+  @@index([sedeId, activo])
+  @@map("categorias_insumo")
+}
+
 // ── Insumo (lo que se COMPRA) ────────────────────────────────────────────
 // Separado de Producto (servicio-inventario, lo que se VENDE): unidad de
 // compra, costo, stock fraccionario y mínimo. `productoId` es un puente
@@ -49,17 +68,68 @@ model Insumo {
   costoUnitario    Decimal    @default(0) @db.Decimal(12, 4)
   proveedorId      String?
   proveedor        Proveedor? @relation(fields: [proveedorId], references: [id], onDelete: SetNull)
+  categoriaId      String?
+  categoria        CategoriaInsumo? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
   productoId       String?
   factorConversion Decimal    @default(1) @db.Decimal(12, 4)
   activo           Boolean    @default(true)
   items            OrdenCompraItem[]
+  movimientos      MovimientoInsumo[]
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
   @@unique([sedeId, nombre])
   @@index([sedeId, activo])
   @@index([proveedorId])
+  @@index([categoriaId])
   @@map("insumos")
+}
+
+// ── Movimiento de insumo (kardex del almacén de cocina) ──────────────────
+// T-50. Antes `Insumo.stockActual` solo SUBIA (recepción de compra) y nadie lo
+// bajaba: lo que cocina consumía no quedaba registrado. Cada fila es un hecho
+// INMUTABLE, y TODA escritura de `stockActual` pasa por una — incluida la
+// recepción, así el kardex cuadra desde la primera fila (sumar `delta` de un
+// insumo debe dar su `stockActual`).
+enum MovimientoInsumoTipo {
+  ENTRADA_COMPRA
+  // Ingreso a mano, sin orden de compra detrás: la compra del día en el
+  // mercado, que es como entra la mayoría de la mercadería fresca.
+  ENTRADA_MANUAL
+  ENTRADA_DEVOLUCION
+  SALIDA_CONSUMO
+  SALIDA_MERMA
+  AJUSTE_CONTEO
+}
+
+model MovimientoInsumo {
+  id            String   @id @default(uuid())
+  sedeId        String
+  insumoId      String
+  insumo        Insumo   @relation(fields: [insumoId], references: [id], onDelete: Cascade)
+  tipo          MovimientoInsumoTipo
+  // CON SIGNO (negativo en salidas). Un solo campo firmado, en vez de
+  // cantidad + signo derivado del tipo: hace el kardex auto-verificable.
+  delta         Decimal  @db.Decimal(12, 3)
+  stockAntes    Decimal  @db.Decimal(12, 3)
+  stockDespues  Decimal  @db.Decimal(12, 3)
+  // Snapshot del costo al momento del movimiento: valoriza la salida aunque el
+  // costo del insumo cambie después (mismo criterio que Merma.costoUnitario en
+  // servicio-inventario).
+  costoUnitario Decimal? @db.Decimal(12, 4)
+  motivo        String?
+  observacion   String?
+  // Referencia laxa (sin FK) a la recepción que originó una ENTRADA_COMPRA:
+  // solo trazabilidad, y así borrar una recepción no arrastra el kardex.
+  recepcionId   String?
+  usuarioId     String?
+  usuarioNombre String?
+  createdAt     DateTime @default(now())
+
+  @@index([sedeId, createdAt])
+  @@index([insumoId, createdAt])
+  @@index([tipo])
+  @@map("movimientos_insumo")
 }
 
 // ── Orden de compra ──────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { constants as fsConstants, promises as fsp } from 'node:fs';
 import { join } from 'node:path';
 import sharp from 'sharp';
+import { PDFDocument } from 'pdf-lib';
 import { ComprobanteListResponse, ListarComprobantesQuery, SubirComprobanteCommand } from '@org/contracts';
 import { OperableLog } from '@org/observabilidad';
 import { resolveSedeId } from '@org/shared-auth';
@@ -65,6 +66,44 @@ export class ComprobantesService implements OnModuleInit {
       throw new NotFoundException(`Comprobante ${id} no encontrado`);
     }
     return comprobante;
+  }
+
+  /**
+   * Convierte el WebP guardado a PDF, bajo demanda (no se persiste — el
+   * archivo en disco sigue siendo el WebP, que pesa una fracción de lo que
+   * pesaría guardar el PDF; regenerarlo en cada pedido es barato: una foto
+   * de comprobante son unos pocos cientos de KB).
+   *
+   * PDF no soporta WebP en ninguno de sus filtros de imagen, así que primero
+   * se transcodifica a JPEG con sharp (server-side, ya es dependencia de este
+   * servicio); pdf-lib (no jsPDF — pensada para navegador, en Node su
+   * addImage() enruta hasta un cargador de archivos que exige permiso de
+   * filesystem incluso para bytes en memoria, y su sniffing de formato no
+   * reconoce un Buffer/Uint8Array real) arma una página del tamaño exacto de
+   * la imagen — sin márgenes ni A4 vacío alrededor.
+   */
+  async generarPdf(id: string, usuarioSedeId?: string | null): Promise<{ buffer: Buffer; filename: string }> {
+    const c = await this.obtenerComprobante(id, usuarioSedeId);
+    const webp = await fsp.readFile(this.rutaAbsoluta(c.rutaArchivo));
+
+    const ancho = c.ancho;
+    const alto = c.alto;
+    const jpeg = await sharp(webp).jpeg({ quality: 85 }).toBuffer();
+
+    const pdfDoc = await PDFDocument.create();
+    // Buffer chico → Node lo asigna dentro de su pool compartido de 8 KB
+    // (jpeg.byteOffset != 0, jpeg.buffer es TODO el pool, no solo estos
+    // bytes). pdf-lib no respeta ese byteOffset al leer el header JPEG y
+    // termina mirando bytes de otra asignación — "SOI not found" con un
+    // JPEG perfectamente válido. new Uint8Array(jpeg) copia a un buffer
+    // propio (byteOffset 0) y lo evita.
+    const imagenEmbebida = await pdfDoc.embedJpg(new Uint8Array(jpeg));
+    const pagina = pdfDoc.addPage([ancho, alto]);
+    pagina.drawImage(imagenEmbebida, { x: 0, y: 0, width: ancho, height: alto });
+    const buffer = Buffer.from(await pdfDoc.save());
+
+    const etiqueta = c.serie && c.numero ? `${c.serie}-${c.numero}` : c.id.slice(0, 8);
+    return { buffer, filename: `comprobante-${etiqueta}.pdf` };
   }
 
   async subir(

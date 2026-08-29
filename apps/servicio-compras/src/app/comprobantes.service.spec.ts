@@ -6,6 +6,7 @@ jest.mock('node:fs', () => ({
     writeFile: jest.fn().mockResolvedValue(undefined),
     unlink: jest.fn().mockResolvedValue(undefined),
     access: jest.fn().mockResolvedValue(undefined),
+    readFile: jest.fn().mockResolvedValue(Buffer.from('webp-original')),
   },
   constants: { W_OK: 2 },
 }));
@@ -16,6 +17,7 @@ jest.mock('sharp', () => {
     metadata: jest.fn(),
     resize: jest.fn().mockReturnThis(),
     webp: jest.fn().mockReturnThis(),
+    jpeg: jest.fn().mockReturnThis(),
     toBuffer: jest.fn(),
   };
   const sharpMock: any = jest.fn(() => chain);
@@ -138,6 +140,70 @@ describe('ComprobantesService', () => {
       expect(mockPrisma.comprobanteCompra.delete).toHaveBeenCalledWith({ where: { id: 'cp-1' } });
       expect(fsp.unlink).toHaveBeenCalledTimes(2);
       expect(result.message).toBe('Comprobante eliminado');
+    });
+  });
+
+  describe('generarPdf', () => {
+    // sharp está mockeado a nivel de archivo para el resto del describe;
+    // pdf-lib sí valida los bytes reales del header JPEG (SOI) al embeberlos,
+    // así que el "JPEG transcodificado" que devuelve el mock necesita ser un
+    // JPEG de verdad — se genera una vez con el sharp real (jest.requireActual,
+    // sin pasar por el mock del módulo). Buffer.from(...) al final es
+    // necesario, no cosmético: sharp es un módulo nativo y el Buffer que
+    // devuelve no pasa los `instanceof Uint8Array` de pdf-lib a través del
+    // sandbox de VM de Jest (Buffer.isBuffer sí lo reconoce, instanceof no) —
+    // Buffer.from() lo reconstruye con el Buffer del realm de este archivo.
+    let jpegReal: Buffer;
+    beforeAll(async () => {
+      const sharpReal = jest.requireActual<typeof sharp>('sharp');
+      const bytes = await sharpReal({ create: { width: 2, height: 2, channels: 3, background: { r: 200, g: 40, b: 40 } } })
+        .jpeg()
+        .toBuffer();
+      jpegReal = Buffer.from(bytes);
+    });
+
+    // chain.toBuffer es compartido con los tests de subir() de arriba, que
+    // encolan respuestas con .mockResolvedValueOnce(...) — jest.clearAllMocks()
+    // del beforeEach de todo el describe NO vacía esa cola (solo mockReset()
+    // lo hace), así que sin este mockReset() estos tests podían terminar
+    // consumiendo un valor encolado y no consumido de un test anterior en vez
+    // del jpegReal que se les pide acá.
+    beforeEach(() => {
+      chain.toBuffer.mockReset();
+    });
+
+    it('lee el WebP del disco, lo transcodifica a JPEG y arma un PDF válido del tamaño de la imagen', async () => {
+      mockPrisma.comprobanteCompra.findUnique.mockResolvedValue({
+        id: 'cp-1', sedeId: SEDE, rutaArchivo: `${SEDE}/2026/06/cp-1.webp`, ancho: 100, alto: 60, serie: 'F001', numero: '123',
+      });
+      (fsp.readFile as jest.Mock).mockResolvedValue(Buffer.from('webp-original'));
+      chain.toBuffer.mockResolvedValue(jpegReal);
+
+      const { buffer, filename } = await service.generarPdf('cp-1', SEDE);
+
+      // path.join normaliza al separador nativo del SO (\ en Windows, / en
+      // Linux/CI) — se compara por componentes, no por string exacto.
+      expect(fsp.readFile).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`${SEDE}[\\\\/]2026[\\\\/]06[\\\\/]cp-1\\.webp$`)) as unknown as string);
+      expect(chain.jpeg).toHaveBeenCalledWith({ quality: 85 });
+      expect(filename).toBe('comprobante-F001-123.pdf');
+      // %PDF-1.x es el header estándar de cualquier PDF válido.
+      expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+    });
+
+    it('usa los primeros 8 caracteres del id como nombre de archivo si no hay serie/número', async () => {
+      mockPrisma.comprobanteCompra.findUnique.mockResolvedValue({
+        id: 'cp-sin-serie-1234', sedeId: SEDE, rutaArchivo: `${SEDE}/2026/06/x.webp`, ancho: 50, alto: 50, serie: null, numero: null,
+      });
+      chain.toBuffer.mockResolvedValue(jpegReal);
+
+      const { filename } = await service.generarPdf('cp-sin-serie-1234', SEDE);
+
+      expect(filename).toBe('comprobante-cp-sin-s.pdf');
+    });
+
+    it('un usuario pineado no puede generar el PDF de un comprobante de otra sede', async () => {
+      mockPrisma.comprobanteCompra.findUnique.mockResolvedValue({ id: 'cp-1', sedeId: OTRA_SEDE });
+      await expect(service.generarPdf('cp-1', SEDE)).rejects.toThrow('no encontrado');
     });
   });
 });

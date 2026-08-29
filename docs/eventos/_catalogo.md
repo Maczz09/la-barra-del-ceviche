@@ -28,3 +28,4 @@ commit: 53877c8
 | [stock.descontado](stock.descontado.md) | definido sin productor detectado | definido sin consumidor detectado | definido-no-usado |
 | [producto.creado](producto.creado.md) | apps/servicio-inventario/src/app/app.service.ts:155 | servicio-pedidos:handleProductoCreado [apps/servicio-pedidos/src/app/events.controller.ts:23] | usado |
 | [producto.actualizado](producto.actualizado.md) | apps/servicio-inventario/src/app/app.service.ts:199<br>apps/servicio-inventario/src/app/app.service.ts:253 | servicio-pedidos:handleProductoActualizado [apps/servicio-pedidos/src/app/events.controller.ts:28] | usado |
+| [insumo.stock_bajo](insumo.stock_bajo.md) | apps/servicio-compras/src/app/movimientos-insumo.service.ts:126 | definido sin consumidor detectado | producido-sin-consumidor |

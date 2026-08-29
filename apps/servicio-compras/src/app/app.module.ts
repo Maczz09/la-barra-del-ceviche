@@ -8,6 +8,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AppController } from './app.controller';
 import { ProveedoresService } from './proveedores.service';
 import { InsumosService } from './insumos.service';
+import { CategoriasInsumoService } from './categorias-insumo.service';
+import { MovimientosInsumoService } from './movimientos-insumo.service';
 import { OrdenesService } from './ordenes.service';
 import { RecepcionesService } from './recepciones.service';
 import { ComprobantesService } from './comprobantes.service';
@@ -30,6 +32,8 @@ import { SharedAuthModule, JwtAuthGuard } from '@org/shared-auth';
   providers: [
     ProveedoresService,
     InsumosService,
+    CategoriasInsumoService,
+    MovimientosInsumoService,
     OrdenesService,
     RecepcionesService,
     ComprobantesService,

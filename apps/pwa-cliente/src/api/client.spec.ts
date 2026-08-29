@@ -121,6 +121,22 @@ describe('client', () => {
     expect(init.body).toBe(form);
   });
 
+  it('client.patchForm manda el FormData tal cual, en PATCH, sin fijar Content-Type', async () => {
+    const mockRes = { ok: true, status: 200, json: vi.fn().mockResolvedValue({ id: 1 }) };
+    vi.mocked(fetch).mockResolvedValue(mockRes as any);
+
+    const form = new FormData();
+    form.append('razonSocial', 'Nuevo nombre');
+    await client.patchForm('/facturacion/empresas/e-1', form);
+
+    const [, init] = vi.mocked(fetch).mock.calls.at(-1)!;
+    const headers = init.headers as Headers;
+    expect(headers.has('Content-Type')).toBe(false);
+    expect(headers.has('Idempotency-Key')).toBe(true);
+    expect(init.method).toBe('PATCH');
+    expect(init.body).toBe(form);
+  });
+
   it('client.getBlob devuelve un Blob sin pasar por res.json()', async () => {
     const blob = new Blob(['imagen']);
     const mockRes = { ok: true, status: 200, blob: vi.fn().mockResolvedValue(blob) };

@@ -1,5 +1,6 @@
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
-import { describe, expect, it, vi } from 'vitest';
+import { Reflector } from '@nestjs/core';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@nestjs/passport', () => ({
   AuthGuard: () =>
@@ -18,11 +19,22 @@ function contextFor(request: Record<string, unknown>): ExecutionContext {
     switchToHttp: () => ({
       getRequest: () => request,
     }),
-  } as ExecutionContext;
+    getHandler: () => function handler() { return; },
+    getClass: () => class Controller {},
+  } as unknown as ExecutionContext;
 }
 
 describe('JwtAuthGuard compartido', () => {
-  const guard = new JwtAuthGuard();
+  let reflector: Reflector;
+  let guard: JwtAuthGuard;
+
+  beforeEach(() => {
+    reflector = new Reflector();
+    // Por defecto ningún endpoint es @Public() — los tests existentes cubren
+    // el comportamiento autenticado normal.
+    vi.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
+    guard = new JwtAuthGuard(reflector);
+  });
 
   it.each(['GET', 'HEAD', 'OPTIONS'])(
     'permite %s autenticado sin validar CSRF',
@@ -128,6 +140,13 @@ describe('JwtAuthGuard compartido', () => {
   it('permite /telemetry/metrics sin autenticación', async () => {
     await expect(
       guard.canActivate(contextFor({ path: '/telemetry/metrics', method: 'GET', headers: {}, cookies: {} }))
+    ).resolves.toBe(true);
+  });
+
+  it('permite un endpoint marcado @Public() sin autenticar ni validar CSRF', async () => {
+    vi.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+    await expect(
+      guard.canActivate(contextFor({ path: '/api/inventario/carta-publica', method: 'GET', headers: {}, cookies: {} }))
     ).resolves.toBe(true);
   });
 

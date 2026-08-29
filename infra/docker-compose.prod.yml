@@ -6,12 +6,18 @@ services:
     image: rabbitmq:3-management
     container_name: nachopps-rabbitmq
     restart: unless-stopped
+    # Sin mem_limit el OOM-killer del kernel puede matar cualquier contenedor al
+    # azar bajo presión de memoria (visto en dev: "los 9 db-* murieron a la vez",
+    # infra/docker-compose.yml:306-314). mem_limit contiene el fallo a UN
+    # contenedor. VPS de 8GB: valores portados de dev, ajustar con `docker stats`
+    # tras unos días de tráfico real.
+    mem_limit: 1g
     # Sin puertos expuestos al host
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-nachopps}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:?RABBITMQ_PASS es obligatorio en produccion}
     healthcheck:
-      test: ['CMD', 'rabbitmq-diagnostics', 'check_running']
+      test: [ 'CMD', 'rabbitmq-diagnostics', 'check_running' ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -21,6 +27,7 @@ services:
     image: postgres:16-alpine
     container_name: nachopps-db-reservas
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${DB_USER:-nachopps}
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS es obligatorio en produccion}
@@ -28,7 +35,7 @@ services:
     volumes:
       - nachopps-db-reservas:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d reservas_db']
+      test: [ 'CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d reservas_db' ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -37,6 +44,7 @@ services:
     image: postgres:16-alpine
     container_name: nachopps-db-mesas
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${DB_USER:-nachopps}
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS es obligatorio en produccion}
@@ -44,7 +52,7 @@ services:
     volumes:
       - nachopps-db-mesas:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d mesas_db']
+      test: [ 'CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d mesas_db' ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -53,6 +61,7 @@ services:
     image: postgres:16-alpine
     container_name: nachopps-db-pedidos
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${DB_USER:-nachopps}
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS es obligatorio en produccion}
@@ -60,7 +69,7 @@ services:
     volumes:
       - nachopps-db-pedidos:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d pedidos_db']
+      test: [ 'CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d pedidos_db' ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -69,6 +78,7 @@ services:
     image: postgres:16-alpine
     container_name: nachopps-db-cuentas
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${DB_USER:-nachopps}
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS es obligatorio en produccion}
@@ -76,7 +86,7 @@ services:
     volumes:
       - nachopps-db-cuentas:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d cuentas_db']
+      test: [ 'CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d cuentas_db' ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -85,6 +95,7 @@ services:
     image: postgres:16-alpine
     container_name: nachopps-db-inventario
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${DB_USER:-nachopps}
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS es obligatorio en produccion}
@@ -92,7 +103,7 @@ services:
     volumes:
       - nachopps-db-inventario:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d inventario_db']
+      test: [ 'CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d inventario_db' ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -101,6 +112,7 @@ services:
     image: postgres:16-alpine
     container_name: nachopps-db-reportes
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${DB_USER:-nachopps}
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS es obligatorio en produccion}
@@ -108,7 +120,7 @@ services:
     volumes:
       - nachopps-db-reportes:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d reportes_db']
+      test: [ 'CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d reportes_db' ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -117,6 +129,7 @@ services:
     image: postgres:16-alpine
     container_name: nachopps-db-facturacion
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${DB_USER:-nachopps}
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS es obligatorio en produccion}
@@ -124,7 +137,7 @@ services:
     volumes:
       - nachopps-db-facturacion:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d facturacion_db']
+      test: [ 'CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d facturacion_db' ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -133,6 +146,7 @@ services:
     image: postgres:16-alpine
     container_name: nachopps-db-compras
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${DB_USER:-nachopps}
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS es obligatorio en produccion}
@@ -140,7 +154,7 @@ services:
     volumes:
       - nachopps-db-compras:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d compras_db']
+      test: [ 'CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d compras_db' ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -149,6 +163,7 @@ services:
     image: postgres:16-alpine
     container_name: nachopps-db-caja
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${DB_USER:-nachopps}
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS es obligatorio en produccion}
@@ -156,7 +171,7 @@ services:
     volumes:
       - nachopps-db-caja:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d caja_db']
+      test: [ 'CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d caja_db' ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -165,6 +180,7 @@ services:
     image: postgres:16-alpine
     container_name: nachopps-db-identidad
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${DB_USER:-nachopps}
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS es obligatorio en produccion}
@@ -172,7 +188,7 @@ services:
     volumes:
       - nachopps-db-identidad:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d identidad_db']
+      test: [ 'CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d identidad_db' ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -181,6 +197,7 @@ services:
     image: postgres:16-alpine
     container_name: nachopps-db-notificaciones
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${DB_USER:-nachopps}
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS es obligatorio en produccion}
@@ -188,7 +205,7 @@ services:
     volumes:
       - nachopps-db-notificaciones:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d notificaciones_db']
+      test: [ 'CMD-SHELL', 'pg_isready -U ${DB_USER:-nachopps} -d notificaciones_db' ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -197,10 +214,13 @@ services:
   # MICROSERVICIOS (Solo red interna)
   # ═══════════════════════════════════════════════════
   servicio-identidad:
-    image: ${REGISTRY:-nachopps}/servicio-identidad:latest
+    image: ${REGISTRY:-ghcr.io/Maczz09/la-barra-del-ceviche}/servicio-identidad:latest
     container_name: nachopps-servicio-identidad
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: 512m
     environment:
       PORT: '3000'
       DATABASE_URL: 'postgresql://${DB_USER:-nachopps}:${DB_PASS:?DB_PASS es obligatorio en produccion}@db-identidad:5432/identidad_db?schema=public'
@@ -216,7 +236,7 @@ services:
       REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-7}
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY es obligatorio en identidad (PEM RS256)}
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live']
+      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live' ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -228,10 +248,13 @@ services:
         condition: service_healthy
 
   servicio-mesas:
-    image: ${REGISTRY:-nachopps}/servicio-mesas:latest
+    image: ${REGISTRY:-ghcr.io/Maczz09/la-barra-del-ceviche}/servicio-mesas:latest
     container_name: nachopps-servicio-mesas
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: 512m
     environment:
       PORT: '3000'
       DATABASE_URL: 'postgresql://${DB_USER:-nachopps}:${DB_PASS:?DB_PASS es obligatorio en produccion}@db-mesas:5432/mesas_db?schema=public'
@@ -244,7 +267,7 @@ services:
       NODE_ENV: 'production'
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN es obligatorio, p.ej. https://app.tudominio.com}
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live']
+      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live' ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -256,10 +279,13 @@ services:
         condition: service_healthy
 
   servicio-pedidos:
-    image: ${REGISTRY:-nachopps}/servicio-pedidos:latest
+    image: ${REGISTRY:-ghcr.io/Maczz09/la-barra-del-ceviche}/servicio-pedidos:latest
     container_name: nachopps-servicio-pedidos
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: 512m
     environment:
       PORT: '3000'
       DATABASE_URL: 'postgresql://${DB_USER:-nachopps}:${DB_PASS:?DB_PASS es obligatorio en produccion}@db-pedidos:5432/pedidos_db?schema=public'
@@ -274,7 +300,7 @@ services:
       NODE_ENV: 'production'
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN es obligatorio, p.ej. https://app.tudominio.com}
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live']
+      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live' ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -286,10 +312,13 @@ services:
         condition: service_healthy
 
   servicio-cuentas:
-    image: ${REGISTRY:-nachopps}/servicio-cuentas:latest
+    image: ${REGISTRY:-ghcr.io/Maczz09/la-barra-del-ceviche}/servicio-cuentas:latest
     container_name: nachopps-servicio-cuentas
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: 512m
     environment:
       PORT: '3000'
       DATABASE_URL: 'postgresql://${DB_USER:-nachopps}:${DB_PASS:?DB_PASS es obligatorio en produccion}@db-cuentas:5432/cuentas_db?schema=public'
@@ -298,12 +327,13 @@ services:
       RABBITMQ_URI: 'amqp://${RABBITMQ_USER:-nachopps}:${RABBITMQ_PASS:?RABBITMQ_PASS es obligatorio en produccion}@rabbitmq:5672'
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
       PEDIDOS_SERVICE_URL: 'http://servicio-pedidos:3000/api'
+      MESAS_SERVICE_URL: 'http://servicio-mesas:3000/api'
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?JWT_PUBLIC_KEY es obligatorio (PEM RS256, \n literales)}
       SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:?SERVICE_JWT_SECRET es obligatorio (tokens S2S internos)}
       NODE_ENV: 'production'
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN es obligatorio, p.ej. https://app.tudominio.com}
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live']
+      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live' ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -315,10 +345,13 @@ services:
         condition: service_healthy
 
   servicio-reservas:
-    image: ${REGISTRY:-nachopps}/servicio-reservas:latest
+    image: ${REGISTRY:-ghcr.io/Maczz09/la-barra-del-ceviche}/servicio-reservas:latest
     container_name: nachopps-servicio-reservas
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: 512m
     environment:
       PORT: '3000'
       DATABASE_URL: 'postgresql://${DB_USER:-nachopps}:${DB_PASS:?DB_PASS es obligatorio en produccion}@db-reservas:5432/reservas_db?schema=public'
@@ -331,7 +364,7 @@ services:
       NODE_ENV: 'production'
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN es obligatorio, p.ej. https://app.tudominio.com}
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live']
+      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live' ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -343,10 +376,13 @@ services:
         condition: service_healthy
 
   servicio-inventario:
-    image: ${REGISTRY:-nachopps}/servicio-inventario:latest
+    image: ${REGISTRY:-ghcr.io/Maczz09/la-barra-del-ceviche}/servicio-inventario:latest
     container_name: nachopps-servicio-inventario
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: 512m
     environment:
       PORT: '3000'
       DATABASE_URL: 'postgresql://${DB_USER:-nachopps}:${DB_PASS:?DB_PASS es obligatorio en produccion}@db-inventario:5432/inventario_db?schema=public'
@@ -359,7 +395,7 @@ services:
       NODE_ENV: 'production'
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN es obligatorio, p.ej. https://app.tudominio.com}
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live']
+      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live' ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -371,10 +407,13 @@ services:
         condition: service_healthy
 
   servicio-notificaciones:
-    image: ${REGISTRY:-nachopps}/servicio-notificaciones:latest
+    image: ${REGISTRY:-ghcr.io/Maczz09/la-barra-del-ceviche}/servicio-notificaciones:latest
     container_name: nachopps-servicio-notificaciones
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: 512m
     environment:
       PORT: '3000'
       DATABASE_URL: 'postgresql://${DB_USER:-nachopps}:${DB_PASS:?DB_PASS es obligatorio en produccion}@db-notificaciones:5432/notificaciones_db?schema=public'
@@ -387,7 +426,7 @@ services:
       NODE_ENV: 'production'
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN es obligatorio, p.ej. https://app.tudominio.com}
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live']
+      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live' ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -399,10 +438,13 @@ services:
         condition: service_healthy
 
   servicio-caja:
-    image: ${REGISTRY:-nachopps}/servicio-caja:latest
+    image: ${REGISTRY:-ghcr.io/Maczz09/la-barra-del-ceviche}/servicio-caja:latest
     container_name: nachopps-servicio-caja
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: 512m
     environment:
       PORT: '3000'
       DATABASE_URL: 'postgresql://${DB_USER:-nachopps}:${DB_PASS:?DB_PASS es obligatorio en produccion}@db-caja:5432/caja_db?schema=public'
@@ -416,7 +458,7 @@ services:
       NODE_ENV: 'production'
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN es obligatorio, p.ej. https://app.tudominio.com}
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live']
+      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live' ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -428,10 +470,13 @@ services:
         condition: service_healthy
 
   servicio-reportes:
-    image: ${REGISTRY:-nachopps}/servicio-reportes:latest
+    image: ${REGISTRY:-ghcr.io/Maczz09/la-barra-del-ceviche}/servicio-reportes:latest
     container_name: nachopps-servicio-reportes
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: 512m
     environment:
       PORT: '3000'
       DATABASE_URL: 'postgresql://${DB_USER:-nachopps}:${DB_PASS:?DB_PASS es obligatorio en produccion}@db-reportes:5432/reportes_db?schema=public'
@@ -444,7 +489,7 @@ services:
       NODE_ENV: 'production'
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN es obligatorio, p.ej. https://app.tudominio.com}
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live']
+      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live' ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -456,10 +501,13 @@ services:
         condition: service_healthy
 
   servicio-facturacion:
-    image: ${REGISTRY:-nachopps}/servicio-facturacion:latest
+    image: ${REGISTRY:-ghcr.io/Maczz09/la-barra-del-ceviche}/servicio-facturacion:latest
     container_name: nachopps-servicio-facturacion
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: 512m
     environment:
       PORT: '3000'
       DATABASE_URL: 'postgresql://${DB_USER:-nachopps}:${DB_PASS:?DB_PASS es obligatorio en produccion}@db-facturacion:5432/facturacion_db?schema=public'
@@ -475,7 +523,10 @@ services:
       # debe fallar si aún no tienes certificado/SOL de una o ambas empresas.
       # Mientras falten, CertificadoService/EnvioProcessor lo detectan y ese
       # comprobante queda FIRMADO sin enviar (nunca se pierde, no gasta intentos).
-      SUNAT_WSDL_URL: ${SUNAT_WSDL_URL:-https://e-beta.sunat.gob.pe/ol-ti-itcpfegem-beta/billService?wsdl}
+      # Fallback de producción — coincide con .env.example. Si algún día se
+      # necesita volver a homologación, sobreescribe SUNAT_WSDL_URL en .env
+      # con la URL de e-beta.sunat.gob.pe (no toques este default).
+      SUNAT_WSDL_URL: ${SUNAT_WSDL_URL:-https://e-factura.sunat.gob.pe/ol-ti-itcpfegem/billService?wsdl}
       SUNAT_PFX_EMPRESA_1_FILE: ${SUNAT_PFX_EMPRESA_1_FILE:-}
       SUNAT_PFX_EMPRESA_1_PASS: ${SUNAT_PFX_EMPRESA_1_PASS:-}
       SUNAT_SOL_USER_EMPRESA_1: ${SUNAT_SOL_USER_EMPRESA_1:-}
@@ -484,8 +535,13 @@ services:
       SUNAT_PFX_EMPRESA_2_PASS: ${SUNAT_PFX_EMPRESA_2_PASS:-}
       SUNAT_SOL_USER_EMPRESA_2: ${SUNAT_SOL_USER_EMPRESA_2:-}
       SUNAT_SOL_PASS_EMPRESA_2: ${SUNAT_SOL_PASS_EMPRESA_2:-}
+      # Cifra las credenciales SUNAT cargadas por el formulario "Configurar
+      # SUNAT" de Facturación — sin esto el formulario no puede guardar (pero
+      # el servicio sigue andando con las 8 variables SUNAT_*_EMPRESA_<n>_*
+      # de arriba). No bloquea el deploy si aún no se generó (${:-}).
+      FACTURACION_CRED_ENCRYPTION_KEY: ${FACTURACION_CRED_ENCRYPTION_KEY:-}
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live']
+      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live' ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -497,10 +553,13 @@ services:
         condition: service_healthy
 
   servicio-compras:
-    image: ${REGISTRY:-nachopps}/servicio-compras:latest
+    image: ${REGISTRY:-ghcr.io/Maczz09/la-barra-del-ceviche}/servicio-compras:latest
     container_name: nachopps-servicio-compras
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: 512m
     environment:
       PORT: '3000'
       DATABASE_URL: 'postgresql://${DB_USER:-nachopps}:${DB_PASS:?DB_PASS es obligatorio en produccion}@db-compras:5432/compras_db?schema=public'
@@ -521,7 +580,7 @@ services:
       # backup junto a nachopps-backups (ver bloque de backups más abajo).
       - nachopps-comprobantes:/data/comprobantes
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live']
+      test: [ 'CMD', 'wget', '-qO-', 'http://localhost:3000/api/health/live' ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -536,9 +595,12 @@ services:
   # FRONTEND (PWA)
   # ═══════════════════════════════════════════════════
   pwa-cliente:
-    image: ${REGISTRY:-ghcr.io/Maczz09/nachoppssoa}/pwa-cliente:latest
+    image: ${REGISTRY:-ghcr.io/Maczz09/la-barra-del-ceviche}/pwa-cliente:latest
     container_name: nachopps-pwa-cliente
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
+    mem_limit: 128m
     ports:
       - '8080:8080'
 
@@ -546,12 +608,18 @@ services:
   # KONG API GATEWAY (Punto único de acceso)
   # ═══════════════════════════════════════════════════
   kong:
-    build:
-      context: kong
-      dockerfile: Dockerfile
-    image: ${REGISTRY:-nachopps}/kong:latest
+    # Se construye y publica en GHCR vía .github/workflows/deploy.yml (igual
+    # que los demás servicios) — sin `build:` acá para que Watchtower pueda
+    # actualizarlo igual que a todos: comparando el digest de la imagen
+    # publicada, no reconstruyéndolo localmente cada vez.
+    image: ${REGISTRY:-ghcr.io/Maczz09/la-barra-del-ceviche}/kong:latest
     container_name: nachopps-kong
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
+    # Medido en dev (L2, 4 workers bajo meseta sostenida): 512m rozaba 97% y
+    # perdía workers por OOM-kill. 768m es el mínimo probado que aguanta.
+    mem_limit: 768m
     environment:
       KONG_DATABASE: 'off'
       # No exponer versión de Kong/nginx en cabeceras (hallazgo ZAP 10036)
@@ -578,7 +646,7 @@ services:
     volumes:
       - ./kong/kong.yml.template:/tmp/kong.yml.template:ro
     healthcheck:
-      test: ['CMD', 'kong', 'health']
+      test: [ 'CMD', 'kong', 'health' ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -592,19 +660,38 @@ services:
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
     container_name: nachopps-otel-collector
-    command: ['--config=/etc/otel-collector/otel-collector-config.yml']
+    command: [ '--config=/etc/otel-collector/otel-collector-config.yml' ]
     volumes:
       - ./otel-collector/otel-collector-config.yml:/etc/otel-collector/otel-collector-config.yml:ro
     depends_on:
       - jaeger
     restart: unless-stopped
+    mem_limit: 256m
     # Sin puertos al host: los servicios lo alcanzan por la red interna.
+
+    # La imagen :latest corre como UID 10001 no-root; un volumen nombrado nuevo
+    # se crea con dueño root, así que sin este init jaeger truena en el primer
+    # deploy con "mkdir /badger/key: permission denied" (visto en el despliegue
+    # real a la VPS del 2026-08-14). El compose de dev usa `user: root` como
+    # atajo — en prod se evita correr el propio Jaeger como root, y en cambio
+    # se corrige el dueño del volumen una sola vez antes de arrancarlo.
+  jaeger-init:
+    image: alpine:3
+    container_name: nachopps-jaeger-init
+    volumes:
+      - jaeger_data:/badger
+    command: [ 'chown', '-R', '10001:10001', '/badger' ]
+    restart: 'no'
+    mem_limit: 64m
 
   # Backend de trazas persistente (Badger en volumen). UI 16686 solo por red
   # interna / túnel SSH (sin publicar al host en prod).
   jaeger:
     image: jaegertracing/all-in-one:latest
     container_name: nachopps-jaeger
+    depends_on:
+      jaeger-init:
+        condition: service_completed_successfully
     environment:
       SPAN_STORAGE_TYPE: badger
       BADGER_EPHEMERAL: 'false'
@@ -613,6 +700,9 @@ services:
     volumes:
       - jaeger_data:/badger
     restart: unless-stopped
+    # Badger reserva ~256m solo de BlockCache + tablas al abrir; con 512m
+    # entraba en OOM-loop (exit 137) en dev. 1g es el mínimo probado.
+    mem_limit: 1g
 
   prometheus:
     image: prom/prometheus:latest
@@ -625,6 +715,7 @@ services:
       # Persistencia de exemplars (trace_id) para el salto métrica→Jaeger.
       - '--enable-feature=exemplar-storage'
     restart: unless-stopped
+    mem_limit: 512m
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
@@ -640,6 +731,7 @@ services:
       - '--storage.path=/alertmanager'
       - '--cluster.listen-address='
     restart: unless-stopped
+    mem_limit: 128m
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
 
@@ -647,6 +739,7 @@ services:
     image: grafana/grafana:latest
     container_name: nachopps-grafana
     restart: unless-stopped
+    mem_limit: 384m
     ports:
       - '3000:3000'
     environment:
@@ -670,8 +763,9 @@ services:
     volumes:
       - ../scripts/backup-postgres.sh:/usr/local/bin/backup.sh:ro
       - nachopps-backups:/backups
-    entrypoint: ['/bin/sh', '-c', 'while true; do sh /usr/local/bin/backup.sh || echo "[db-backup] ciclo con fallos"; sleep 86400; done']
+    entrypoint: [ '/bin/sh', '-c', 'while true; do sh /usr/local/bin/backup.sh || echo "[db-backup] ciclo con fallos"; sleep 86400; done' ]
     restart: unless-stopped
+    mem_limit: 256m
 
   watchtower:
     image: containrrr/watchtower:latest
@@ -681,12 +775,20 @@ services:
       - ~/.docker/config.json:/config.json:ro
     environment:
       - DOCKER_API_VERSION=1.40
-    command: --interval 300 --cleanup
+    # --label-enable: solo toca contenedores con el label
+    # com.centurylinklabs.watchtower.enable=true (los 13 que publica
+    # .github/workflows/deploy.yml). Sin esto, Watchtower actualiza CUALQUIER
+    # contenedor del host — incluidas las 11 bases Postgres, RabbitMQ,
+    # Grafana, etc. — apenas Docker Hub publique un nuevo build de esas
+    # imágenes, reiniciándolas sin aviso. Nada de eso lo construye este repo;
+    # no debe auto-actualizarse solo.
+    command: --interval 300 --cleanup --label-enable
     restart: unless-stopped
+    mem_limit: 128m
 
 volumes:
-  nachopps-backups:
-  # Observabilidad persistente.
+  nachopps-backups: # Observabilidad persistente.
+
   prometheus_data:
   grafana_data:
   jaeger_data:
@@ -698,8 +800,8 @@ volumes:
   nachopps-db-caja:
   nachopps-db-reportes:
   nachopps-db-facturacion:
-  nachopps-db-compras:
-  # Fotos de boletas/facturas de compra (WebP + miniatura). Debe entrar en la
+  nachopps-db-compras: # Fotos de boletas/facturas de compra (WebP + miniatura). Debe entrar en la
+
   # rutina de backup junto a nachopps-backups.
   nachopps-comprobantes:
   nachopps-db-identidad:

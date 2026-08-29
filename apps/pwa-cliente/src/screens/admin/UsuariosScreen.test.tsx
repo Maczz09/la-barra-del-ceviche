@@ -31,7 +31,8 @@ vi.mock('../../components/ui/icons', () => ({
     Alert: () => <svg data-testid="icon-alert" />,
     Check: () => <svg data-testid="icon-check" />,
     Usuarios: () => <svg data-testid="icon-usuarios" />,
-    Plus: () => <svg data-testid="icon-plus" />
+    Plus: () => <svg data-testid="icon-plus" />,
+    Edit: () => <svg data-testid="icon-edit" />
   }
 }));
 
@@ -39,9 +40,20 @@ vi.mock('../../components/ui/StatKpi', () => ({
   StatKpi: ({ label, value }: any) => <div data-testid={`kpi-${label}`}>{value}</div>
 }));
 
+vi.mock('./EditarUsuarioModal', () => ({
+  EditarUsuarioModal: ({ usuario, onClose, onGuardarTelefono, onCambiarPassword }: any) => (
+    <div data-testid="editar-usuario-modal">
+      <span>{usuario.nombre}</span>
+      <button onClick={onClose}>Close Editar</button>
+      <button onClick={() => onGuardarTelefono('987654321')}>Guardar Telefono</button>
+      <button onClick={() => onCambiarPassword('nuevaClave123')}>Cambiar Password</button>
+    </div>
+  )
+}));
+
 const mockUsuarios = [
-  { id: '1', nombre: 'Admin User', email: 'admin@test.com', rol: 'ADMIN', rolLabel: 'Admin', activo: true, estadoClass: 'ok', estadoLabel: 'Activo', createdAtLabel: 'Hoy' },
-  { id: '2', nombre: 'Mesero Uno', email: 'm1@test.com', rol: 'MESERO', rolLabel: 'Mesero', activo: false, estadoClass: 'muted', estadoLabel: 'Inactivo', createdAtLabel: 'Ayer' },
+  { id: '1', nombre: 'Admin User', email: 'admin@test.com', rol: 'ADMIN', rolLabel: 'Admin', activo: true, estadoClass: 'ok', estadoLabel: 'Activo', createdAtLabel: 'Hoy', telefono: null },
+  { id: '2', nombre: 'Mesero Uno', email: 'm1@test.com', rol: 'MESERO', rolLabel: 'Mesero', activo: false, estadoClass: 'muted', estadoLabel: 'Inactivo', createdAtLabel: 'Ayer', telefono: '987654321' },
 ];
 
 describe('UsuariosScreen', () => {
@@ -63,6 +75,8 @@ describe('UsuariosScreen', () => {
       crear: vi.fn(),
       cambiarRol: vi.fn(),
       cambiarEstado: vi.fn(),
+      actualizar: vi.fn(),
+      cambiarPassword: vi.fn(),
       clearFeedback: vi.fn()
     } as any);
   });
@@ -104,6 +118,8 @@ describe('UsuariosScreen', () => {
       crear,
       cambiarRol: vi.fn(),
       cambiarEstado: vi.fn(),
+      actualizar: vi.fn(),
+      cambiarPassword: vi.fn(),
       clearFeedback: vi.fn()
     } as any);
 
@@ -115,12 +131,14 @@ describe('UsuariosScreen', () => {
 
     const nameInput = screen.getByLabelText('Nombre');
     const emailInput = screen.getByLabelText('Email');
+    const telefonoInput = screen.getByLabelText('Teléfono');
     const passInput = screen.getByLabelText('Contraseña');
     const rolSelect = screen.getByLabelText('Rol');
     const sedeSelect = screen.getByLabelText('Sede');
 
     fireEvent.change(nameInput, { target: { value: 'Nuevo Mesero ' } });
     fireEvent.change(emailInput, { target: { value: ' nuevo@test.com ' } });
+    fireEvent.change(telefonoInput, { target: { value: ' 987654321 ' } });
     fireEvent.change(passInput, { target: { value: 'password123' } });
     fireEvent.change(rolSelect, { target: { value: 'COCINA' } });
     fireEvent.change(sedeSelect, { target: { value: 'sede-1' } });
@@ -132,6 +150,7 @@ describe('UsuariosScreen', () => {
       expect(crear).toHaveBeenCalledWith({
         nombre: 'Nuevo Mesero',
         email: 'nuevo@test.com',
+        telefono: '987654321',
         password: 'password123',
         rol: 'COCINA',
         sedeId: 'sede-1',
@@ -141,6 +160,39 @@ describe('UsuariosScreen', () => {
     // Close feedback
     const closeBtns = screen.getAllByRole('button', { name: /Cerrar/i });
     fireEvent.click(closeBtns[0]);
+  });
+
+  it('crea un usuario sin teléfono (opcional) sin mandar el campo', async () => {
+    const crear = vi.fn();
+    vi.mocked(useUsuariosQuery).mockReturnValue({
+      usuarios: mockUsuarios,
+      nextCursor: null,
+      loading: false,
+      loadingMore: false,
+      saving: false,
+      error: null,
+      success: null,
+      fetch: vi.fn(),
+      fetchMore: vi.fn(),
+      crear,
+      cambiarRol: vi.fn(),
+      cambiarEstado: vi.fn(),
+      actualizar: vi.fn(),
+      cambiarPassword: vi.fn(),
+      clearFeedback: vi.fn()
+    } as any);
+
+    render(<UsuariosScreen />);
+
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Sin Telefono' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'sintelefono@test.com' } });
+    fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'password123' } });
+    fireEvent.change(screen.getByLabelText('Sede'), { target: { value: 'sede-1' } });
+    fireEvent.click(screen.getByRole('button', { name: /Crear usuario/i }));
+
+    await waitFor(() => {
+      expect(crear).toHaveBeenCalledWith(expect.not.objectContaining({ telefono: expect.anything() }));
+    });
   });
 
   it('handles empty state and offline', () => {
@@ -158,6 +210,8 @@ describe('UsuariosScreen', () => {
       crear: vi.fn(),
       cambiarRol: vi.fn(),
       cambiarEstado: vi.fn(),
+      actualizar: vi.fn(),
+      cambiarPassword: vi.fn(),
       clearFeedback: vi.fn()
     } as any);
 
@@ -182,6 +236,8 @@ describe('UsuariosScreen', () => {
       crear: vi.fn(),
       cambiarRol,
       cambiarEstado: vi.fn(),
+      actualizar: vi.fn(),
+      cambiarPassword: vi.fn(),
       clearFeedback: vi.fn()
     } as any);
 
@@ -213,6 +269,8 @@ describe('UsuariosScreen', () => {
       crear: vi.fn(),
       cambiarRol: vi.fn(),
       cambiarEstado,
+      actualizar: vi.fn(),
+      cambiarPassword: vi.fn(),
       clearFeedback: vi.fn()
     } as any);
 
@@ -244,6 +302,8 @@ describe('UsuariosScreen', () => {
       crear: vi.fn(),
       cambiarRol: vi.fn(),
       cambiarEstado,
+      actualizar: vi.fn(),
+      cambiarPassword: vi.fn(),
       clearFeedback: vi.fn()
     } as any);
 
@@ -270,6 +330,8 @@ describe('UsuariosScreen', () => {
       crear: vi.fn(),
       cambiarRol: vi.fn(),
       cambiarEstado,
+      actualizar: vi.fn(),
+      cambiarPassword: vi.fn(),
       clearFeedback: vi.fn()
     } as any);
 
@@ -301,6 +363,8 @@ describe('UsuariosScreen', () => {
       crear: vi.fn(),
       cambiarRol: vi.fn(),
       cambiarEstado: vi.fn(),
+      actualizar: vi.fn(),
+      cambiarPassword: vi.fn(),
       clearFeedback: vi.fn()
     } as any);
 
@@ -308,6 +372,48 @@ describe('UsuariosScreen', () => {
 
     expect(screen.getByRole('button', { name: 'Desactivar a Admin User' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Reactivar a Mesero Uno' })).not.toBeDisabled();
+  });
+
+  it('abre el modal de edición, guarda teléfono y cambia contraseña', async () => {
+    const actualizar = vi.fn();
+    const cambiarPassword = vi.fn();
+    vi.mocked(useUsuariosQuery).mockReturnValue({
+      usuarios: mockUsuarios,
+      nextCursor: null,
+      loading: false,
+      loadingMore: false,
+      saving: false,
+      error: null,
+      success: null,
+      fetch: vi.fn(),
+      fetchMore: vi.fn(),
+      crear: vi.fn(),
+      cambiarRol: vi.fn(),
+      cambiarEstado: vi.fn(),
+      actualizar,
+      cambiarPassword,
+      clearFeedback: vi.fn()
+    } as any);
+
+    render(<UsuariosScreen />);
+
+    expect(screen.queryByTestId('editar-usuario-modal')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar a Admin User' }));
+    expect(screen.getByTestId('editar-usuario-modal')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar Telefono' }));
+    await waitFor(() => {
+      expect(actualizar).toHaveBeenCalledWith('1', { telefono: '987654321' });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar Password' }));
+    await waitFor(() => {
+      expect(cambiarPassword).toHaveBeenCalledWith('1', 'nuevaClave123');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close Editar' }));
+    expect(screen.queryByTestId('editar-usuario-modal')).toBeNull();
   });
 
   it('handles non-admin view', () => {

@@ -35,6 +35,8 @@ export interface ReservaVM {
   fechaHoraLabel: string;
   usuarioNombre?: string;
   createdAt: string;
+  /** Código legible ("R0000001"). Ausente en reservas anteriores a este campo. */
+  correlativo?: string;
 }
 
 export type CrearReservaPayload = CrearReservaCommand & { clienteNombre: string };

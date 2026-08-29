@@ -83,6 +83,12 @@ export class TransaccionDto {
   @IsString()
   clienteDocumento?: string;
 
+  // Código legible de la atención ("A0000001"). Ausente en cuentas
+  // anteriores a este campo.
+  @IsOptional()
+  @IsString()
+  cuentaCorrelativo?: string;
+
   @IsString()
   createdAt: string;
 }
@@ -237,6 +243,8 @@ export class TurnoListResponse {
   nextCursor: string | null;
 }
 
+// Eventos de apertura/cierre de turno (consumidos por identidad para
+// activar/desactivar automáticamente al personal MESERO de esa sede).
 export class TurnoCajaAbiertoPayload {
   @IsString()
   turnoId: string;

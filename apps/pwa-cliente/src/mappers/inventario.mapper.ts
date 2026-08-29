@@ -1,6 +1,12 @@
 // mappers/inventario.mapper.ts - ProductoDto -> ProductoVM
 
-import type { CategoriaDto, MenuDiarioItemDto, MenuDiarioItemVM, MermaDto, MermaVM, ProductoDto, ProductoVM } from '../types/inventario.types';
+import type { CategoriaDto, MenuDiarioItemDto, MenuDiarioItemVM, MermaDto, MermaOrigen, MermaVM, ProductoDto, ProductoVM } from '../types/inventario.types';
+
+const ORIGEN_LABEL: Record<MermaOrigen, string> = {
+  DESCARTE_MANUAL_INVENTARIO: 'Descarte manual',
+  ANULACION_COMANDA_NO_COBRADA: 'Anulación (no cobrada)',
+  ANULACION_COMANDA_COBRADA: 'Anulación (cobrada)',
+};
 
 function formatMoney(value: number): string {
   return new Intl.NumberFormat('es-PE', {
@@ -54,14 +60,22 @@ export function mapMenuDiario(dtos: MenuDiarioItemDto[]): MenuDiarioItemVM[] {
 }
 
 export function mapMerma(dto: MermaDto): MermaVM {
+  const costoTotal = dto.costoTotal ?? null;
   return {
     id: dto.id,
     productoId: dto.productoId,
     productoNombre: dto.producto?.nombre ?? 'Producto',
     cantidad: dto.cantidad,
     motivo: dto.motivo,
+    observacion: dto.observacion ?? null,
+    origen: dto.origen,
+    origenLabel: ORIGEN_LABEL[dto.origen] ?? dto.origen,
+    costoUnitario: dto.costoUnitario ?? null,
+    costoTotal,
+    costoTotalLabel: costoTotal === null ? '—' : formatMoney(costoTotal),
     usuarioNombre: dto.usuarioNombre ?? null,
     fechaLabel: new Date(dto.createdAt).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }),
+    cuentaCorrelativo: dto.cuentaCorrelativo ?? null,
   };
 }
 

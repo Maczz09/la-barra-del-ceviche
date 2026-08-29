@@ -17,6 +17,7 @@ export function mapPedidoToDto(p: PedidoEntity): PedidoDto {
     modalidad: p.modalidad ?? undefined,
     meseroId: p.meseroId ?? undefined,
     meseroNombre: p.meseroNombre ?? undefined,
+    cuentaCorrelativo: p.cuentaCorrelativo ?? undefined,
     createdAt: p.createdAt.toISOString(),
     items: p.items.map(i => ({
       id: i.id,

@@ -82,6 +82,9 @@ describe('useCajaQuery', () => {
 
     expect(cajaApi.abrirTurno).toHaveBeenCalledWith({ saldoInicial: 100 });
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['caja'] });
+    // Abrir turno activa MESERO de la sede (evento async en identidad); sin
+    // esto la pantalla de Usuarios se queda con el estado viejo.
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['usuarios'], exact: false });
   });
 
   it('should handle error in abrirTurno', async () => {
@@ -123,6 +126,8 @@ describe('useCajaQuery', () => {
 
     expect(cajaApi.cerrarTurno).toHaveBeenCalledWith('t1', { saldoFinalDeclarado: 200 });
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['caja'] });
+    // Cerrar turno desactiva MESERO de la sede (evento async en identidad).
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['usuarios'], exact: false });
   });
 
   it('should clear feedback state', async () => {

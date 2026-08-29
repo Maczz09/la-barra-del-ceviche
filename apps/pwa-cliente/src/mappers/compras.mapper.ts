@@ -3,6 +3,9 @@
 import type {
   InsumoDto,
   InsumoVM,
+  MovimientoInsumoDto,
+  MovimientoInsumoTipo,
+  MovimientoInsumoVM,
   OrdenCompraDto,
   OrdenCompraEstado,
   OrdenCompraItemDto,
@@ -92,4 +95,51 @@ export function mapOrden(dto: OrdenCompraDto): OrdenCompraVM {
 
 export function mapOrdenes(dtos: OrdenCompraDto[]): OrdenCompraVM[] {
   return dtos.map(mapOrden);
+}
+
+// ── Movimientos de insumo / kardex del almacén (T-50) ────────────
+
+const MOVIMIENTO_LABEL: Record<MovimientoInsumoTipo, string> = {
+  ENTRADA_COMPRA: 'Entrada por compra',
+  ENTRADA_MANUAL: 'Ingreso manual',
+  ENTRADA_DEVOLUCION: 'Devolución al almacén',
+  SALIDA_CONSUMO: 'Consumo de cocina',
+  SALIDA_MERMA: 'Merma',
+  AJUSTE_CONTEO: 'Ajuste por conteo',
+};
+
+const MOVIMIENTO_CLASS: Record<MovimientoInsumoTipo, string> = {
+  ENTRADA_COMPRA: 'badge-ok',
+  ENTRADA_MANUAL: 'badge-ok',
+  ENTRADA_DEVOLUCION: 'badge-ok',
+  SALIDA_CONSUMO: 'badge-info',
+  SALIDA_MERMA: 'badge-danger',
+  AJUSTE_CONTEO: 'badge-warn',
+};
+
+const FECHA_HORA_FMT = new Intl.DateTimeFormat('es-PE', {
+  timeZone: 'America/Lima',
+  day: '2-digit',
+  month: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+export function mapMovimientoInsumo(dto: MovimientoInsumoDto): MovimientoInsumoVM {
+  const fecha = new Date(dto.createdAt);
+  // U+2212 (menos real), no un guion: alineado con el resto de cifras de la app.
+  const signo = dto.delta < 0 ? '−' : '+';
+  return {
+    ...dto,
+    tipoLabel: MOVIMIENTO_LABEL[dto.tipo] ?? dto.tipo,
+    tipoClass: MOVIMIENTO_CLASS[dto.tipo] ?? 'badge-muted',
+    deltaLabel: `${signo}${Math.abs(dto.delta)} ${dto.unidad}`,
+    esSalida: dto.delta < 0,
+    costoTotalLabel: dto.costoTotal == null ? '—' : formatMoney(dto.costoTotal),
+    fechaLabel: Number.isNaN(fecha.getTime()) ? '—' : FECHA_HORA_FMT.format(fecha),
+  };
+}
+
+export function mapMovimientosInsumo(dtos: MovimientoInsumoDto[]): MovimientoInsumoVM[] {
+  return dtos.map(mapMovimientoInsumo);
 }

@@ -72,6 +72,7 @@ function createMockPrisma(overrides: Record<string, any> = {}): any {
     transaccion: { create: jest.fn(), findMany: jest.fn(), aggregate: jest.fn() },
     cuentaAbierta: { findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn() },
     outboxEvent: { create: jest.fn() },
+    pagoPendiente: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn(), create: jest.fn(), update: jest.fn() },
     $executeRaw: jest.fn(),
     ...overrides,
   };
@@ -91,6 +92,15 @@ describe('AppService — Caja (turnos, movimientos, arqueo, cierre)', () => {
       prisma as any,
       new CuentasHttpClient({ generateServiceToken: jest.fn().mockReturnValue('tok') } as any),
     );
+    // Default: cerrarTurno's guard consulta GET /abiertas — sin cuentas
+    // pendientes por defecto, para no romper los tests de cierre que no son
+    // sobre este guard. Los tests del guard mismo lo sobrescriben.
+    jest.mocked(axios.get).mockImplementation((url: unknown) => {
+      if (typeof url === 'string' && url.endsWith('/abiertas')) {
+        return Promise.resolve({ data: { cuentas: [] } });
+      }
+      return Promise.reject(new Error('axios.get sin mock explícito para: ' + String(url)));
+    });
   });
 
   const SEDE = 'sede-001';
@@ -223,6 +233,16 @@ describe('AppService — Caja (turnos, movimientos, arqueo, cierre)', () => {
       expect(res.data).toHaveLength(2);
       expect(res.data[1].monto).toBe(-10);
     });
+
+    it('busca por el código de la atención cuando se pasa search', async () => {
+      prisma.movimientoCaja.findMany.mockResolvedValue([]);
+      await service.listarMovimientosTurno('turno-001', undefined, 'A0000042');
+      expect(prisma.movimientoCaja.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { turnoId: 'turno-001', cuentaCorrelativo: { contains: 'A0000042', mode: 'insensitive' } },
+        }),
+      );
+    });
   });
 
   describe('crearMovimiento', () => {
@@ -309,17 +329,66 @@ describe('AppService — Caja (turnos, movimientos, arqueo, cierre)', () => {
         expect.objectContaining({ data: expect.objectContaining({ estado: 'CERRADA' }) }),
       );
     });
+
+    it('rechaza cerrar el turno si queda una cuenta sin cobrar en la sede', async () => {
+      prisma.turnoCaja.findUnique.mockResolvedValue({
+        ...baseTurno, movimientos: [mov({ tipo: 'APERTURA', metodo: 'EFECTIVO', monto: 200 })], arqueos: [], cierre: null,
+      });
+      jest.mocked(axios.get).mockImplementation((url: unknown) =>
+        typeof url === 'string' && url.endsWith('/abiertas')
+          ? Promise.resolve({ data: { cuentas: [{ id: 'c-1', mesaId: 'm-1', numeroMesa: 7, total: 45 }] } })
+          : Promise.reject(new Error('no debería llamar a otra URL')),
+      );
+
+      await expect(
+        service.cerrarTurno('turno-001', { denominaciones: { '200': 1 } } as any, 'u-001'),
+      ).rejects.toThrow('Mesa 7');
+      expect(prisma.turnoCaja.update).not.toHaveBeenCalled();
+    });
+
+    it('si la verificación de cuentas abiertas falla (dependencia caída), NO bloquea el cierre', async () => {
+      prisma.turnoCaja.findUnique.mockResolvedValue({
+        ...baseTurno, movimientos: [mov({ tipo: 'APERTURA', metodo: 'EFECTIVO', monto: 200 })], arqueos: [], cierre: null,
+      });
+      jest.mocked(axios.get).mockImplementation((url: unknown) =>
+        typeof url === 'string' && url.endsWith('/abiertas')
+          ? Promise.reject({ code: 'ECONNREFUSED' })
+          : Promise.reject(new Error('no debería llamar a otra URL')),
+      );
+      prisma.arqueoCaja.create.mockImplementation(async ({ data }: any) => ({ id: 'arq-1', createdAt: new Date(), ...data }));
+      prisma.cierreCaja.create.mockImplementation(async ({ data }: any) => ({ id: 'cie-1', createdAt: new Date(), ...data }));
+      prisma.turnoCaja.update.mockResolvedValue({ ...baseTurno, estado: 'CERRADA' });
+
+      const res = await service.cerrarTurno('turno-001', { denominaciones: { '200': 1 } } as any, 'u-001');
+
+      expect(res.turno.estado).toBe('CERRADA');
+    });
   });
 
   describe('registrarPago — caminos de error', () => {
-    it('rechaza si no hay turno de caja abierto', async () => {
+    it('si no hay turno de caja abierto, pone el pago en cola en vez de rechazarlo', async () => {
       // T-23 Fase 2: registrarPago ahora consulta la cuenta remota ANTES de
       // buscar el turno (necesita su sedeId para saber en qué sede buscar).
-      jest.mocked(axios.get).mockResolvedValue({ data: { id: 'c-001', mesaId: 'm-001', sedeId: SEDE, total: 50, estado: 'ABIERTA' } });
+      jest.mocked(axios.get).mockImplementation((url: unknown) =>
+        typeof url === 'string' && url.endsWith('/abiertas')
+          ? Promise.resolve({ data: { cuentas: [] } })
+          : Promise.resolve({ data: { id: 'c-001', mesaId: 'm-001', sedeId: SEDE, total: 50, estado: 'ABIERTA' } }),
+      );
       prisma.turnoCaja.findFirst.mockResolvedValue(null);
-      await expect(
-        service.registrarPago({ cuentaId: 'c-001', montoRecibido: 50, metodo: 'EFECTIVO' } as any),
-      ).rejects.toThrow('No hay turno de caja abierto');
+      prisma.pagoPendiente.create.mockResolvedValue({ id: 'pp-1' });
+
+      const resultado = await service.registrarPago(
+        { cuentaId: 'c-001', montoRecibido: 50, metodo: 'EFECTIVO' } as any, 'u-1', 'Ana',
+      );
+
+      expect(resultado.queued).toBe(true);
+      expect(resultado.transaccion).toBeUndefined();
+      expect(prisma.pagoPendiente.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ sedeId: SEDE, cuentaId: 'c-001', metodo: 'EFECTIVO', usuarioId: 'u-1', cajeroNombre: 'Ana' }),
+        }),
+      );
+      expect(prisma.transaccion.create).not.toHaveBeenCalled();
     });
 
     it('traduce un 404 de la cuenta remota a NotFound', async () => {

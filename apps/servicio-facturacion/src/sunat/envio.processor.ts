@@ -5,6 +5,15 @@ import { SunatSoapClient } from './sunat-soap.client';
 import { SunatConfigService } from './sunat-config.service';
 import { RoutingKeys } from '@org/contracts';
 
+// Catálogo 01 SUNAT (tipo de documento) — usado en el nombre de archivo del
+// envío (RUC-tipo-serie-correlativo), no dentro del XML mismo.
+const CODIGO_TIPO_ARCHIVO: Record<string, string> = {
+  FACTURA: '01',
+  BOLETA: '03',
+  NOTA_CREDITO: '07',
+  NOTA_DEBITO: '08',
+};
+
 interface ComprobantePendiente {
   id: string;
   empresaId: string;
@@ -46,7 +55,7 @@ export class EnvioProcessor {
       });
 
       for (const comprobante of pendientes as unknown as ComprobantePendiente[]) {
-        if (!this.config.tieneCredenciales(comprobante.empresa.slot)) {
+        if (!(await this.config.tieneCredenciales(comprobante.empresa.slot))) {
           // No es un error del comprobante: la empresa aún no tiene
           // certificado configurado. Se deja en FIRMADO sin gastar intentos.
           continue;
@@ -61,10 +70,10 @@ export class EnvioProcessor {
   }
 
   private async enviarUno(comprobante: ComprobantePendiente): Promise<void> {
-    const codigoTipo = comprobante.tipo === 'FACTURA' ? '01' : '03';
+    const codigoTipo = CODIGO_TIPO_ARCHIVO[comprobante.tipo] ?? '03';
     const nombreArchivo = `${comprobante.empresa.ruc}-${codigoTipo}-${comprobante.serie}-${comprobante.correlativo}`;
     try {
-      const creds = this.config.credencialesParaSlot(comprobante.empresa.slot);
+      const creds = await this.config.credencialesParaSlot(comprobante.empresa.slot);
       const resultado = await this.soap.enviarComprobante({
         ruc: comprobante.empresa.ruc,
         solUsuario: creds.solUsuario,

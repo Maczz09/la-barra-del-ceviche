@@ -94,8 +94,8 @@ export class AppController {
   }
 
   @Get('turnos/:id/movimientos')
-  listarMovimientosTurno(@Param('id') id: string, @UsuarioActual('sedeId') usuarioSedeId: string | null) {
-    return this.appService.listarMovimientosTurno(id, usuarioSedeId);
+  listarMovimientosTurno(@Param('id') id: string, @UsuarioActual('sedeId') usuarioSedeId: string | null, @Query('search') search?: string) {
+    return this.appService.listarMovimientosTurno(id, usuarioSedeId, search);
   }
 
   @Post('turnos/:id/movimientos')

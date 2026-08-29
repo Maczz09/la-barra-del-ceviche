@@ -11,12 +11,14 @@ import {
   MesaActualizadaPayload,
   ReservaCanceladaPayload,
   ReservaCreadaPayload,
+  ProductoActualizadoPayload,
   RoutingKeys,
 } from '@org/contracts';
 import { RabbitMQRetryInterceptor } from '@org/resiliencia';
 import { OperableLog } from '@org/observabilidad';
 import { AppService } from './app.service';
 import { NotificationsGateway } from './notifications.gateway';
+import { CartaGateway } from './carta.gateway';
 
 @UseInterceptors(RabbitMQRetryInterceptor)
 @Controller()
@@ -26,6 +28,7 @@ export class AppController {
   constructor(
     private readonly appService: AppService,
     private readonly gateway: NotificationsGateway,
+    private readonly cartaGateway: CartaGateway,
   ) {}
 
   @Get()
@@ -111,6 +114,20 @@ export class AppController {
     @Ctx() ctx: RmqContext,
   ) {
     await this.handleEvent(RoutingKeys.ReservaCancelada, payload, ctx);
+  }
+
+  // Carta pública/QR (T-XX): a diferencia de handleEvent (arriba), esto NO
+  // pasa por registrarNotificacion — no es una notificación para la campana
+  // del staff, es un ping de disponibilidad para clientes anónimos. No se
+  // persiste en BD por cada toggle, solo se retransmite.
+  @EventPattern(RoutingKeys.ProductoActualizado)
+  handleProductoActualizadoParaCartaPublica(
+    @Payload() payload: ProductoActualizadoPayload,
+  ) {
+    this.cartaGateway.emitDisponibilidadCambiada(payload.sedeId, {
+      productoId: payload.id,
+      disponible: payload.disponible,
+    });
   }
 
   /**

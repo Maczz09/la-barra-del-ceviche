@@ -44,10 +44,16 @@ vi.mock('../../hooks/useInicioData', () => ({
   useInicioData: () => mockUseInicioData(),
 }));
 
-// TopProductosPanel maneja su propia consulta (con filtro de período) —
-// se prueba por separado en TopProductosPanel.test.tsx.
-vi.mock('./TopProductosPanel', () => ({
-  TopProductosPanel: () => <div data-testid="top-productos-panel" />,
+// TopVentasPanel maneja su propia consulta (con filtro de período) —
+// se prueba por separado en TopVentasPanel.test.tsx.
+vi.mock('./TopVentasPanel', () => ({
+  TopVentasPanel: ({ titulo }: { titulo: string }) => <div data-testid="top-ventas-panel">{titulo}</div>,
+}));
+
+// CartaQrPanel maneja su propia consulta de sede — se prueba por separado
+// en CartaQrPanel.test.tsx.
+vi.mock('./CartaQrPanel', () => ({
+  CartaQrPanel: () => <div data-testid="carta-qr-panel" />,
 }));
 
 // Datos base vacíos/cero
@@ -114,14 +120,23 @@ describe('InicioScreen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/app/caja');
   });
 
-  it('renderiza 5 HeroStats', () => {
+  it('renderiza 6 HeroStats', () => {
     render(<InicioScreen />);
-    expect(screen.getAllByTestId('hero-stat')).toHaveLength(5);
+    expect(screen.getAllByTestId('hero-stat')).toHaveLength(6);
   });
 
   it('muestra stat de "Ventas del día"', () => {
     render(<InicioScreen />);
     expect(screen.getByText('Ventas del día')).toBeInTheDocument();
+  });
+
+  it('calcula el IGV del día como 18% incluido en las ventas totales, no un cargo aparte', () => {
+    mockUseInicioData.mockReturnValue({ ...defaultInicioData, totalVentas: 118 });
+    render(<InicioScreen />);
+    expect(screen.getByText('IGV del día')).toBeInTheDocument();
+    // 118 con IGV incluido al 18% → operación gravada 100, IGV exactamente 18.
+    // (este archivo mockea fmt() sin espacio tras "S/", ver el vi.mock de arriba)
+    expect(screen.getByText('S/18.00')).toBeInTheDocument();
   });
 
   it('muestra stat de "Mesas ocupadas"', () => {
@@ -155,9 +170,11 @@ describe('InicioScreen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/app/mesas');
   });
 
-  it('renderiza el panel de "Top productos"', () => {
+  it('renderiza los paneles "Top platos" y "Top productos" por separado', () => {
     render(<InicioScreen />);
-    expect(screen.getByTestId('top-productos-panel')).toBeInTheDocument();
+    const paneles = screen.getAllByTestId('top-ventas-panel');
+    expect(paneles).toHaveLength(2);
+    expect(paneles.map((p) => p.textContent)).toEqual(['Top platos', 'Top productos']);
   });
 
   it('renderiza sección "Requiere atención"', () => {

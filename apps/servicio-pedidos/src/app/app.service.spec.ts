@@ -229,6 +229,19 @@ describe('AppService — Pedidos', () => {
       }));
     });
 
+    it('buscar por correlativo de atención no aplica el filtro "solo activos" por defecto (cross-referencing desde Mermas/Auditoría)', async () => {
+      jest.spyOn(mockPrisma.pedido, 'findMany').mockResolvedValue([] as any);
+
+      await service.listarPedidos({ search: 'A000004' }, SEDE);
+
+      expect(mockPrisma.pedido.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: {
+          sedeId: SEDE,
+          cuentaCorrelativo: { contains: 'A000004', mode: 'insensitive' },
+        },
+      }));
+    });
+
     it('devuelve data y nextCursor cuando hay mas resultados', async () => {
       jest.spyOn(mockPrisma.pedido, 'findMany').mockResolvedValue([
         { ...basePedido, id: 'p-001' },
@@ -439,6 +452,112 @@ describe('AppService — Pedidos', () => {
         meseroNombre: 'Ana Mesa',
       }));
     });
+
+    it('un ítem DIRECTO (Inventario) nace ENTREGADO y un pedido solo-DIRECTO arranca ENTREGADO', async () => {
+      mockPrisma.pedido.create.mockResolvedValue({
+        ...basePedido,
+        estado: PedidoEstado.Entregado,
+        items: [{ id: 'item-1', pedidoId: 'p-001', productoId: 'prod-cerveza', nombre: 'Cristal', cantidad: 2, precioUnitario: 8, area: 'DIRECTO', notas: null, estado: 'ENTREGADO', comensal: 1 }],
+      } as any);
+
+      await (service as any).persistirPedido({
+        mesaId: 'mesa-1',
+        numeroMesa: 1,
+        items: [
+          { productoId: 'prod-cerveza', nombre: 'Cristal', cantidad: 2, precioUnitario: 8, stockActual: 0, area: 'DIRECTO', comensal: 1 },
+        ],
+        total: 16,
+      });
+
+      expect(mockPrisma.pedido.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          estado: PedidoEstado.Entregado,
+          items: expect.objectContaining({
+            create: [expect.objectContaining({ area: 'DIRECTO', estado: 'ENTREGADO' })],
+          }),
+        }),
+      }));
+    });
+
+    it('un ítem BAR (Barra) SÍ pasa por producción: queda PENDIENTE, no se auto-entrega como uno DIRECTO', async () => {
+      mockPrisma.pedido.create.mockResolvedValue({ ...basePedido, items: [] } as any);
+
+      await (service as any).persistirPedido({
+        mesaId: 'mesa-1',
+        numeroMesa: 1,
+        items: [
+          { productoId: 'prod-mojito', nombre: 'Mojito', cantidad: 1, precioUnitario: 20, stockActual: null, area: 'BAR', comensal: 1 },
+        ],
+        total: 20,
+      });
+
+      expect(mockPrisma.pedido.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          estado: PedidoEstado.Pendiente,
+          items: expect.objectContaining({
+            create: [expect.objectContaining({ area: 'BAR', estado: 'PENDIENTE' })],
+          }),
+        }),
+      }));
+    });
+
+    it('un pedido mixto (Cocina + Inventario) arranca PENDIENTE; solo el ítem de Cocina queda PENDIENTE', async () => {
+      mockPrisma.pedido.create.mockResolvedValue({ ...basePedido, items: [] } as any);
+
+      await (service as any).persistirPedido({
+        mesaId: 'mesa-1',
+        numeroMesa: 1,
+        items: [
+          { productoId: 'prod-ceviche', nombre: 'Ceviche', cantidad: 1, precioUnitario: 30, stockActual: null, area: 'COCINA', comensal: 1 },
+          { productoId: 'prod-cerveza', nombre: 'Cristal', cantidad: 1, precioUnitario: 8, stockActual: 0, area: 'DIRECTO', comensal: 1 },
+        ],
+        total: 38,
+      });
+
+      expect(mockPrisma.pedido.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          estado: PedidoEstado.Pendiente,
+          items: expect.objectContaining({
+            create: [
+              expect.objectContaining({ area: 'COCINA', estado: 'PENDIENTE' }),
+              expect.objectContaining({ area: 'DIRECTO', estado: 'ENTREGADO' }),
+            ],
+          }),
+        }),
+      }));
+    });
+  });
+
+  describe('validarYMapearItems', () => {
+    it('deriva el área del ítem desde categoriaArea (nunca desde el nombre de categoría)', async () => {
+      mockPrisma.productoLocal.findMany.mockResolvedValue([
+        { id: 'prod-cerveza', nombre: 'Cristal', precio: 8, stockActual: 5, categoriaNombre: 'Cerveza', categoriaArea: 'INVENTARIO', disponible: true },
+        { id: 'prod-mojito', nombre: 'Mojito', precio: 20, stockActual: null, categoriaNombre: 'Tragos', categoriaArea: 'BARRA', disponible: true },
+        { id: 'prod-ceviche', nombre: 'Ceviche', precio: 30, stockActual: null, categoriaNombre: 'Ceviches', categoriaArea: 'COCINA', disponible: true },
+      ] as any);
+
+      const items = await (service as any).validarYMapearItems([
+        { productoId: 'prod-cerveza', cantidad: 1 },
+        { productoId: 'prod-mojito', cantidad: 1 },
+        { productoId: 'prod-ceviche', cantidad: 1 },
+      ]);
+
+      expect(items).toEqual([
+        expect.objectContaining({ productoId: 'prod-cerveza', area: 'DIRECTO' }),
+        expect.objectContaining({ productoId: 'prod-mojito', area: 'BAR' }),
+        expect.objectContaining({ productoId: 'prod-ceviche', area: 'COCINA' }),
+      ]);
+    });
+
+    it('un categoriaArea desconocido/ausente (proyección legada) cae en COCINA por seguridad', async () => {
+      mockPrisma.productoLocal.findMany.mockResolvedValue([
+        { id: 'prod-legado', nombre: 'Plato viejo', precio: 15, stockActual: null, categoriaNombre: 'Legado', categoriaArea: null, disponible: true },
+      ] as any);
+
+      const items = await (service as any).validarYMapearItems([{ productoId: 'prod-legado', cantidad: 1 }]);
+
+      expect(items[0].area).toBe('COCINA');
+    });
   });
 
   describe('procesarProductoActualizado', () => {
@@ -575,8 +694,8 @@ describe('AppService — Pedidos', () => {
 
     it('actualizarEstadoItem delegates to saga', async () => {
       service['saga'].actualizarEstadoItem = jest.fn().mockResolvedValue({ message: 'ok' });
-      await service.actualizarEstadoItem('item-1', { estado: 'LISTO' } as any);
-      expect(service['saga'].actualizarEstadoItem).toHaveBeenCalledWith('item-1', { estado: 'LISTO' });
+      await service.actualizarEstadoItem('item-1', { estado: 'LISTO' } as any, 'u1', 'Ana');
+      expect(service['saga'].actualizarEstadoItem).toHaveBeenCalledWith('item-1', { estado: 'LISTO' }, 'u1', 'Ana');
     });
 
     it('procesarStockInsuficiente delegates to saga', async () => {

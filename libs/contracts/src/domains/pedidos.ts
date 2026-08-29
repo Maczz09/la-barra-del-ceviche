@@ -8,8 +8,10 @@ import {
   ArrayMinSize,
   IsNotEmpty,
   IsInt,
+  IsBoolean,
   Min,
   Max,
+  MinLength,
   IsDateString,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -30,6 +32,9 @@ export type PedidoEstado = (typeof PedidoEstado)[keyof typeof PedidoEstado];
 export const ItemArea = {
   Cocina: 'COCINA',
   Bar: 'BAR',
+  /** Producto de Inventario (con control de stock): el mesero lo sirve
+   * directo, sin pasar por ninguna estación de producción. */
+  Directo: 'DIRECTO',
 } as const;
 
 export type ItemArea = (typeof ItemArea)[keyof typeof ItemArea];
@@ -120,6 +125,12 @@ export class PedidoDto {
   @IsOptional()
   @IsString()
   meseroNombre?: string;
+  // Código legible de la atención ("A0000001") — llega por backfill
+  // asíncrono desde servicio-cuentas, puede tardar unos ms tras crear el
+  // pedido o quedar ausente en pedidos de cuentas anteriores a este campo.
+  @IsOptional()
+  @IsString()
+  cuentaCorrelativo?: string;
   @IsString()
   createdAt: string;
 }
@@ -180,6 +191,10 @@ export class ListarPedidosQuery {
   @IsOptional()
   @IsDateString()
   updatedSince?: string;
+  // Busca por el código de la atención ("A0000001" o un fragmento).
+  @IsOptional()
+  @IsString()
+  search?: string;
 }
 
 export class PedidoListResponse {
@@ -249,6 +264,12 @@ export class ActualizarEstadoPedidoCommand {
 export class ActualizarEstadoItemCommand {
   @IsEnum(EstadoItem)
   estado: EstadoItem;
+  /** Solo aplica cuando estado=CANCELADO (Caso A: aún no se preparó) — queda
+   * en el registro de Auditoría de Anulaciones igual que CU-01. Opcional
+   * para no romper el resto de transiciones, que no usan este campo. */
+  @IsOptional()
+  @IsString()
+  motivo?: string;
 }
 
 export class PedidoCreadoPayload {
@@ -282,4 +303,241 @@ export class PedidoItemAnuladoPayload {
   @IsOptional()
   @IsString()
   mesaId?: string | null;
+  @IsOptional()
+  @IsString()
+  motivo?: string | null;
+}
+
+/**
+ * CU-01/CU-02: un ítem YA preparado/servido se anula. La pérdida física es
+ * real haya cobro o no (el plato/producto ya salió), así que Inventario
+ * siempre registra una merma — solo cambia el `origen` según `cobrado`.
+ */
+export class PedidoItemAnuladoConMermaPayload {
+  @IsOptional()
+  @IsString()
+  eventId?: string;
+  @IsString()
+  pedidoId: string;
+  @IsString()
+  itemId: string;
+  @IsString()
+  productoId: string;
+  @IsString()
+  productoNombre: string;
+  @IsNumber()
+  cantidad: number;
+  @IsString()
+  motivo: string;
+  @IsOptional()
+  @IsString()
+  observacion?: string;
+  @IsBoolean()
+  cobrado: boolean;
+  @IsOptional()
+  @IsString()
+  usuarioId?: string | null;
+  @IsOptional()
+  @IsString()
+  usuarioNombre?: string | null;
+  // Código legible de la atención ("A0000001") del pedido origen — se
+  // denormaliza en la Merma que crea servicio-inventario al consumir esto.
+  @IsOptional()
+  @IsString()
+  cuentaCorrelativo?: string | null;
+}
+
+// ─── CU-01: anular un ítem YA preparado/servido ──────────────────────────
+
+/**
+ * Body de POST /pedidos/items/:itemId/anular-preparado. Solo aplica cuando
+ * el ítem ya no está PENDIENTE (empezó a prepararse, o es de Inventario y
+ * por lo tanto nació ENTREGADO) — para un ítem PENDIENTE se usa el endpoint
+ * genérico de cambio de estado (CANCELADO), sin merma ni cobro de por medio.
+ */
+export class AnularItemPreparadoCommand {
+  @IsString()
+  @IsNotEmpty()
+  motivo: string;
+  @IsBoolean()
+  cobrar: boolean;
+  @IsOptional()
+  @IsString()
+  observacion?: string;
+}
+
+// ─── CU-02: anular la atención completa de una mesa ──────────────────────
+
+/**
+ * Body de POST /pedidos/mesas/:mesaId/anular-atencion. `itemsConsumidos`
+ * son los ids de PedidoItem de área DIRECTO (Inventario) que el cajero
+ * confirma que sí se abrieron/consumieron — esos quedan pendientes de
+ * cobro; el resto de ítems de Inventario no tocados se cancelan y
+ * recuperan su stock. Los platos de Cocina/Barra se resuelven solos según
+ * su estado (sin preparar → se cancelan limpio; ya preparados → merma).
+ */
+export class AnularAtencionMesaCommand {
+  @IsString()
+  @IsNotEmpty()
+  motivo: string;
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  itemsConsumidos?: string[];
+}
+
+/**
+ * Body de POST /pedidos/:id/anular — anula UN pedido puntual (no toda la
+ * mesa) directamente desde el tablero de Pedidos. Mismo criterio por ítem
+ * que AnularAtencionMesaCommand, pero acotado a un solo pedido; a
+ * diferencia de la anulación de mesa, cada ítem cancelado/con merma queda
+ * con su propio registro de auditoría (tipo ITEM), así que sí se puede
+ * revertir de verdad después desde "Invalidar anulación".
+ */
+export class AnularPedidoCommand {
+  @IsString()
+  @IsNotEmpty()
+  motivo: string;
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  itemsConsumidos?: string[];
+}
+
+export class AnularAtencionMesaResultado {
+  @IsInt()
+  itemsCancelados: number;
+  @IsInt()
+  itemsConMerma: number;
+  @IsInt()
+  itemsMantenidosParaCobro: number;
+  @IsBoolean()
+  mesaLiberada: boolean;
+}
+
+// ─── CU-05: Auditoría de Anulaciones ──────────────────────────────────────
+
+export const TipoAnulacion = {
+  Item: 'ITEM',
+  Mesa: 'MESA',
+} as const;
+export type TipoAnulacion = (typeof TipoAnulacion)[keyof typeof TipoAnulacion];
+
+export const EstadoPlatoAnulacion = {
+  SinPreparar: 'SIN_PREPARAR',
+  Preparado: 'PREPARADO',
+} as const;
+export type EstadoPlatoAnulacion = (typeof EstadoPlatoAnulacion)[keyof typeof EstadoPlatoAnulacion];
+
+export class AnulacionAuditoriaDto {
+  @IsString()
+  id: string;
+  // Código legible propio de este registro ("AN0000001"), independiente del
+  // correlativo de la atención — identifica la anulación en sí. Nullable:
+  // registros creados antes de este campo no tienen uno retroactivo.
+  @IsOptional()
+  @IsString()
+  correlativo?: string | null;
+  @IsString()
+  fecha: string;
+  @IsString()
+  mesaId: string;
+  @IsOptional()
+  @IsInt()
+  mesaNumero?: number | null;
+  @IsString()
+  pedidoId: string;
+  // Código legible de la atención ("A0000001") a la que pertenecía el
+  // pedido anulado, si ya se le había asignado al momento de la anulación.
+  @IsOptional()
+  @IsString()
+  cuentaCorrelativo?: string | null;
+  @IsOptional()
+  @IsString()
+  itemId?: string | null;
+  @IsEnum(TipoAnulacion)
+  tipo: TipoAnulacion;
+  @IsOptional()
+  @IsString()
+  productoId?: string | null;
+  @IsOptional()
+  @IsString()
+  productoNombre?: string | null;
+  @IsOptional()
+  @IsInt()
+  cantidad?: number | null;
+  @IsEnum(EstadoPlatoAnulacion)
+  estadoPlato: EstadoPlatoAnulacion;
+  @IsBoolean()
+  cobrado: boolean;
+  @IsNumber()
+  montoAnulado: number;
+  @IsString()
+  motivo: string;
+  @IsOptional()
+  @IsString()
+  observacion?: string | null;
+  @IsOptional()
+  @IsString()
+  usuarioId?: string | null;
+  @IsOptional()
+  @IsString()
+  usuarioNombre?: string | null;
+  @IsOptional()
+  @IsString()
+  clienteNombre?: string | null;
+  @IsBoolean()
+  invalidada: boolean;
+  @IsOptional()
+  @IsString()
+  invalidadaMotivo?: string | null;
+  @IsOptional()
+  @IsString()
+  invalidadaPorNombre?: string | null;
+  @IsOptional()
+  @IsString()
+  invalidadaAt?: string | null;
+}
+
+export class ListarAnulacionesQuery {
+  @IsOptional()
+  @IsEnum(TipoAnulacion)
+  tipo?: TipoAnulacion;
+  @IsOptional()
+  @IsString()
+  usuarioId?: string;
+  @IsOptional()
+  @IsDateString()
+  desde?: string;
+  @IsOptional()
+  @IsDateString()
+  hasta?: string;
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  @Type(() => Number)
+  limit?: number;
+  @IsOptional()
+  @IsString()
+  sedeId?: string;
+  // Busca por el código de la atención ("A0000001" o un fragmento).
+  @IsOptional()
+  @IsString()
+  search?: string;
+}
+
+export class ActualizarAnulacionCommand {
+  @IsString()
+  @IsNotEmpty()
+  motivo: string;
+  @IsOptional()
+  @IsString()
+  observacion?: string | null;
+}
+
+export class InvalidarAnulacionCommand {
+  @IsString()
+  @MinLength(3)
+  motivo: string;
 }

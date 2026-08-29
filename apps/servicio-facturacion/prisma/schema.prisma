@@ -11,6 +11,8 @@ datasource db {
 enum TipoComprobante {
   BOLETA
   FACTURA
+  NOTA_CREDITO
+  NOTA_DEBITO
 }
 
 enum EstadoComprobantePago {
@@ -27,22 +29,56 @@ enum EstadoComprobante {
 }
 
 // Una fila por RUC (slot 1 = La Barra del Ceviche 1, slot 2 = La Barra del
-// Ceviche 2). El certificado/credenciales SOL de cada una viven en secretos
-// de infraestructura (SUNAT_*_EMPRESA_<slot>_*), no en esta tabla — aquí solo
-// va lo no sensible: identidad fiscal y numeración.
+// Ceviche 2). Las credenciales SUNAT admiten dos vías, en este orden de
+// prioridad (ver SunatConfigService): las columnas cifradas de abajo
+// (cargadas desde el formulario de Facturación, ver EmpresasService) o, si
+// esta fila no las tiene, los secretos de infraestructura
+// (SUNAT_*_EMPRESA_<slot>_*) para el despliegue existente que ya las usa así.
 model Empresa {
   id                 String   @id @default(uuid())
   slot               Int      @unique
   ruc                String   @unique
+  // Sede (servicio-identidad) a la que emite esta empresa — 1 a 1: dos
+  // empresas no pueden compartir sede, ni tener ambas null empresas la
+  // misma... salvo que ninguna tenga sede asignada (Postgres no choca dos
+  // NULL contra un índice único). Nullable porque las empresas creadas
+  // antes de este campo no tienen una retroactiva.
+  sedeId             String?  @unique
   razonSocial        String
   nombreComercial    String?
   direccion          String?
   ubigeo             String?
+  // Código de establecimiento SUNAT ("local anexo"): "0000" = domicilio fiscal/matriz.
+  // Requerido por el validador de sendBill — sin esto SUNAT rechaza con error 3030.
+  codigoEstablecimiento String @default("0000")
   serieBoleta        String   @default("B001")
   serieFactura       String   @default("F001")
   correlativoBoleta  Int      @default(0)
   correlativoFactura Int      @default(0)
+  // Notas de crédito/débito: SUNAT exige que la serie empiece con "F" cuando
+  // el documento afectado es una Factura, y con "B" cuando es una Boleta —
+  // por eso son 4 numeraciones independientes, no 2 (una por combinación
+  // tipo-de-nota × tipo-de-documento-afectado).
+  serieNotaCreditoFactura        String @default("FC01")
+  correlativoNotaCreditoFactura  Int    @default(0)
+  serieNotaCreditoBoleta         String @default("BC01")
+  correlativoNotaCreditoBoleta   Int    @default(0)
+  serieNotaDebitoFactura         String @default("FD01")
+  correlativoNotaDebitoFactura   Int    @default(0)
+  serieNotaDebitoBoleta          String @default("BD01")
+  correlativoNotaDebitoBoleta    Int    @default(0)
   activo             Boolean  @default(true)
+
+  // Credenciales SUNAT cargadas vía formulario (Facturación → configurar).
+  // Cifradas con AES-256-GCM (ver CredencialesCryptoService) — nunca en
+  // claro en la BD. solUsuario NO es secreto (es solo un identificador, como
+  // el RUC), va sin cifrar. Todo null = "no configurado por este medio",
+  // SunatConfigService cae al secreto de infraestructura del slot.
+  solUsuario             String?
+  solClaveCifrada        String? @db.Text
+  certificadoPfxCifrado  Bytes?
+  certificadoPassCifrada String? @db.Text
+
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -77,7 +113,10 @@ model ComprobantePago {
 // emitido, con su XML ya firmado (XMLDSig) y el resultado del envío.
 model Comprobante {
   id                 String            @id @default(uuid())
-  comprobantePagoId  String            @unique
+  // Solo boleta/factura vienen de un cierre de cuenta — una nota de
+  // crédito/débito nace de OTRO Comprobante (comprobanteAfectadoId), no de
+  // un ComprobantePago nuevo. Nullable + FK opcional para esos dos tipos.
+  comprobantePagoId  String?           @unique
   empresaId          String
   tipo               TipoComprobante
   serie              String
@@ -99,11 +138,23 @@ model Comprobante {
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
-  empresa         Empresa         @relation(fields: [empresaId], references: [id])
-  comprobantePago ComprobantePago @relation(fields: [comprobantePagoId], references: [id])
+  // Solo para NOTA_CREDITO/NOTA_DEBITO: la factura o boleta que corrige.
+  // Restrict, no Cascade — nunca se debe poder borrar un comprobante
+  // aceptado por SUNAT que ya tiene una nota emitida contra él.
+  comprobanteAfectadoId String?
+  comprobanteAfectado   Comprobante?  @relation("NotaSobreComprobante", fields: [comprobanteAfectadoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  notas                 Comprobante[] @relation("NotaSobreComprobante")
+  // Catálogo 09 SUNAT (nota de crédito) / catálogo 10 (nota de débito) — ver
+  // sunat/catalogos-notas.ts. Null salvo en NOTA_CREDITO/NOTA_DEBITO.
+  motivoCodigo          String?
+  motivoDescripcion     String?
+
+  empresa         Empresa          @relation(fields: [empresaId], references: [id])
+  comprobantePago ComprobantePago? @relation(fields: [comprobantePagoId], references: [id])
 
   @@unique([empresaId, tipo, serie, correlativo])
   @@index([estado])
+  @@index([comprobanteAfectadoId])
   @@map("comprobantes")
 }
 

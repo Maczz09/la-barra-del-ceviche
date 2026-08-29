@@ -5,6 +5,10 @@ export const CuentaEstado = {
   Abierta: 'ABIERTA',
   Cerrada: 'CERRADA',
   Pagada: 'PAGADA',
+  // Todos los ítems de la atención se anularon (nunca se cobró nada) — a
+  // diferencia de CERRADA, no genera ticket ni evento CuentaCerrada. Ver
+  // AppService.cancelarCuenta.
+  Cancelada: 'CANCELADA',
 } as const;
 
 export type CuentaEstado = (typeof CuentaEstado)[keyof typeof CuentaEstado];
@@ -40,11 +44,44 @@ export class CuentaCerradaPayload {
   meseroNombre?: string;
 }
 
+/**
+ * Backfill: servicio-cuentas emite esto cada vez que confirma a qué cuenta
+ * (atención) pertenece un pedido, para que servicio-pedidos guarde el
+ * correlativo de la atención ("A0000001") directamente en el Pedido —
+ * evita que pwa-cliente tenga que resolverlo con una llamada cruzada.
+ */
+export class CuentaAsociadaPayload {
+  @IsString()
+  pedidoId: string;
+  @IsString()
+  cuentaId: string;
+  @IsString()
+  sedeId: string;
+  @IsOptional()
+  @IsString()
+  correlativo?: string;
+}
+
 export class TicketGeneradoPayload {
   @IsString()
   ticketId: string;
   @IsString()
   cuentaId: string;
+}
+
+/**
+ * Cascada automática (servicio-pedidos → servicio-cuentas): cuando todos los
+ * ítems de la atención quedan anulados uno por uno (o vía "Anular atención de
+ * mesa"), la cuenta pasa a CANCELADA sin generar ticket — a diferencia de
+ * CuentaCerradaPayload, que sí implica un cobro real.
+ */
+export class CuentaCanceladaPayload {
+  @IsString()
+  cuentaId: string;
+  @IsString()
+  mesaId: string;
+  @IsString()
+  sedeId: string;
 }
 
 export class CuentaDto {
@@ -63,6 +100,11 @@ export class CuentaDto {
   @IsOptional()
   @IsString()
   ticket?: string | null;
+  // Código legible de la atención ("A0000001"). Ausente en cuentas creadas
+  // antes de este campo (no hay backfill retroactivo).
+  @IsOptional()
+  @IsString()
+  correlativo?: string;
   @IsString()
   createdAt: string;
   @IsString()

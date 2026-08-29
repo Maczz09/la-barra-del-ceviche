@@ -22,6 +22,7 @@ function buildListQuery(query: ReservaListQuery = {}): string {
   if (query.estado) params.set('estado', query.estado);
   if (query.fecha) params.set('fecha', query.fecha);
   if (query.updatedSince) params.set('updatedSince', query.updatedSince);
+  if (query.search) params.set('search', query.search);
   const serialized = params.toString();
   return serialized ? `?${serialized}` : '';
 }

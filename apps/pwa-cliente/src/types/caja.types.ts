@@ -29,6 +29,8 @@ export interface MovimientoCajaDto {
   descuento: number;
   propina: number;
   motivo: string | null;
+  /** Código de la atención ("A0000001"), solo en movimientos tipo VENTA. */
+  cuentaCorrelativo?: string | null;
   createdAt: string;
 }
 
@@ -50,6 +52,8 @@ export interface TransaccionDto {
   mesaUnidaCon?: string | null;
   tipoComprobante?: string | null;
   clienteDocumento?: string | null;
+  /** Código de la atención ("A0000001"). */
+  cuentaCorrelativo?: string | null;
   createdAt: string;
 }
 

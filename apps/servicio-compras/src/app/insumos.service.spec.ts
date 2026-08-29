@@ -52,6 +52,8 @@ describe('InsumosService', () => {
         delete: jest.fn(),
       },
       proveedor: { findUnique: jest.fn() },
+      movimientoInsumo: { count: jest.fn().mockResolvedValue(0) },
+      categoriaInsumo: { findUnique: jest.fn() },
       ordenCompraItem: { count: jest.fn() },
     });
     service = new InsumosService(mockPrisma);

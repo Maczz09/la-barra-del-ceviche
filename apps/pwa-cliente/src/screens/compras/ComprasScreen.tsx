@@ -22,7 +22,7 @@ function mensajeError(err: unknown): string {
   return err instanceof Error ? err.message : 'Inténtalo de nuevo';
 }
 
-function OcAccion({ orden, onRecepcionar, onEnviar }: Readonly<{ orden: OrdenCompraVM; onRecepcionar: () => void; onEnviar: () => void }>) {
+function OcAccion({ orden, onRecepcionar, onEnviar, onSubirBoleta }: Readonly<{ orden: OrdenCompraVM; onRecepcionar: () => void; onEnviar: () => void; onSubirBoleta: () => void }>) {
   if (orden.puedeRecibir) {
     return <button className="btn btn-sm btn-primary" onClick={onRecepcionar}>Recepcionar</button>;
   }
@@ -31,6 +31,16 @@ function OcAccion({ orden, onRecepcionar, onEnviar }: Readonly<{ orden: OrdenCom
   }
   if (orden.estado === 'ANULADA') {
     return <span className="muted" style={{ fontSize: 12 }}>Anulada</span>;
+  }
+  // Ya recibida y sin ninguna foto de boleta/factura subida: en vez de un
+  // "Completada" pasivo, un botón accionable para que el dueño no se entere
+  // recién al abrir cada orden que le falta el comprobante.
+  if (orden.estado === 'RECIBIDA' && orden.comprobantesCount === 0) {
+    return (
+      <button className="btn btn-sm btn-soft" style={{ color: 'var(--warn-text)', background: 'var(--warn-soft)' }} onClick={onSubirBoleta}>
+        Falta boleta
+      </button>
+    );
   }
   return <span className="muted" style={{ fontSize: 12 }}>Completada</span>;
 }
@@ -274,7 +284,7 @@ export function ComprasScreen() {
                     <td className="col-mobile-hidden"><span className="muted">{oc.fechaEntregaLabel}</span></td>
                     <td><span className={`badge dot ${oc.estadoClass}`}>{oc.estadoLabel}</span></td>
                     <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                      <OcAccion orden={oc} onRecepcionar={() => setRecibirId(oc.id)} onEnviar={() => enviarOc(oc.id)} />
+                      <OcAccion orden={oc} onRecepcionar={() => setRecibirId(oc.id)} onEnviar={() => enviarOc(oc.id)} onSubirBoleta={() => setDetalleId(oc.id)} />
                     </td>
                   </tr>
                 ))}

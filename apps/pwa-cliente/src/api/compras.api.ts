@@ -11,8 +11,16 @@ import type {
   CrearInsumoPayload,
   CrearOrdenPayload,
   CrearProveedorPayload,
+  ActualizarCategoriaInsumoPayload,
+  CategoriaInsumoDto,
+  CrearCategoriaInsumoPayload,
   InsumoDto,
   InsumoListQuery,
+  ListarMovimientosInsumoPayload,
+  MovimientoInsumoDto,
+  RegistrarConteoInsumosPayload,
+  RegistrarMovimientoInsumoPayload,
+  ConteoInsumosResultadoDto,
   OrdenCompraDto,
   OrdenDetalle,
   OrdenListQuery,
@@ -59,6 +67,10 @@ export async function listarInsumos(query: InsumoListQuery = {}): Promise<Insumo
     search: query.search,
     bajoMinimo: query.bajoMinimo,
     proveedorId: query.proveedorId,
+    categoriaId: query.categoriaId,
+    // El almacén de cocina lo pide en true: deja fuera lo que se revende tal
+    // cual, que se administra como producto de venta.
+    soloCocina: query.soloCocina,
     limit: query.limit ?? 100,
   });
   const response = await client.get<{ data: InsumoDto[]; nextCursor: string | null }>(`/compras/insumos${qs}`);
@@ -75,6 +87,68 @@ export function actualizarInsumo(id: string, payload: ActualizarInsumoPayload): 
 
 export function eliminarInsumo(id: string): Promise<{ message: string }> {
   return client.delete(`/compras/insumos/${id}`);
+}
+
+// ── Categorías del almacén de cocina (T-50) ──────────────────────
+
+export async function listarCategoriasInsumo(search?: string): Promise<CategoriaInsumoDto[]> {
+  const qs = search ? `?search=${encodeURIComponent(search)}` : '';
+  const response = await client.get<{ data: CategoriaInsumoDto[] }>(`/compras/categorias-insumo${qs}`);
+  return response.data ?? [];
+}
+
+export function crearCategoriaInsumo(
+  payload: CrearCategoriaInsumoPayload,
+): Promise<{ message: string; categoria: CategoriaInsumoDto }> {
+  return client.post('/compras/categorias-insumo', payload);
+}
+
+export function actualizarCategoriaInsumo(
+  id: string,
+  payload: ActualizarCategoriaInsumoPayload,
+): Promise<{ message: string; categoria: CategoriaInsumoDto }> {
+  return client.patch(`/compras/categorias-insumo/${id}`, payload);
+}
+
+export function eliminarCategoriaInsumo(id: string): Promise<{ message: string; insumosLiberados: number }> {
+  return client.delete(`/compras/categorias-insumo/${id}`);
+}
+
+// ── Movimientos de insumo / almacén de cocina (T-50) ──────────────
+
+export function registrarMovimientoInsumo(
+  insumoId: string,
+  payload: RegistrarMovimientoInsumoPayload,
+): Promise<{ message: string; movimiento: MovimientoInsumoDto }> {
+  return client.post(`/compras/insumos/${insumoId}/movimientos`, payload);
+}
+
+export async function listarMovimientosInsumo(
+  query: ListarMovimientosInsumoPayload = {},
+): Promise<{ data: MovimientoInsumoDto[]; nextCursor: string | null }> {
+  const params = new URLSearchParams();
+  if (query.tipo) params.set('tipo', query.tipo);
+  if (query.desde) params.set('desde', query.desde);
+  if (query.hasta) params.set('hasta', query.hasta);
+  if (query.limit != null) params.set('limit', String(query.limit));
+  if (query.cursor) params.set('cursor', query.cursor);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  // Con insumoId va por la ruta anidada: es la única que COCINA tiene permitida
+  // (el kardex general es de administración).
+  const ruta = query.insumoId
+    ? `/compras/insumos/${query.insumoId}/movimientos${qs}`
+    : `/compras/movimientos-insumo${qs}`;
+  return client.get(ruta);
+}
+
+export function obtenerMovimientoInsumo(id: string): Promise<MovimientoInsumoDto> {
+  return client.get(`/compras/movimientos-insumo/${id}`);
+}
+
+export function registrarConteoInsumos(
+  payload: RegistrarConteoInsumosPayload,
+): Promise<{ message: string; resultado: ConteoInsumosResultadoDto }> {
+  return client.post('/compras/insumos/conteo', payload);
 }
 
 // ── Órdenes de compra ────────────────────────────────────────────
@@ -166,4 +240,8 @@ export function obtenerArchivoBlob(id: string): Promise<Blob> {
 
 export function obtenerMiniaturaBlob(id: string): Promise<Blob> {
   return client.getBlob(`/compras/comprobantes/${id}/miniatura`);
+}
+
+export function obtenerComprobantePdfBlob(id: string): Promise<Blob> {
+  return client.getBlob(`/compras/comprobantes/${id}/pdf`);
 }

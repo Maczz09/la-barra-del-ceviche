@@ -4,9 +4,9 @@ import { OperableLog } from '@org/observabilidad';
 import { resolveSedeId } from '@org/shared-auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { toInsumoDto } from './compras.mapper';
-import { Insumo, Proveedor } from '../generated/prisma';
+import { CategoriaInsumo, Insumo, Proveedor } from '../generated/prisma';
 
-type InsumoConProveedor = Insumo & { proveedor: Proveedor | null };
+type InsumoConRelaciones = Insumo & { proveedor: Proveedor | null; categoria: CategoriaInsumo | null };
 
 @Injectable()
 export class InsumosService {
@@ -26,17 +26,22 @@ export class InsumosService {
         sedeId,
         activo: true,
         ...(query.proveedorId ? { proveedorId: query.proveedorId } : {}),
+        ...(query.categoriaId ? { categoriaId: query.categoriaId } : {}),
+        // El almacen de cocina son SOLO los insumos que no se revenden tal
+        // cual: lo que tiene puente a un producto (`productoId`) se administra
+        // en el catalogo de venta y no debe duplicarse aca.
+        ...(query.soloCocina ? { productoId: null } : {}),
         ...(query.search ? { nombre: { contains: query.search, mode: 'insensitive' } } : {}),
       },
-      include: { proveedor: true },
+      include: { proveedor: true, categoria: true },
       orderBy: [{ nombre: 'asc' }, { id: 'asc' }],
     });
 
     const filtrados = query.bajoMinimo
-      ? insumos.filter((i: InsumoConProveedor) => i.stockActual.lte(i.stockMinimo))
+      ? insumos.filter((i: InsumoConRelaciones) => i.stockActual.lte(i.stockMinimo))
       : insumos;
 
-    const desdeIdx = query.cursor ? filtrados.findIndex((i: InsumoConProveedor) => i.id === query.cursor) + 1 : 0;
+    const desdeIdx = query.cursor ? filtrados.findIndex((i: InsumoConRelaciones) => i.id === query.cursor) + 1 : 0;
     const pagina = filtrados.slice(desdeIdx, desdeIdx + limit + 1);
     const hasMore = pagina.length > limit;
     const data = pagina.slice(0, limit);
@@ -57,7 +62,11 @@ export class InsumosService {
       }
     }
 
-    let insumo: InsumoConProveedor;
+    if (command.categoriaId) {
+      await this.assertCategoriaDeLaSede(command.categoriaId, sedeId);
+    }
+
+    let insumo: InsumoConRelaciones;
     try {
       insumo = await this.prisma.insumo.create({
         data: {
@@ -68,10 +77,11 @@ export class InsumosService {
           stockMinimo: command.stockMinimo ?? 0,
           costoUnitario: command.costoUnitario ?? 0,
           proveedorId: command.proveedorId ?? null,
+          categoriaId: command.categoriaId ?? null,
           productoId: command.productoId ?? null,
           factorConversion: command.factorConversion ?? 1,
         },
-        include: { proveedor: true },
+        include: { proveedor: true, categoria: true },
       });
     } catch (error) {
       if (this.isUniqueConstraintViolation(error)) {
@@ -98,7 +108,11 @@ export class InsumosService {
       }
     }
 
-    let insumo: InsumoConProveedor;
+    if (command.categoriaId) {
+      await this.assertCategoriaDeLaSede(command.categoriaId, actual.sedeId);
+    }
+
+    let insumo: InsumoConRelaciones;
     try {
       insumo = await this.prisma.insumo.update({
         where: { id },
@@ -108,11 +122,12 @@ export class InsumosService {
           ...(command.stockMinimo !== undefined ? { stockMinimo: command.stockMinimo } : {}),
           ...(command.costoUnitario !== undefined ? { costoUnitario: command.costoUnitario } : {}),
           ...(command.proveedorId !== undefined ? { proveedorId: command.proveedorId } : {}),
+          ...(command.categoriaId !== undefined ? { categoriaId: command.categoriaId } : {}),
           ...(command.productoId !== undefined ? { productoId: command.productoId } : {}),
           ...(command.factorConversion !== undefined ? { factorConversion: command.factorConversion } : {}),
           ...(command.activo !== undefined ? { activo: command.activo } : {}),
         },
-        include: { proveedor: true },
+        include: { proveedor: true, categoria: true },
       });
     } catch (error) {
       if (this.isUniqueConstraintViolation(error)) {
@@ -132,15 +147,24 @@ export class InsumosService {
   async eliminar(id: string, usuarioSedeId?: string | null) {
     await this.findOrThrow(id, usuarioSedeId);
 
+    // Soft-delete también si ya tiene kardex: borrarlo en duro se llevaría por
+    // cascada el historial de movimientos, que es justamente la evidencia del
+    // cuadre. Se desactiva y sale del almacén, pero el historial queda.
     const enOrdenes = await this.prisma.ordenCompraItem.count({ where: { insumoId: id } });
-    if (enOrdenes > 0) {
-      const insumo = await this.prisma.insumo.update({ where: { id }, data: { activo: false }, include: { proveedor: true } });
+    const conMovimientos = await this.prisma.movimientoInsumo.count({ where: { insumoId: id } });
+    if (enOrdenes > 0 || conMovimientos > 0) {
+      const insumo = await this.prisma.insumo.update({
+        where: { id },
+        data: { activo: false },
+        include: { proveedor: true, categoria: true },
+      });
+      const motivo = enOrdenes > 0 ? 'aparece en órdenes de compra' : 'tiene movimientos de almacén';
       this.logger.log({
         operation: 'eliminar',
         aggregateId: id,
-        message: 'Insumo con órdenes asociadas: desactivado (soft-delete) en vez de borrado.',
+        message: `Insumo con historial (${motivo}): desactivado (soft-delete) en vez de borrado.`,
       } satisfies OperableLog);
-      return { message: 'Insumo desactivado (aparece en órdenes de compra)', insumo: toInsumoDto(insumo) };
+      return { message: `Insumo desactivado (${motivo})`, insumo: toInsumoDto(insumo) };
     }
 
     await this.prisma.insumo.delete({ where: { id } });
@@ -156,6 +180,13 @@ export class InsumosService {
     const parsed = Number(limit ?? 20);
     if (!Number.isFinite(parsed)) return 20;
     return Math.min(Math.max(Math.trunc(parsed), 1), 100);
+  }
+
+  private async assertCategoriaDeLaSede(categoriaId: string, sedeId: string): Promise<void> {
+    const categoria = await this.prisma.categoriaInsumo.findUnique({ where: { id: categoriaId } });
+    if (!categoria || categoria.sedeId !== sedeId) {
+      throw new NotFoundException('Categoria de almacen ' + categoriaId + ' no encontrada');
+    }
   }
 
   private isUniqueConstraintViolation(error: unknown): boolean {

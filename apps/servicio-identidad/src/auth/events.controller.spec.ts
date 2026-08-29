@@ -1,25 +1,59 @@
 // @ts-nocheck
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
-
+/* eslint-disable */
+import { Test, TestingModule } from '@nestjs/testing';
 import { EventsController } from './events.controller';
 import { AuthService } from './auth.service';
+import { TurnoCajaAbiertoPayload, TurnoCajaCerradoPayload } from '@org/contracts';
 
-describe('EventsController — Identidad', () => {
-  let controller: EventsController;
-  let mockAuthService: { activarMeserosPorSede: jest.Mock };
+describe('EventsController (Identidad)', () => {
+  let eventsController: EventsController;
+  let authService: AuthService;
 
-  beforeEach(() => {
-    mockAuthService = { activarMeserosPorSede: jest.fn().mockResolvedValue(1) };
-    controller = new EventsController(mockAuthService as unknown as AuthService);
+  beforeEach(async () => {
+    const mockAuthService = {
+      activarMeserosPorSede: jest.fn(),
+    };
+
+    const app: TestingModule = await Test.createTestingModule({
+      controllers: [EventsController],
+      providers: [
+        {
+          provide: AuthService,
+          useValue: mockAuthService,
+        },
+      ],
+    }).compile();
+
+    eventsController = app.get<EventsController>(EventsController);
+    authService = app.get<AuthService>(AuthService);
   });
 
-  it('handleTurnoCajaAbierto activa los meseros de la sede', async () => {
-    await controller.handleTurnoCajaAbierto({ turnoId: 't-001', sedeId: 'sede-001' });
-    expect(mockAuthService.activarMeserosPorSede).toHaveBeenCalledWith('sede-001', true);
+  it('debe estar definido', () => {
+    expect(eventsController).toBeDefined();
   });
 
-  it('handleTurnoCajaCerrado desactiva los meseros de la sede', async () => {
-    await controller.handleTurnoCajaCerrado({ turnoId: 't-001', sedeId: 'sede-001' });
-    expect(mockAuthService.activarMeserosPorSede).toHaveBeenCalledWith('sede-001', false);
+  it('handleTurnoCajaAbierto activa a los meseros de la sede del payload', async () => {
+    const payload: TurnoCajaAbiertoPayload = { turnoId: 'turno-1', sedeId: 'sede-1' };
+    jest.spyOn(authService, 'activarMeserosPorSede').mockResolvedValue(3);
+
+    await eventsController.handleTurnoCajaAbierto(payload);
+
+    expect(authService.activarMeserosPorSede).toHaveBeenCalledWith('sede-1', true);
+  });
+
+  it('handleTurnoCajaCerrado desactiva a los meseros de la sede del payload', async () => {
+    const payload: TurnoCajaCerradoPayload = { turnoId: 'turno-1', sedeId: 'sede-1' };
+    jest.spyOn(authService, 'activarMeserosPorSede').mockResolvedValue(3);
+
+    await eventsController.handleTurnoCajaCerrado(payload);
+
+    expect(authService.activarMeserosPorSede).toHaveBeenCalledWith('sede-1', false);
+  });
+
+  it('debe propagar errores del servicio', async () => {
+    const payload: TurnoCajaAbiertoPayload = { turnoId: 'turno-1', sedeId: 'sede-1' };
+    jest.spyOn(authService, 'activarMeserosPorSede').mockRejectedValue(new Error('fail'));
+
+    await expect(eventsController.handleTurnoCajaAbierto(payload)).rejects.toThrow('fail');
   });
 });

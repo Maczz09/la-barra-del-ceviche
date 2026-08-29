@@ -50,6 +50,20 @@ describe('compras.mapper', () => {
       { id: 'it-1', insumoId: 'i-1', insumoNombre: 'Pescado', unidad: 'kg', cantidadPedida: 12, cantidadRecibida: 0, costoUnitario: 28 },
     ]);
     expect(dto.fechaEnvio).toBeNull();
+    // Sin _count (crear/enviar/cerrar/anular no lo piden): default seguro, no falso "0 comprobantes reales".
+    expect(dto.comprobantesCount).toBe(0);
+  });
+
+  it('toOrdenCompraDto propaga comprobantesCount cuando el query trae _count (listar)', () => {
+    const dto = toOrdenCompraDto({
+      id: 'oc-1', sedeId: 's1', codigo: 'OC-1001', proveedorId: null, proveedorNombre: 'X',
+      estado: 'RECIBIDA', fechaEmision: new Date('2026-06-01'), fechaEnvio: null,
+      fechaEntregaEsperada: null, fechaCierre: null, moneda: 'PEN', total: dec(336),
+      notas: null, usuarioId: null, usuarioNombre: null, items: [],
+      createdAt: new Date('2026-06-01'),
+      _count: { comprobantes: 2 },
+    });
+    expect(dto.comprobantesCount).toBe(2);
   });
 
   it('toRecepcionCompraDto mapea items recibidos', () => {

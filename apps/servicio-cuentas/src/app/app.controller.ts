@@ -35,6 +35,13 @@ export class AppController {
     return this.appService.obtenerCuentaPorMesa(mesaId);
   }
 
+  // Uso interno (servicio-caja, token SISTEMA): registrado antes de ':id'
+  // para que 'abiertas' no se intente parsear como UUID de cuenta.
+  @Get('abiertas')
+  listarCuentasAbiertasPorSede(@Query('sedeId') sedeId: string) {
+    return this.appService.listarCuentasAbiertasPorSede(sedeId);
+  }
+
   @Get(':id')
   obtenerCuenta(@Param('id', ParseUUIDPipe) id: string) {
     return this.appService.obtenerCuenta(id);
@@ -49,5 +56,12 @@ export class AppController {
   @Post(':id/cerrar')
   cerrarCuenta(@Param('id', ParseUUIDPipe) id: string, @Body() command: CerrarCuentaCommand) {
     return this.appService.cerrarCuenta(id, command);
+  }
+
+  // Uso interno (servicio-pedidos, token SISTEMA): cascada cuando todos los
+  // ítems de la atención quedan anulados sin cobro (ver AppService.cancelarCuenta).
+  @Post(':id/cancelar')
+  cancelarCuenta(@Param('id', ParseUUIDPipe) id: string) {
+    return this.appService.cancelarCuenta(id);
   }
 }

@@ -42,6 +42,15 @@ export function mapResumen(dto: ResumenDto): ResumenVM {
     ticketPromedio,
     ticketPromedioLabel: ticketPromedio === null ? 'Sin ventas' : formatMoney(ticketPromedio),
     ventasPorHora: dto.ventasPorHora ?? [],
+    topPlatos: dto.topPlatos ?? [],
     topProductos: dto.topProductos ?? [],
+    productosMenosVendidos: dto.productosMenosVendidos ?? [],
+    estadisticasTicket: {
+      media: dto.estadisticasTicket?.media ?? 0,
+      mediana: dto.estadisticasTicket?.mediana ?? 0,
+      moda: dto.estadisticasTicket?.moda ?? null,
+      medianaLabel: dto.estadisticasTicket ? formatMoney(dto.estadisticasTicket.mediana) : 'Sin ventas',
+      modaLabel: dto.estadisticasTicket?.moda == null ? 'Sin moda repetida' : formatMoney(dto.estadisticasTicket.moda),
+    },
   };
 }

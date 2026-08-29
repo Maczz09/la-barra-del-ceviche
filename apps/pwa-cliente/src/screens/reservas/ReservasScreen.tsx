@@ -21,6 +21,7 @@ export function ReservasScreen() {
   const online = useOnlineStatus();
   const { toast } = useToast();
   const [fecha, setFecha] = useState(INITIAL_FORM.fecha);
+  const [search, setSearch] = useState('');
   const [form, setForm] = useState<CrearReservaPayload>(INITIAL_FORM);
 
   useEffect(() => {
@@ -47,7 +48,10 @@ export function ReservasScreen() {
     cancelar,
     consultarDisponibilidad,
     clearFeedback,
-  } = useReservasQuery({ fecha });
+  // Buscar por código implica mirar cualquier fecha, no solo el día
+  // seleccionado en la agenda — si hay búsqueda activa, no se combina con
+  // el filtro de fecha (si no, casi nunca encontraría nada).
+  } = useReservasQuery({ fecha: search ? undefined : fecha, search });
   const mesasFisicas = useMemo(
     () => mesas.filter((mesa) => mesa.numeroRaw < 90),
     [mesas],
@@ -107,6 +111,16 @@ export function ReservasScreen() {
           <div className="panel-h">
             <h3>Agenda</h3>
             <span className="spacer" />
+            <div className="search-box" style={{ maxWidth: 200 }}>
+              <SearchIcon />
+              <input
+                type="search"
+                placeholder="Buscar por código (R0000001)…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                aria-label="Buscar reservas por código"
+              />
+            </div>
             <span className="badge badge-info">{reservas.length} reservas</span>
           </div>
           {loading && <LoadingRows />}
@@ -122,7 +136,7 @@ export function ReservasScreen() {
               <table className="dt">
                 <thead>
                   <tr>
-                    <th>Hora</th>
+                    <th>Fecha y hora</th>
                     <th>Cliente</th>
                     <th className="col-mobile-hidden">Mesa</th>
                     <th className="col-mobile-hidden">Personas</th>
@@ -134,7 +148,10 @@ export function ReservasScreen() {
                 <tbody>
                   {reservas.map((reserva) => (
                     <tr key={reserva.id}>
-                      <td><strong>{reserva.hora}</strong></td>
+                      <td>
+                        <strong>{reserva.fechaHoraLabel}</strong>
+                        {reserva.correlativo && <div className="muted mono" style={{ fontSize: 11 }}>{reserva.correlativo}</div>}
+                      </td>
                       <td>
                         <strong>{reserva.clienteNombre}</strong>
                         {reserva.clienteTelefono && <div className="muted">{reserva.clienteTelefono}</div>}
@@ -309,6 +326,10 @@ function CalendarIcon() {
 
 function CheckIcon() {
   return <svg className="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6 9 17l-5-5" /></svg>;
+}
+
+function SearchIcon() {
+  return <svg className="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>;
 }
 
 function RefreshIcon() {

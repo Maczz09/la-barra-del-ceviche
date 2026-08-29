@@ -14,7 +14,7 @@ export interface ProductoRemotoLote {
   nombre: string;
   precio: number;
   stockActual: number | null;
-  categoria?: { nombre: string } | null;
+  categoria?: { nombre: string; area?: string } | null;
   disponible: boolean;
 }
 

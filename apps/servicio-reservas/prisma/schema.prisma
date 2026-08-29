@@ -20,6 +20,10 @@ model Reserva {
   estado          String   @default("PENDIENTE")
   usuarioId       String?
   usuarioNombre   String?
+  // Código legible ("R0000001"), asignado una sola vez al crear la reserva
+  // — nullable porque las reservas creadas antes de este campo no tienen
+  // uno retroactivo. Único por sede.
+  correlativo     String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -27,6 +31,16 @@ model Reserva {
   @@index([estado])
   @@index([usuarioId])
   @@index([sedeId, fecha])
+  @@unique([sedeId, correlativo])
+}
+
+// Correlativo legible por sede ("R0000001"), mismo patrón que
+// SecuenciaOrden en servicio-compras.
+model SecuenciaReserva {
+  sedeId String @id
+  ultimo Int    @default(0)
+
+  @@map("secuencias_reserva")
 }
 
 model OutboxEvent {

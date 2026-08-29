@@ -34,6 +34,18 @@ model Pedido {
   modalidad      String?      @default("MESA")
   meseroId       String?
   meseroNombre   String?
+  // Código legible de la atención ("A0000001") a la que pertenece este
+  // pedido — llega por backfill asíncrono desde servicio-cuentas (evento
+  // CuentaAsociada, ver events.controller.ts), NO se asigna localmente:
+  // queda null hasta que ese evento se procese (normalmente milisegundos
+  // después de crear el pedido) o si el pedido es de una cuenta creada
+  // antes de este campo.
+  cuentaCorrelativo String?
+  // Id (UUID) de la cuenta en servicio-cuentas — mismo backfill que
+  // cuentaCorrelativo (evento CuentaAsociada), pero sin formatear: permite
+  // resolver "todos los pedidos de esta atención" localmente (cascada de
+  // auto-cancelación) sin una llamada cruzada a servicio-cuentas.
+  cuentaId       String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -41,6 +53,8 @@ model Pedido {
   @@index([estado])
   @@index([meseroId])
   @@index([sedeId])
+  @@index([cuentaCorrelativo])
+  @@index([cuentaId])
   @@map("pedidos")
 }
 
@@ -93,9 +107,82 @@ model ProductoLocal {
   precio          Decimal @db.Decimal(10, 2)
   stockActual     Int?
   categoriaNombre String  @default("COCINA")
+  // Área de la categoría del producto (COCINA/BARRA/INVENTARIO, ver
+  // CategoriaArea en servicio-inventario) — determina el ItemArea del pedido:
+  // COCINA/BARRA pasan por producción, INVENTARIO va directo a cuenta. Nunca
+  // se infiere de categoriaNombre (texto libre, no confiable para rutear).
+  categoriaArea   String  @default("COCINA")
   disponible      Boolean @default(true)
 
   @@map("productos_locales")
+}
+
+// CU-05: registro inmutable (salvo motivo/observación) de cada anulación de
+// ítem o de atención de mesa — fiscalización y control de mermas/pérdidas.
+enum TipoAnulacion {
+  ITEM
+  MESA
+}
+
+enum EstadoPlatoAnulacion {
+  SIN_PREPARAR
+  PREPARADO
+}
+
+model AnulacionAuditoria {
+  id                  String               @id @default(uuid())
+  // Código legible propio de este registro de auditoría ("AN0000001"),
+  // independiente del correlativo de la atención — identifica la anulación
+  // en sí (para citarla en un reclamo, un reporte, etc.), no la cuenta a la
+  // que pertenece. Nullable: registros creados antes de este campo no
+  // tienen uno retroactivo (mismo criterio que el resto de correlativos).
+  correlativo         String?
+  sedeId              String
+  fecha               DateTime             @default(now())
+  mesaId              String
+  mesaNumero          Int?
+  pedidoId            String
+  // Código legible de la atención ("A0000001") a la que pertenecía el
+  // pedido anulado — denormalizado desde Pedido.cuentaCorrelativo en el
+  // momento de crear este registro (puede ser null si el pedido aún no
+  // había recibido el backfill).
+  cuentaCorrelativo   String?
+  itemId              String?
+  tipo                TipoAnulacion
+  productoId          String?
+  productoNombre      String?
+  cantidad            Int?
+  estadoPlato         EstadoPlatoAnulacion
+  cobrado             Boolean
+  montoAnulado        Decimal              @db.Decimal(10, 2)
+  motivo              String
+  observacion         String?
+  usuarioId           String?
+  usuarioNombre       String?
+  clienteNombre       String?
+  // Soft-delete únicamente (CU-05): nunca se borra físicamente un registro
+  // de auditoría — se marca inválida y se conserva el motivo original.
+  invalidada          Boolean              @default(false)
+  invalidadaMotivo    String?
+  invalidadaPorNombre String?
+  invalidadaAt        DateTime?
+  createdAt           DateTime             @default(now())
+
+  @@index([sedeId])
+  @@index([pedidoId])
+  @@index([fecha])
+  @@index([tipo])
+  @@index([correlativo])
+  @@map("anulaciones_auditoria")
+}
+
+// Correlativo legible por sede ("AN0000001") para AnulacionAuditoria, mismo
+// patrón que SecuenciaCuenta/SecuenciaReserva en sus respectivos servicios.
+model SecuenciaAnulacion {
+  sedeId String @id
+  ultimo Int    @default(0)
+
+  @@map("secuencias_anulacion")
 }
 
 model IdempotencyKey {

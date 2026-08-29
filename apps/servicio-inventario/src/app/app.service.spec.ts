@@ -11,6 +11,7 @@ function createMockPrismaService(overrides: Record<string, unknown> = {}): any {
     checkAndRecordIdempotencyKey: (_key: string) => Promise.resolve(true),
     producto: {
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -33,7 +34,10 @@ function createMockPrismaService(overrides: Record<string, unknown> = {}): any {
     },
     merma: {
       findMany: jest.fn(),
+      findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
     },
     outboxEvent: {
       create: jest.fn().mockResolvedValue({}),
@@ -198,6 +202,15 @@ describe('AppService — Inventario (comprehensive)', () => {
       );
       expect(mockPrisma.categoria.create).not.toHaveBeenCalled();
     });
+
+    it('persiste el área elegida (Carta↔Inventario, Cocina↔Barra) sin inferirla del nombre', async () => {
+      mockPrisma.categoria.findFirst.mockResolvedValue(null);
+      mockPrisma.categoria.create.mockResolvedValue({ id: 'cat-4', nombre: 'Tragos', area: 'BARRA' });
+      await service.crearCategoria({ nombre: 'Tragos', area: 'BARRA' as any }, SEDE);
+      expect(mockPrisma.categoria.create).toHaveBeenCalledWith({
+        data: { nombre: 'Tragos', sedeId: SEDE, descripcion: undefined, parentId: undefined, area: 'BARRA' },
+      });
+    });
   });
 
   describe('actualizarCategoria', () => {
@@ -267,6 +280,31 @@ describe('AppService — Inventario (comprehensive)', () => {
       await expect(service.actualizarCategoria('cat-postres', { parentId: 'cat-calientes' })).rejects.toThrow(
         'No se permite anidar más de un nivel de subcategorías.',
       );
+    });
+
+    it('permite cambiar el área si la categoría no tiene productos', async () => {
+      mockPrisma.categoria.findUnique
+        .mockResolvedValueOnce({ id: 'cat-1', nombre: 'Tragos', area: 'COCINA', _count: { subcategorias: 0 } })
+        .mockResolvedValueOnce({ id: 'cat-1', _count: { productos: 0 } });
+      mockPrisma.categoria.update.mockResolvedValue({ id: 'cat-1', nombre: 'Tragos', area: 'BARRA' });
+
+      const result = await service.actualizarCategoria('cat-1', { area: 'BARRA' as any });
+
+      expect(result.categoria.area).toBe('BARRA');
+      expect(mockPrisma.categoria.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ area: 'BARRA' }) }),
+      );
+    });
+
+    it('rechaza cambiar el área si la categoría tiene productos asociados', async () => {
+      mockPrisma.categoria.findUnique
+        .mockResolvedValueOnce({ id: 'cat-1', nombre: 'Ceviches', area: 'COCINA', _count: { subcategorias: 0 } })
+        .mockResolvedValueOnce({ id: 'cat-1', _count: { productos: 5 } });
+
+      await expect(service.actualizarCategoria('cat-1', { area: 'INVENTARIO' as any })).rejects.toThrow(
+        '5 producto(s)',
+      );
+      expect(mockPrisma.categoria.update).not.toHaveBeenCalled();
     });
   });
 
@@ -370,11 +408,11 @@ describe('AppService — Inventario (comprehensive)', () => {
       );
     });
 
-    it('limita el máximo a 100', async () => {
+    it('limita el máximo a 500', async () => {
       mockPrisma.producto.findMany.mockResolvedValue([] as any);
-      await service.listarProductos({ limit: 500 }, SEDE);
+      await service.listarProductos({ limit: 1000 }, SEDE);
       expect(mockPrisma.producto.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ take: 101 }),
+        expect.objectContaining({ take: 501 }),
       );
     });
 
@@ -408,6 +446,64 @@ describe('AppService — Inventario (comprehensive)', () => {
 
     it('T-23: un admin general sin sede fija debe indicar cuál usar', async () => {
       await expect(service.listarProductos({}, null)).rejects.toThrow('Indica la sede');
+    });
+  });
+
+  // ─── listarCartaPublica (carta pública/QR, sin auth) ───────────────────────
+
+  describe('listarCartaPublica', () => {
+    it('filtra categorías a COCINA/BARRA/INVENTARIO en la query de Prisma', async () => {
+      mockPrisma.categoria.findMany.mockResolvedValue([]);
+      mockPrisma.producto.findMany.mockResolvedValue([]);
+      await service.listarCartaPublica(SEDE);
+      expect(mockPrisma.categoria.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { sedeId: SEDE, area: { in: ['COCINA', 'BARRA', 'INVENTARIO'] } } }),
+      );
+    });
+
+    it('filtra productos a disponible=true, y (Carta sin stock) o (Inventario con stock > 0)', async () => {
+      mockPrisma.categoria.findMany.mockResolvedValue([]);
+      mockPrisma.producto.findMany.mockResolvedValue([]);
+      await service.listarCartaPublica(SEDE);
+      expect(mockPrisma.producto.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            sedeId: SEDE,
+            disponible: true,
+            OR: [
+              { stockActual: null, categoria: { area: { in: ['COCINA', 'BARRA'] } } },
+              { stockActual: { gt: 0 }, categoria: { area: 'INVENTARIO' } },
+            ],
+          },
+        }),
+      );
+    });
+
+    it('devuelve las categorías y productos ya mapeados a DTO', async () => {
+      mockPrisma.categoria.findMany.mockResolvedValue([
+        { id: 'cat-001', nombre: 'Ceviches', descripcion: null, sedeId: SEDE, area: 'COCINA' },
+      ]);
+      mockPrisma.producto.findMany.mockResolvedValue([{ ...productoBase, precio: 40, disponible: true, stockActual: null }]);
+
+      const result = await service.listarCartaPublica(SEDE);
+
+      expect(result.categorias).toHaveLength(1);
+      expect(result.productos).toHaveLength(1);
+      expect(result.productos[0].precio).toBe(40);
+    });
+
+    it('incluye un producto de Inventario ("Abarrotes") con stock', async () => {
+      mockPrisma.categoria.findMany.mockResolvedValue([
+        { id: 'cat-002', nombre: 'Agua Mineral', descripcion: null, sedeId: SEDE, area: 'INVENTARIO' },
+      ]);
+      mockPrisma.producto.findMany.mockResolvedValue([
+        { ...productoBase, id: 'prod-002', nombre: 'Agua Alcalina', precio: 3, disponible: true, stockActual: 12 },
+      ]);
+
+      const result = await service.listarCartaPublica(SEDE);
+
+      expect(result.categorias[0].nombre).toBe('Agua Mineral');
+      expect(result.productos[0].nombre).toBe('Agua Alcalina');
     });
   });
 
@@ -528,6 +624,39 @@ describe('AppService — Inventario (comprehensive)', () => {
         }),
       );
     });
+
+    it('rechaza un producto con stockActual bajo una categoría que no es de área Inventario', async () => {
+      mockPrisma.categoria.findUnique.mockResolvedValue({ id: 'cat-001', nombre: 'Ceviches', sedeId: SEDE, area: 'COCINA' });
+      await expect(
+        service.crearProducto({ categoriaId: 'cat-001', nombre: 'Cristal', precio: 8, stockActual: 0 }, SEDE),
+      ).rejects.toThrow('categoría de área Inventario');
+      expect(mockPrisma.producto.create).not.toHaveBeenCalled();
+    });
+
+    it('rechaza un producto sin stockActual bajo una categoría de área Inventario', async () => {
+      mockPrisma.categoria.findUnique.mockResolvedValue({ id: 'cat-002', nombre: 'Cerveza', sedeId: SEDE, area: 'INVENTARIO' });
+      await expect(
+        service.crearProducto({ categoriaId: 'cat-002', nombre: 'Ceviche', precio: 30 }, SEDE),
+      ).rejects.toThrow('control de stock');
+      expect(mockPrisma.producto.create).not.toHaveBeenCalled();
+    });
+
+    it('acepta un producto con stockActual bajo una categoría de área Inventario y propaga categoriaArea al evento', async () => {
+      const categoria = { id: 'cat-002', nombre: 'Cerveza', sedeId: SEDE, area: 'INVENTARIO' };
+      mockPrisma.categoria.findUnique.mockResolvedValue(categoria);
+      mockPrisma.producto.create.mockResolvedValue({
+        ...productoBase,
+        categoriaId: 'cat-002',
+        stockActual: 0,
+        precio: { toNumber: () => 8 },
+      });
+      mockPrisma.outboxEvent.create.mockResolvedValue({});
+
+      await service.crearProducto({ categoriaId: 'cat-002', nombre: 'Cristal', precio: 8, stockActual: 0 }, SEDE);
+
+      const evento = mockPrisma.outboxEvent.create.mock.calls[0][0];
+      expect(JSON.parse(evento.data.payload).categoriaArea).toBe('INVENTARIO');
+    });
   });
 
   // ─── actualizarProducto ───────────────────────────────────────────────────
@@ -579,6 +708,40 @@ describe('AppService — Inventario (comprehensive)', () => {
         expect.objectContaining({ data: expect.objectContaining({ routingKey: 'producto.actualizado' }) }),
       );
     });
+
+    it('el evento producto.actualizado incluye sedeId (necesario para el WebSocket de la carta pública)', async () => {
+      mockPrisma.producto.findUnique.mockResolvedValue({ ...productoBase, categoria: productoBase.categoria });
+      mockPrisma.producto.update.mockResolvedValue({ ...productoBase, precio: { toNumber: () => 8.5 }, categoria: productoBase.categoria });
+      mockPrisma.outboxEvent.create.mockResolvedValue({});
+
+      await service.actualizarProducto('prod-001', { nombre: 'Test' });
+
+      const call = mockPrisma.outboxEvent.create.mock.calls.find(
+        (c: any) => c[0].data.routingKey === 'producto.actualizado',
+      );
+      const payload = JSON.parse(call[0].data.payload);
+      expect(payload.sedeId).toBe(productoBase.sedeId);
+    });
+
+    it('rechaza mover un producto sin stock a una categoría de área Inventario', async () => {
+      mockPrisma.categoria.findUnique.mockResolvedValue({ id: 'cat-cerveza', sedeId: SEDE, area: 'INVENTARIO' });
+      mockPrisma.producto.findUnique.mockResolvedValue({ ...productoBase, stockActual: null, categoria: productoBase.categoria });
+
+      await expect(
+        service.actualizarProducto('prod-001', { categoriaId: 'cat-cerveza' }),
+      ).rejects.toThrow('control de stock');
+      expect(mockPrisma.producto.update).not.toHaveBeenCalled();
+    });
+
+    it('rechaza mover un producto con stock a una categoría que no es de área Inventario', async () => {
+      mockPrisma.categoria.findUnique.mockResolvedValue({ id: 'cat-ceviches', sedeId: SEDE, area: 'COCINA' });
+      mockPrisma.producto.findUnique.mockResolvedValue({ ...productoBase, stockActual: 5, categoria: productoBase.categoria });
+
+      await expect(
+        service.actualizarProducto('prod-001', { categoriaId: 'cat-ceviches' }),
+      ).rejects.toThrow('categoría de área Inventario');
+      expect(mockPrisma.producto.update).not.toHaveBeenCalled();
+    });
   });
 
   // ─── actualizarStock ──────────────────────────────────────────────────────
@@ -622,6 +785,22 @@ describe('AppService — Inventario (comprehensive)', () => {
     it('lanza NotFoundException si el producto no existe', async () => {
       mockPrisma.producto.findUnique.mockResolvedValue(null);
       await expect(service.actualizarStock('no-existe', 5)).rejects.toThrow(NotFoundException);
+    });
+
+    // Regresión: reponer stock (o cualquier consumo) NO debe pisar
+    // categoriaArea con el default 'COCINA' — eso rompía el ruteo a Cocina
+    // de un producto de Inventario apenas se le tocaba el stock.
+    it('propaga categoria.area en el evento (no debe caer al default COCINA)', async () => {
+      mockPrisma.producto.findUnique.mockResolvedValue({
+        ...productoBase, stockActual: 10, categoria: { ...productoBase.categoria, area: 'INVENTARIO' },
+      });
+      mockPrisma.producto.update.mockResolvedValue({ ...productoBase, stockActual: 15, precio: { toNumber: () => 8.5 } });
+      mockPrisma.outboxEvent.create.mockResolvedValue({});
+
+      await service.actualizarStock('prod-001', 5);
+
+      const evento = mockPrisma.outboxEvent.create.mock.calls[0][0];
+      expect(JSON.parse(evento.data.payload).categoriaArea).toBe('INVENTARIO');
     });
   });
 
@@ -671,6 +850,18 @@ describe('AppService — Inventario (comprehensive)', () => {
     it('lanza BadRequestException si cantidad <= 0', async () => {
       await expect(service.reducirStockAutomatico('prod-001', 0)).rejects.toThrow(BadRequestException);
       await expect(service.reducirStockAutomatico('prod-001', -5)).rejects.toThrow(BadRequestException);
+    });
+
+    it('propaga categoria.area en el evento (no debe caer al default COCINA)', async () => {
+      mockPrisma.producto.findUnique
+        .mockResolvedValueOnce({ ...productoBase, stockActual: 15, categoria: { ...productoBase.categoria, area: 'INVENTARIO' } })
+        .mockResolvedValueOnce({ id: 'prod-001', nombre: 'Cerveza', stockActual: 5, disponible: true });
+      mockPrisma.producto.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.reducirStockAutomatico('prod-001', 10);
+
+      const payload = JSON.parse(mockPrisma.outboxEvent.create.mock.calls[0][0].data.payload);
+      expect(payload.categoriaArea).toBe('INVENTARIO');
     });
   });
 
@@ -782,8 +973,8 @@ describe('AppService — Inventario (comprehensive)', () => {
         ordenId: 'oc-1',
         sedeId: SEDE,
         lineas: lineas.map((l) => ({
-          insumoId: String(l['insumoId'] ?? 'i-1'),
-          insumoNombre: String(l['insumoNombre'] ?? 'Pisco Quebranta'),
+          insumoId: String((l['insumoId'] as string | number | undefined) ?? 'i-1'),
+          insumoNombre: String((l['insumoNombre'] as string | number | undefined) ?? 'Pisco Quebranta'),
           productoId: (l['productoId'] as string | null | undefined) ?? null,
           cantidadRecibida: Number(l['cantidadRecibida'] ?? 1),
           cantidadStockVenta: Number(l['cantidadStockVenta'] ?? 1),
@@ -819,6 +1010,18 @@ describe('AppService — Inventario (comprehensive)', () => {
         stockSyncMode: 'REPOSICION',
         stockDelta: 12,
       });
+    });
+
+    it('propaga categoria.area en el evento (no debe caer al default COCINA)', async () => {
+      mockPrisma.producto.findUnique.mockResolvedValue({
+        ...productoBase, stockActual: 5, disponible: true, categoria: { ...productoBase.categoria, area: 'INVENTARIO' },
+      });
+      mockPrisma.producto.update.mockResolvedValue({ ...productoBase, stockActual: 17, disponible: true });
+
+      await service.procesarCompraRecibida(compraDto('rc-3', [{ productoId: 'prod-001', cantidadStockVenta: 12 }]));
+
+      const payload = JSON.parse(mockPrisma.outboxEvent.create.mock.calls[0][0].data.payload);
+      expect(payload.categoriaArea).toBe('INVENTARIO');
     });
 
     it('reactiva disponible cuando el producto estaba en stock 0 y desactivado', async () => {
@@ -1067,6 +1270,25 @@ describe('AppService — Inventario (comprehensive)', () => {
       expect(result.merma.motivo).toBe('Botellas rotas');
     });
 
+    it('propaga categoria.area en el evento (no debe caer al default COCINA)', async () => {
+      mockPrisma.producto.findUnique.mockResolvedValue({
+        ...productoBase, stockActual: 10, categoria: { ...productoBase.categoria, area: 'INVENTARIO' },
+      });
+      mockPrisma.producto.update.mockResolvedValue({ ...productoBase, stockActual: 7 });
+      mockPrisma.merma.create.mockResolvedValue({
+        id: 'merma-2', productoId: 'prod-001', cantidad: 3, motivo: 'Botellas rotas',
+        usuarioId: 'u-1', usuarioNombre: 'Ana', createdAt: new Date(),
+      });
+
+      await service.registrarMerma(
+        { productoId: 'prod-001', cantidad: 3, motivo: 'Botellas rotas' },
+        'u-1', 'Ana', SEDE,
+      );
+
+      const payload = JSON.parse(mockPrisma.outboxEvent.create.mock.calls[0][0].data.payload);
+      expect(payload.categoriaArea).toBe('INVENTARIO');
+    });
+
     it('marca el producto como no disponible si la merma agota el stock', async () => {
       mockPrisma.producto.findUnique.mockResolvedValue({ ...productoBase, stockActual: 2 });
       mockPrisma.producto.update.mockResolvedValue({ ...productoBase, stockActual: 0, disponible: false });
@@ -1107,6 +1329,253 @@ describe('AppService — Inventario (comprehensive)', () => {
 
     it('T-23: un admin general sin sede fija debe indicar cuál usar', async () => {
       await expect(service.listarMermas({}, null)).rejects.toThrow('Indica la sede');
+    });
+
+    it('busca por el código de la atención origen cuando se indica search', async () => {
+      mockPrisma.merma.findMany.mockResolvedValue([]);
+      await service.listarMermas({ search: 'A000001' } as any, SEDE);
+      expect(mockPrisma.merma.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { producto: { sedeId: SEDE }, cuentaCorrelativo: { contains: 'A000001', mode: 'insensitive' } },
+        }),
+      );
+    });
+
+    it('filtra por origen, desde y hasta cuando se indican', async () => {
+      mockPrisma.merma.findMany.mockResolvedValue([]);
+      await service.listarMermas({ origen: 'ANULACION_COMANDA_COBRADA', desde: '2026-08-01', hasta: '2026-08-31' } as any, SEDE);
+      expect(mockPrisma.merma.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            producto: { sedeId: SEDE },
+            origen: 'ANULACION_COMANDA_COBRADA',
+            createdAt: { gte: new Date('2026-08-01'), lte: new Date('2026-08-31') },
+          },
+        }),
+      );
+    });
+  });
+
+  describe('actualizarMerma', () => {
+    const mermaExistente = {
+      id: 'merma-1', productoId: 'prod-001', cantidad: 3, motivo: 'Botellas rotas',
+      observacion: null, origen: 'DESCARTE_MANUAL_INVENTARIO', costoUnitario: { toNumber: () => 8.5 },
+      pedidoItemId: null, usuarioId: 'u-1', usuarioNombre: 'Ana', createdAt: new Date(),
+      producto: productoBase,
+    };
+
+    it('rechaza si la merma no existe', async () => {
+      mockPrisma.merma.findUnique.mockResolvedValue(null);
+      await expect(service.actualizarMerma('no-existe', { motivo: 'x' }, SEDE)).rejects.toThrow('no encontrada');
+    });
+
+    it('rechaza si la merma pertenece a otra sede', async () => {
+      mockPrisma.merma.findUnique.mockResolvedValue({ ...mermaExistente, producto: { ...productoBase, sedeId: 'otra-sede' } });
+      await expect(service.actualizarMerma('merma-1', { motivo: 'x' }, SEDE)).rejects.toThrow('no encontrada');
+    });
+
+    it('corrige motivo/observación sin tocar el stock cuando no cambia la cantidad', async () => {
+      mockPrisma.merma.findUnique.mockResolvedValue(mermaExistente);
+      mockPrisma.merma.update.mockResolvedValue({ ...mermaExistente, motivo: 'Se rompieron al servir' });
+
+      const result = await service.actualizarMerma('merma-1', { motivo: 'Se rompieron al servir' }, SEDE);
+
+      expect(mockPrisma.producto.update).not.toHaveBeenCalled();
+      expect(mockPrisma.merma.update).toHaveBeenCalledWith({ where: { id: 'merma-1' }, data: { motivo: 'Se rompieron al servir' } });
+      expect(result.merma.motivo).toBe('Se rompieron al servir');
+    });
+
+    it('recalcula el stock por la diferencia cuando cambia la cantidad', async () => {
+      mockPrisma.merma.findUnique.mockResolvedValue(mermaExistente);
+      mockPrisma.producto.findUniqueOrThrow.mockResolvedValue({ ...productoBase, stockActual: 7 });
+      mockPrisma.producto.update.mockResolvedValue({ ...productoBase, stockActual: 5, categoria: productoBase.categoria });
+      mockPrisma.merma.update.mockResolvedValue({ ...mermaExistente, cantidad: 5 });
+
+      await service.actualizarMerma('merma-1', { cantidad: 5 }, SEDE);
+
+      // Ya se habían mermado 3; corregir a 5 solo descuenta la diferencia (2), no los 5 completos.
+      expect(mockPrisma.producto.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'prod-001' }, data: expect.objectContaining({ stockActual: 5 }) }),
+      );
+      expect(mockPrisma.merma.update).toHaveBeenCalledWith({ where: { id: 'merma-1' }, data: { cantidad: 5 } });
+    });
+
+    it('rechaza si la diferencia deja stock negativo', async () => {
+      mockPrisma.merma.findUnique.mockResolvedValue(mermaExistente);
+      mockPrisma.producto.findUniqueOrThrow.mockResolvedValue({ ...productoBase, stockActual: 1 });
+
+      await expect(service.actualizarMerma('merma-1', { cantidad: 10 }, SEDE)).rejects.toThrow('No hay suficiente stock');
+      expect(mockPrisma.merma.update).not.toHaveBeenCalled();
+    });
+
+    it('no toca el stock si el producto no lleva control, aunque cambie la cantidad', async () => {
+      mockPrisma.merma.findUnique.mockResolvedValue({ ...mermaExistente, producto: { ...productoBase, stockActual: null } });
+      mockPrisma.merma.update.mockResolvedValue({ ...mermaExistente, cantidad: 8 });
+
+      await service.actualizarMerma('merma-1', { cantidad: 8 }, SEDE);
+
+      expect(mockPrisma.producto.findUniqueOrThrow).not.toHaveBeenCalled();
+      expect(mockPrisma.producto.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('eliminarMerma', () => {
+    const mermaExistente = {
+      id: 'merma-1', productoId: 'prod-001', cantidad: 3, motivo: 'Botellas rotas',
+      observacion: null, origen: 'DESCARTE_MANUAL_INVENTARIO', costoUnitario: { toNumber: () => 8.5 },
+      pedidoItemId: null, usuarioId: 'u-1', usuarioNombre: 'Ana', createdAt: new Date(),
+      producto: productoBase,
+    };
+
+    it('rechaza sin justificación', async () => {
+      await expect(service.eliminarMerma('merma-1', '', SEDE)).rejects.toThrow('justificación es obligatoria');
+      await expect(service.eliminarMerma('merma-1', 'ok', SEDE)).rejects.toThrow('justificación es obligatoria');
+    });
+
+    it('rechaza si la merma no existe', async () => {
+      mockPrisma.merma.findUnique.mockResolvedValue(null);
+      await expect(service.eliminarMerma('no-existe', 'Se registró por error', SEDE)).rejects.toThrow('no encontrada');
+    });
+
+    it('restaura el stock y elimina la merma', async () => {
+      mockPrisma.merma.findUnique.mockResolvedValue(mermaExistente);
+      mockPrisma.producto.findUniqueOrThrow.mockResolvedValue({ ...productoBase, stockActual: 7 });
+      mockPrisma.producto.update.mockResolvedValue({ ...productoBase, stockActual: 10, categoria: productoBase.categoria });
+
+      const result = await service.eliminarMerma('merma-1', 'Se registró por error', SEDE);
+
+      expect(mockPrisma.producto.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'prod-001' }, data: { stockActual: 10, disponible: true } }),
+      );
+      expect(mockPrisma.merma.delete).toHaveBeenCalledWith({ where: { id: 'merma-1' } });
+      expect(result.message).toContain('eliminada');
+    });
+
+    it('no toca el stock si el producto no lleva control', async () => {
+      mockPrisma.merma.findUnique.mockResolvedValue({ ...mermaExistente, producto: { ...productoBase, stockActual: null } });
+
+      await service.eliminarMerma('merma-1', 'Se registró por error', SEDE);
+
+      expect(mockPrisma.producto.findUniqueOrThrow).not.toHaveBeenCalled();
+      expect(mockPrisma.producto.update).not.toHaveBeenCalled();
+      expect(mockPrisma.merma.delete).toHaveBeenCalledWith({ where: { id: 'merma-1' } });
+    });
+  });
+
+  describe('procesarItemAnuladoConMerma', () => {
+    const payloadBase = {
+      eventId: 'evt-1', pedidoId: 'ped-1', itemId: 'item-1', productoId: 'prod-001',
+      productoNombre: 'Cerveza', cantidad: 1, motivo: 'Cliente se retiró', cobrado: false,
+      usuarioId: 'u-1', usuarioNombre: 'Ana',
+    };
+
+    it('ignora el payload si falta productoId o cantidad', async () => {
+      await service.procesarItemAnuladoConMerma({ ...payloadBase, productoId: '' } as any);
+      expect(mockPrisma.merma.create).not.toHaveBeenCalled();
+    });
+
+    it('crea la merma con origen NO_COBRADA cuando cobrado=false', async () => {
+      mockPrisma.producto.findUnique.mockResolvedValue({ ...productoBase, stockActual: 7 });
+      mockPrisma.producto.findUniqueOrThrow.mockResolvedValue({ ...productoBase, stockActual: 7 });
+
+      await service.procesarItemAnuladoConMerma(payloadBase as any);
+
+      expect(mockPrisma.merma.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            productoId: 'prod-001', origen: 'ANULACION_COMANDA_NO_COBRADA', pedidoItemId: 'item-1', costoUnitario: 8.5,
+          }),
+        }),
+      );
+    });
+
+    it('crea la merma con origen COBRADA cuando cobrado=true', async () => {
+      mockPrisma.producto.findUnique.mockResolvedValue({ ...productoBase, stockActual: 7 });
+      mockPrisma.producto.findUniqueOrThrow.mockResolvedValue({ ...productoBase, stockActual: 7 });
+
+      await service.procesarItemAnuladoConMerma({ ...payloadBase, cobrado: true } as any);
+
+      expect(mockPrisma.merma.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ origen: 'ANULACION_COMANDA_COBRADA' }) }),
+      );
+    });
+
+    it('denormaliza el correlativo de la atención origen ("A0000001") en la merma', async () => {
+      mockPrisma.producto.findUnique.mockResolvedValue({ ...productoBase, stockActual: 7 });
+      mockPrisma.producto.findUniqueOrThrow.mockResolvedValue({ ...productoBase, stockActual: 7 });
+
+      await service.procesarItemAnuladoConMerma({ ...payloadBase, cuentaCorrelativo: 'A0000001' } as any);
+
+      expect(mockPrisma.merma.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ cuentaCorrelativo: 'A0000001' }) }),
+      );
+    });
+
+    it('no toca stock ni falla si el producto es de Carta/Menú (stockActual null)', async () => {
+      mockPrisma.producto.findUnique.mockResolvedValue({ ...productoBase, stockActual: null });
+
+      await service.procesarItemAnuladoConMerma(payloadBase as any);
+
+      expect(mockPrisma.producto.findUniqueOrThrow).not.toHaveBeenCalled();
+      expect(mockPrisma.producto.update).not.toHaveBeenCalled();
+      expect(mockPrisma.merma.create).toHaveBeenCalled();
+    });
+
+    it('registra la merma sin costoUnitario si el producto ya no existe', async () => {
+      mockPrisma.producto.findUnique.mockResolvedValue(null);
+
+      await service.procesarItemAnuladoConMerma(payloadBase as any);
+
+      expect(mockPrisma.merma.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ costoUnitario: null }) }),
+      );
+    });
+
+    it('es idempotente: no duplica la merma si el evento ya se procesó', async () => {
+      mockPrisma.idempotencyKey.create.mockRejectedValue({ code: 'P2002' });
+
+      await service.procesarItemAnuladoConMerma(payloadBase as any);
+
+      expect(mockPrisma.merma.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('procesarStockRestaurado', () => {
+    const payloadBase = { eventId: 'evt-1', productoId: 'prod-001', cantidad: 2, motivo: 'Mesa anulada sin consumir' };
+
+    it('ignora el payload si falta productoId o cantidad', async () => {
+      await service.procesarStockRestaurado({ ...payloadBase, cantidad: 0 } as any);
+      expect(mockPrisma.producto.update).not.toHaveBeenCalled();
+    });
+
+    it('incrementa el stock y marca el producto disponible', async () => {
+      mockPrisma.producto.findUnique.mockResolvedValue({ ...productoBase, stockActual: 3 });
+      mockPrisma.producto.update.mockResolvedValue({ ...productoBase, stockActual: 5, disponible: true });
+
+      await service.procesarStockRestaurado(payloadBase as any);
+
+      expect(mockPrisma.producto.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'prod-001' }, data: { stockActual: 5, disponible: true } }),
+      );
+      expect(mockPrisma.outboxEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ payload: expect.stringContaining('"stockSyncMode":"REPOSICION"') }) }),
+      );
+    });
+
+    it('ignora productos sin control de stock', async () => {
+      mockPrisma.producto.findUnique.mockResolvedValue({ ...productoBase, stockActual: null });
+
+      await service.procesarStockRestaurado(payloadBase as any);
+
+      expect(mockPrisma.producto.update).not.toHaveBeenCalled();
+    });
+
+    it('es idempotente: no vuelve a restaurar si el evento ya se procesó', async () => {
+      mockPrisma.idempotencyKey.create.mockRejectedValue({ code: 'P2002' });
+
+      await service.procesarStockRestaurado(payloadBase as any);
+
+      expect(mockPrisma.producto.update).not.toHaveBeenCalled();
     });
   });
 });

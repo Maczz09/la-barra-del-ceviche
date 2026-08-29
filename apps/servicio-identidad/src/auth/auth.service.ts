@@ -16,10 +16,13 @@ import {
   LoginResponseDto,
   CambiarRolCommand,
   CambiarEstadoUsuarioCommand,
+  ActualizarUsuarioCommand,
+  CambiarPasswordUsuarioCommand,
   RolUsuario,
   ListarUsuariosQuery,
   UsuarioListResponse,
   SedeDto,
+  SedePublicaDto,
   CrearSedeCommand,
   ActualizarSedeCommand,
 } from '@org/contracts';
@@ -328,6 +331,7 @@ export class AuthService {
         password: hashedPassword,
         rol: command.rol,
         sedeId,
+        telefono: command.telefono?.trim() || null,
       },
     });
 
@@ -516,6 +520,68 @@ export class AuthService {
     return toUsuarioDto(actualizado);
   }
 
+  /** Datos de perfil editables por un ADMIN — hoy solo teléfono. */
+  async actualizarUsuario(id: string, command: ActualizarUsuarioCommand, ejecutadoPor: string) {
+    const usuario = await this.prisma.usuario.findUnique({ where: { id } });
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const actualizado = await this.prisma.usuario.update({
+      where: { id },
+      data: { telefono: command.telefono?.trim() || null },
+    });
+    await this.registrarAuditoria(`ACTUALIZAR_PERFIL:por:${ejecutadoPor}`, id, 'servicio-identidad');
+
+    this.logger.log({
+      operation: 'actualizarUsuario',
+      aggregateId: actualizado.id,
+      message: 'Perfil de usuario actualizado.',
+    } satisfies OperableLog);
+    return toUsuarioDto(actualizado);
+  }
+
+  /**
+   * Reseteo de contraseña por un ADMIN — no requiere la contraseña actual
+   * (a diferencia de un self-service "cambiar mi contraseña", que no
+   * existe todavía). Revoca las sesiones activas del usuario, igual que
+   * cambiarEstado(activo:false): una contraseña reseteada no debería dejar
+   * sesiones viejas vivas con el token anterior.
+   */
+  async cambiarPasswordUsuario(id: string, command: CambiarPasswordUsuarioCommand, ejecutadoPor: string) {
+    const usuario = await this.prisma.usuario.findUnique({ where: { id } });
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const hashedPassword = await bcrypt.hash(command.password, SALT_ROUNDS);
+    const actualizado = await this.prisma.$transaction(async (tx) => {
+      const usuarioActualizado = await tx.usuario.update({
+        where: { id },
+        data: { password: hashedPassword, failedLoginAttempts: 0, lockedUntil: null },
+      });
+      await tx.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      await tx.auditoriaLog.create({
+        data: {
+          accion: `RESET_PASSWORD:por:${ejecutadoPor}`,
+          usuarioId: id,
+          servicio: 'servicio-identidad',
+        },
+      });
+      return usuarioActualizado;
+    });
+
+    this.logger.log({
+      operation: 'cambiarPasswordUsuario',
+      aggregateId: actualizado.id,
+      message: 'Contraseña de usuario reseteada por un administrador.',
+    } satisfies OperableLog);
+    return toUsuarioDto(actualizado);
+  }
+
   /* ── Auditoría ─────────────────────────────────────── */
 
   async registrarAuditoria(accion: string, usuarioId: string, servicio: string, ip?: string) {
@@ -526,8 +592,8 @@ export class AuthService {
 
   /* ── Sedes (T-23: multi-sede, solo ADMIN) ──────────── */
 
-  private toSedeDto(sede: { id: string; nombre: string; direccion: string | null; ruc: string | null; activa: boolean }): SedeDto {
-    return { id: sede.id, nombre: sede.nombre, direccion: sede.direccion, ruc: sede.ruc, activa: sede.activa };
+  private toSedeDto(sede: { id: string; nombre: string; direccion: string | null; ruc: string | null; telefono: string | null; activa: boolean }): SedeDto {
+    return { id: sede.id, nombre: sede.nombre, direccion: sede.direccion, ruc: sede.ruc, telefono: sede.telefono, activa: sede.activa };
   }
 
   async listarSedes(): Promise<{ sedes: SedeDto[] }> {
@@ -547,12 +613,42 @@ export class AuthService {
     return { sede: sede ? this.toSedeDto(sede) : null };
   }
 
+  // Carta pública/QR (T-XX): SIN autenticación, cualquiera con el link la
+  // llama — por eso expone solo lo estrictamente necesario para el header de
+  // la carta (ni ruc, ni activa) y no filtra por sede del llamante (no hay
+  // llamante). Una sede desactivada devuelve null: el QR simplemente deja de
+  // funcionar en vez de mostrar datos de un local que ya cerró.
+  async sedePublica(sedeId: string): Promise<{ sede: SedePublicaDto | null }> {
+    const sede = await this.prisma.sede.findUnique({ where: { id: sedeId } });
+    if (!sede || !sede.activa) return { sede: null };
+    return { sede: { id: sede.id, nombre: sede.nombre, direccion: sede.direccion, telefono: sede.telefono } };
+  }
+
+  // Consumido desde EventsController (turno.abierto / turno.cerrado): el
+  // personal MESERO de la sede se activa solo al abrir caja y se desactiva
+  // solo al cerrarla, para que no puedan operar fuera de un turno con caja.
+  // updateMany es naturalmente idempotente (repetir el mismo evento no
+  // cambia el resultado), así que no hace falta deduplicar por evento.
+  async activarMeserosPorSede(sedeId: string, activo: boolean): Promise<number> {
+    const { count } = await this.prisma.usuario.updateMany({
+      where: { sedeId, rol: 'MESERO' },
+      data: { activo },
+    });
+    this.logger.log({
+      operation: 'activarMeserosPorSede',
+      aggregateId: sedeId,
+      resultingState: activo ? 'ACTIVOS' : 'INACTIVOS',
+      message: `${count} usuario(s) MESERO ${activo ? 'activados' : 'desactivados'} (sede ${sedeId}).`,
+    } satisfies OperableLog);
+    return count;
+  }
+
   async crearSede(command: CrearSedeCommand): Promise<{ message: string; sede: SedeDto }> {
     const existe = await this.prisma.sede.findUnique({ where: { nombre: command.nombre } });
     if (existe) throw new ConflictException(`Ya existe una sede llamada "${command.nombre}".`);
 
     const sede = await this.prisma.sede.create({
-      data: { nombre: command.nombre, direccion: command.direccion, ruc: command.ruc },
+      data: { nombre: command.nombre, direccion: command.direccion, ruc: command.ruc, telefono: command.telefono },
     });
 
     this.logger.log({
@@ -574,7 +670,7 @@ export class AuthService {
 
     const sede = await this.prisma.sede.update({
       where: { id },
-      data: { nombre: command.nombre, direccion: command.direccion, ruc: command.ruc, activa: command.activa },
+      data: { nombre: command.nombre, direccion: command.direccion, ruc: command.ruc, telefono: command.telefono, activa: command.activa },
     });
 
     return { message: 'Sede actualizada', sede: this.toSedeDto(sede) };
@@ -589,21 +685,5 @@ export class AuthService {
 
     await this.prisma.sede.delete({ where: { id } });
     return { message: 'Sede eliminada' };
-  }
-
-  /* ── Automatización meseros por turno de caja ──────── */
-
-  async activarMeserosPorSede(sedeId: string, activo: boolean): Promise<number> {
-    const { count } = await this.prisma.usuario.updateMany({
-      where: { sedeId, rol: 'MESERO' },
-      data: { activo },
-    });
-    this.logger.log({
-      operation: 'activarMeserosPorSede',
-      aggregateId: sedeId,
-      resultingState: activo ? 'ACTIVOS' : 'INACTIVOS',
-      message: `${count} usuario(s) MESERO ${activo ? 'activados' : 'desactivados'} (sede ${sedeId}).`,
-    } satisfies OperableLog);
-    return count;
   }
 }

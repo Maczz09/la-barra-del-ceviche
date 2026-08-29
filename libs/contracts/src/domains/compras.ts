@@ -138,6 +138,70 @@ export class ActualizarProveedorCommand {
   activo?: boolean;
 }
 
+// ── Categorías de insumo (taxonomía PROPIA del almacén de cocina) ────────
+// Separadas a propósito de las `Categoria` de servicio-inventario: el almacén
+// se agrupa por criterio de compra (Abarrotes, Carnes, Limpieza, Gas), que no
+// tiene por qué coincidir con cómo se ordena la carta.
+
+export class CategoriaInsumoDto {
+  @IsString()
+  id: string;
+  @IsString()
+  sedeId: string;
+  @IsString()
+  nombre: string;
+  @IsOptional()
+  @IsString()
+  descripcion?: string | null;
+  @IsBoolean()
+  activo: boolean;
+  /** Cuántos insumos la usan — para avisar antes de borrarla. */
+  @IsOptional()
+  @IsInt()
+  insumosCount?: number;
+  @IsString()
+  createdAt: string;
+}
+
+export class ListarCategoriasInsumoQuery {
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @IsString()
+  sedeId?: string;
+}
+
+export class CategoriasInsumoListResponse {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CategoriaInsumoDto)
+  data: CategoriaInsumoDto[];
+}
+
+export class CrearCategoriaInsumoCommand {
+  @IsString()
+  @IsNotEmpty()
+  nombre: string;
+  @IsOptional()
+  @IsString()
+  descripcion?: string;
+}
+
+export class ActualizarCategoriaInsumoCommand {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  nombre?: string;
+  @IsOptional()
+  @IsString()
+  descripcion?: string | null;
+  @IsOptional()
+  @IsBoolean()
+  activo?: boolean;
+}
+
 // ── Insumos (lo que se COMPRA; distinto de Producto = lo que se VENDE) ────
 
 export class InsumoDto {
@@ -161,8 +225,16 @@ export class InsumoDto {
   @IsOptional()
   @IsString()
   proveedorNombre?: string | null;
+  /** Categoría PROPIA del almacén (CategoriaInsumo), no la de la carta. */
+  @IsOptional()
+  @IsString()
+  categoriaId?: string | null;
+  @IsOptional()
+  @IsString()
+  categoriaNombre?: string | null;
   /** Puente opcional al catálogo de venta (servicio-inventario). null = insumo
-   * crudo que no se revende tal cual. */
+   * crudo que no se revende tal cual — esos, y solo esos, son el almacén de
+   * cocina. */
   @IsOptional()
   @IsString()
   productoId?: string | null;
@@ -187,6 +259,17 @@ export class ListarInsumosQuery {
   @IsOptional()
   @IsString()
   proveedorId?: string;
+
+  @IsOptional()
+  @IsString()
+  categoriaId?: string;
+
+  /** true = solo insumos de cocina (`productoId` nulo). Lo que se revende tal
+   *  cual pertenece al catálogo de venta y no debe aparecer en el almacén. */
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === true || value === 'true')
+  soloCocina?: boolean;
 
   @IsOptional()
   @IsInt()
@@ -239,6 +322,9 @@ export class CrearInsumoCommand {
   proveedorId?: string;
   @IsOptional()
   @IsUUID()
+  categoriaId?: string;
+  @IsOptional()
+  @IsUUID()
   productoId?: string;
   @IsOptional()
   @IsNumber()
@@ -264,6 +350,9 @@ export class ActualizarInsumoCommand {
   @IsOptional()
   @IsUUID()
   proveedorId?: string | null;
+  @IsOptional()
+  @IsUUID()
+  categoriaId?: string | null;
   @IsOptional()
   @IsUUID()
   productoId?: string | null;
@@ -349,6 +438,10 @@ export class OrdenCompraDto {
   items: OrdenCompraItemDto[];
   @IsString()
   createdAt: string;
+  // Cuántas fotos de boleta/factura tiene subidas esta orden — permite que el
+  // listado avise "falta boleta" sin tener que abrir el detalle de cada una.
+  @IsNumber()
+  comprobantesCount: number;
 }
 
 export class ListarOrdenesQuery {
@@ -667,4 +760,231 @@ export class CompraRecibidaPayload {
   @ValidateNested({ each: true })
   @Type(() => CompraRecibidaLineaPayload)
   lineas: CompraRecibidaLineaPayload[];
+}
+
+// ── Movimientos de insumo (kardex del almacén de cocina) ─────────
+//
+// T-50: hasta ahora `Insumo.stockActual` solo SUBIA (recepción de compra) y
+// nadie lo bajaba: lo que cocina consumía no se registraba en ningún lado.
+// Cada fila de MovimientoInsumo es un hecho INMUTABLE, y toda escritura de
+// `stockActual` pasa por una — incluida la recepción, así el kardex cuadra
+// desde la primera fila.
+
+export const MovimientoInsumoTipo = {
+  /** Recepción de una orden de compra. */
+  EntradaCompra: 'ENTRADA_COMPRA',
+  /** Ingreso a mano, sin orden de compra: la compra del día en el mercado. */
+  EntradaManual: 'ENTRADA_MANUAL',
+  /** Vuelve al almacén algo que se sacó y no se usó. */
+  EntradaDevolucion: 'ENTRADA_DEVOLUCION',
+  /** Cocina saca del almacén para producir. */
+  SalidaConsumo: 'SALIDA_CONSUMO',
+  /** Se malogró / se rompió / venció. */
+  SalidaMerma: 'SALIDA_MERMA',
+  /** Cuadre físico: diferencia entre lo contado y lo que decía el sistema. */
+  AjusteConteo: 'AJUSTE_CONTEO',
+} as const;
+
+export type MovimientoInsumoTipo = (typeof MovimientoInsumoTipo)[keyof typeof MovimientoInsumoTipo];
+
+/** Tipos que el usuario puede registrar a mano (uno por uno) desde el almacén.
+ *  ENTRADA_COMPRA la escribe solo la recepción de una OC, y AJUSTE_CONTEO solo
+ *  el cuadre en lote: ninguno se acepta en el endpoint de movimiento simple. */
+export const MOVIMIENTO_INSUMO_TIPOS_MANUALES = [
+  MovimientoInsumoTipo.EntradaManual,
+  MovimientoInsumoTipo.SalidaConsumo,
+  MovimientoInsumoTipo.SalidaMerma,
+  MovimientoInsumoTipo.EntradaDevolucion,
+] as const;
+
+export type MovimientoInsumoTipoManual = (typeof MOVIMIENTO_INSUMO_TIPOS_MANUALES)[number];
+
+export class MovimientoInsumoDto {
+  @IsString()
+  id: string;
+  @IsString()
+  sedeId: string;
+  @IsString()
+  insumoId: string;
+  @IsString()
+  insumoNombre: string;
+  @IsString()
+  unidad: string;
+  @IsEnum(MovimientoInsumoTipo)
+  tipo: MovimientoInsumoTipo;
+  /** CON SIGNO: negativo en salidas, positivo en entradas. Invariante del
+   *  kardex: `stockDespues === stockAntes + delta`. */
+  @IsNumber()
+  delta: number;
+  @IsNumber()
+  stockAntes: number;
+  @IsNumber()
+  stockDespues: number;
+  /** Snapshot del costo al momento del movimiento (valoriza la salida aunque
+   *  el costo del insumo cambie después). */
+  @IsOptional()
+  @IsNumber()
+  costoUnitario?: number | null;
+  /** |delta| × costoUnitario — se calcula en el servicio, no se persiste. */
+  @IsOptional()
+  @IsNumber()
+  costoTotal?: number | null;
+  @IsOptional()
+  @IsString()
+  motivo?: string | null;
+  @IsOptional()
+  @IsString()
+  observacion?: string | null;
+  @IsOptional()
+  @IsString()
+  recepcionId?: string | null;
+  @IsOptional()
+  @IsString()
+  usuarioId?: string | null;
+  @IsOptional()
+  @IsString()
+  usuarioNombre?: string | null;
+  @IsString()
+  createdAt: string;
+}
+
+export class RegistrarMovimientoInsumoCommand {
+  @IsIn(MOVIMIENTO_INSUMO_TIPOS_MANUALES)
+  tipo: MovimientoInsumoTipoManual;
+  /** SIEMPRE positiva: el signo lo pone el servicio a partir de `tipo`. */
+  @IsNumber()
+  @Min(0.001)
+  cantidad: number;
+  @IsOptional()
+  @IsString()
+  motivo?: string;
+  @IsOptional()
+  @IsString()
+  observacion?: string;
+}
+
+export class ListarMovimientosInsumoQuery {
+  @IsOptional()
+  @IsUUID()
+  insumoId?: string;
+
+  @IsOptional()
+  @IsEnum(MovimientoInsumoTipo)
+  tipo?: MovimientoInsumoTipo;
+
+  @IsOptional()
+  @IsDateString()
+  desde?: string;
+
+  @IsOptional()
+  @IsDateString()
+  hasta?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  @Type(() => Number)
+  limit?: number;
+
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+
+  @IsOptional()
+  @IsString()
+  sedeId?: string;
+}
+
+export class MovimientoInsumoListResponse {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MovimientoInsumoDto)
+  data: MovimientoInsumoDto[];
+
+  @IsOptional()
+  @IsString()
+  nextCursor: string | null;
+}
+
+// ── Conteo físico (cuadre en lote contra el PDF impreso) ─────────
+
+export class ConteoInsumoItemCommand {
+  @IsUUID()
+  insumoId: string;
+  /** Lo que se contó físicamente, en la unidad del insumo. */
+  @IsNumber()
+  @Min(0)
+  stockContado: number;
+}
+
+export class RegistrarConteoInsumosCommand {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ConteoInsumoItemCommand)
+  items: ConteoInsumoItemCommand[];
+
+  @IsOptional()
+  @IsString()
+  observacion?: string;
+}
+
+export class ConteoInsumoDiferenciaDto {
+  @IsString()
+  insumoId: string;
+  @IsString()
+  insumoNombre: string;
+  @IsString()
+  unidad: string;
+  @IsNumber()
+  stockSistema: number;
+  @IsNumber()
+  stockContado: number;
+  /** contado − sistema: negativo = falta mercadería, positivo = sobra. */
+  @IsNumber()
+  diferencia: number;
+  /** diferencia × costoUnitario (con signo). */
+  @IsNumber()
+  valorDiferencia: number;
+}
+
+export class ConteoInsumosResultadoDto {
+  @IsInt()
+  insumosContados: number;
+  @IsInt()
+  cuadraron: number;
+  @IsInt()
+  ajustados: number;
+  /** Suma de los `valorDiferencia`: negativo = pérdida detectada por el cuadre. */
+  @IsNumber()
+  valorDiferenciaTotal: number;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ConteoInsumoDiferenciaDto)
+  diferencias: ConteoInsumoDiferenciaDto[];
+}
+
+// ── Evento: insumo.stock_bajo (Compras → Notificaciones) ─────────
+//
+// Se emite SOLO en el cruce de arriba hacia abajo (el movimiento anterior
+// estaba sobre el mínimo y este lo dejó en/por debajo). Si se emitiera en cada
+// salida de un insumo ya bajo, cada cucharada de arroz spamearía la cola.
+
+export class InsumoStockBajoPayload {
+  @IsOptional()
+  @IsString()
+  eventId?: string;
+  @IsString()
+  sedeId: string;
+  @IsString()
+  insumoId: string;
+  @IsString()
+  insumoNombre: string;
+  @IsString()
+  unidad: string;
+  @IsNumber()
+  stockActual: number;
+  @IsNumber()
+  stockMinimo: number;
 }

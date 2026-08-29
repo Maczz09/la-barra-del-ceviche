@@ -72,7 +72,12 @@ describe('AppController — Caja', () => {
     await controller.obtenerResumenTurno('turno-1', 'sede-001');
     await controller.listarMovimientosTurno('turno-1', 'sede-001');
     expect(service.obtenerResumenTurno).toHaveBeenCalledWith('turno-1', 'sede-001');
-    expect(service.listarMovimientosTurno).toHaveBeenCalledWith('turno-1', 'sede-001');
+    expect(service.listarMovimientosTurno).toHaveBeenCalledWith('turno-1', 'sede-001', undefined);
+  });
+
+  it('listarMovimientosTurno delega el search', async () => {
+    await controller.listarMovimientosTurno('turno-1', 'sede-001', 'A0000042');
+    expect(service.listarMovimientosTurno).toHaveBeenCalledWith('turno-1', 'sede-001', 'A0000042');
   });
 
   it('crearMovimiento delega id y body', async () => {

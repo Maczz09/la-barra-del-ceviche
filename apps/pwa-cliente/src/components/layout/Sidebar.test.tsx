@@ -25,6 +25,8 @@ vi.mock('../../config', () => ({
     nombreLocal: 'TestLocal',
     ubicacionFallback: 'Elige una sede',
   },
+  APP_LOGO: null,
+  PLATFORM_NAME: 'RestoApp.pe',
 }));
 
 const mockUseSedeActualQuery = vi.fn();
@@ -67,20 +69,20 @@ describe('Sidebar', () => {
 
   it('con sede resuelta, muestra su dirección bajo el nombre', () => {
     mockUseSedeActualQuery.mockReturnValue({
-      sede: { id: 's1', nombre: 'Salitral 1', direccion: 'Av. Salitral 123', activa: true },
+      sede: { id: 's1', nombre: 'Sede Central', direccion: 'Av. Principal 123', activa: true },
       loading: false,
     });
     render(<Sidebar />);
-    expect(screen.getByText('Av. Salitral 123')).toBeInTheDocument();
+    expect(screen.getByText('Av. Principal 123')).toBeInTheDocument();
   });
 
   it('con sede resuelta pero sin dirección, muestra el nombre de la sede', () => {
     mockUseSedeActualQuery.mockReturnValue({
-      sede: { id: 's1', nombre: 'Salitral 1', direccion: null, activa: true },
+      sede: { id: 's1', nombre: 'Sede Central', direccion: null, activa: true },
       loading: false,
     });
     render(<Sidebar />);
-    expect(screen.getByText('Salitral 1')).toBeInTheDocument();
+    expect(screen.getByText('Sede Central')).toBeInTheDocument();
   });
 
   it('renderiza items de navegación', () => {

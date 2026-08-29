@@ -4,6 +4,7 @@ import { RoutingKeys } from '@org/contracts';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { NotificationsGateway } from './notifications.gateway';
+import { CartaGateway } from './carta.gateway';
 
 // Contexto RMQ simulado con la cabecera x-event-id que el publisher propaga.
 const mkCtx = (eventId?: string) => ({
@@ -14,6 +15,7 @@ describe('AppController - Notificaciones', () => {
   let controller: AppController;
   let appService: { obtenerNotificaciones: ReturnType<typeof jest.fn>; registrarNotificacion: ReturnType<typeof jest.fn> };
   let gateway: { emitPedidoUpdate: ReturnType<typeof jest.fn> };
+  let cartaGateway: { emitDisponibilidadCambiada: ReturnType<typeof jest.fn> };
 
   beforeEach(() => {
     appService = {
@@ -21,7 +23,12 @@ describe('AppController - Notificaciones', () => {
       registrarNotificacion: jest.fn(),
     };
     gateway = { emitPedidoUpdate: jest.fn() };
-    controller = new AppController(appService as unknown as AppService, gateway as unknown as NotificationsGateway);
+    cartaGateway = { emitDisponibilidadCambiada: jest.fn() };
+    controller = new AppController(
+      appService as unknown as AppService,
+      gateway as unknown as NotificationsGateway,
+      cartaGateway as unknown as CartaGateway,
+    );
   });
 
   describe('obtenerNotificaciones', () => {
@@ -150,6 +157,27 @@ describe('AppController - Notificaciones', () => {
       await controller.handleReservaCancelada(payload as any, mkCtx('evt-9') as any);
 
       expect(appService.registrarNotificacion).toHaveBeenCalledWith(RoutingKeys.ReservaCancelada, payload, 'evt-9');
+    });
+  });
+
+  describe('handleProductoActualizadoParaCartaPublica', () => {
+    it('retransmite solo {productoId, disponible} al room de la sede, sin persistir notificación', () => {
+      const payload = {
+        id: 'prod-1',
+        sedeId: 'sede-1',
+        nombre: 'Ceviche de Filete',
+        precio: 30,
+        disponible: false,
+      };
+
+      controller.handleProductoActualizadoParaCartaPublica(payload as any);
+
+      expect(cartaGateway.emitDisponibilidadCambiada).toHaveBeenCalledWith('sede-1', {
+        productoId: 'prod-1',
+        disponible: false,
+      });
+      expect(appService.registrarNotificacion).not.toHaveBeenCalled();
+      expect(gateway.emitPedidoUpdate).not.toHaveBeenCalled();
     });
   });
 });

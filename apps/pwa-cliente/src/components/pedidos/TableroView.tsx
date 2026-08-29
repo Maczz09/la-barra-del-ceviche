@@ -60,7 +60,7 @@ function PedidoCard({ p, onAvanzar, onDetalle, actionLoading, online, now }: { p
       />
       <div className="pc-top">
         <span className={`tag-canal ${meta.cls}`}><Ic s={12} /> {meta.label}</span>
-        <span className="pc-id mono">{p.id.slice(0, 6)}</span>
+        <span className="pc-id mono">{p.cuentaCorrelativo ?? p.id.slice(0, 6)}</span>
         <span className="spacer" />
         <span className={`pc-time ${tardio ? 'late' : ''}`}>
           <Icons.Clock s={12} /> {elapsedLabel(p.createdAt, now)}

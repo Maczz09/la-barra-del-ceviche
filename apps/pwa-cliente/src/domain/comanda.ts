@@ -83,11 +83,14 @@ export function contextoValido(canal: Canal, c: ContextoCampos): boolean {
 }
 
 // ─── Armado del payload de envío ─────────────────────────────────────────────
+// El backend recalcula `area` de forma autoritativa a partir del stock del
+// producto (ver validarYMapearItems en servicio-pedidos) — este campo es solo
+// para que el payload sea coherente, no se confía en él del lado servidor.
 export function buildItems(lines: CartLine[]): CrearPedidoItemPayload[] {
   return lines.map((l) => ({
     productoId: l.producto.id,
     cantidad: l.cantidad,
-    area: l.producto.categoriaNombre === 'Bebidas' ? 'BAR' : 'COCINA',
+    area: l.producto.stockActual != null ? 'BAR' : 'COCINA',
     notas: l.notas || '',
   }));
 }

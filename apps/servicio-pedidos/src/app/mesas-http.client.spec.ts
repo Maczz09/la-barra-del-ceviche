@@ -136,4 +136,44 @@ describe('MesasHttpClient', () => {
       expect(mockedAxios.get).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('liberarMesa (CU-02)', () => {
+    it('devuelve false sin llamar a axios si no se puede generar el token', async () => {
+      serviceTokenService.generateServiceToken.mockImplementation(() => {
+        throw new Error('Token error');
+      });
+
+      await expect(client.liberarMesa('mesa-1', 'LIBRE')).resolves.toBe(false);
+      expect(mockedAxios.patch).not.toHaveBeenCalled();
+    });
+
+    it('libera la mesa exitosamente (PATCH con estado LIBRE y cuentaAsociada null)', async () => {
+      serviceTokenService.generateServiceToken.mockReturnValue('mock-token');
+      mockedAxios.patch.mockResolvedValueOnce({ data: {} });
+
+      await expect(client.liberarMesa('mesa-1', 'LIBRE')).resolves.toBe(true);
+      expect(mockedAxios.patch).toHaveBeenCalledWith(
+        expect.stringContaining('/mesa-1/estado'),
+        { estado: 'LIBRE', cuentaAsociada: null },
+        expect.objectContaining({ headers: { Authorization: 'Bearer mock-token' } }),
+      );
+    });
+
+    it('devuelve false (sin lanzar) si el servicio de mesas no responde', async () => {
+      serviceTokenService.generateServiceToken.mockReturnValue('mock-token');
+      mockedAxios.patch.mockRejectedValue({ code: 'ECONNREFUSED' });
+
+      await expect(client.liberarMesa('mesa-1', 'LIBRE')).resolves.toBe(false);
+    });
+
+    it('recupera un 503 transitorio en el 2.º intento', async () => {
+      serviceTokenService.generateServiceToken.mockReturnValue('mock-token');
+      mockedAxios.patch
+        .mockRejectedValueOnce({ response: { status: 503 } })
+        .mockResolvedValueOnce({ data: {} });
+
+      await expect(client.liberarMesa('mesa-1', 'LIBRE')).resolves.toBe(true);
+      expect(mockedAxios.patch).toHaveBeenCalledTimes(2);
+    });
+  });
 });

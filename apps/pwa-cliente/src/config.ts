@@ -4,7 +4,17 @@
 // Nombre de marca centralizado: un único lugar para renombrar la suite en
 // vez de tener el string repetido en cada pantalla (Sidebar, Header, Login,
 // boleta interna, exports PDF, index.html, manifest.json).
-export const APP_NAME = 'RestoApp.pe';
+export const APP_NAME = 'La Barra del Ceviche';
+
+// Logo del cliente (Sidebar + Login). `null` = usar el avatar con la
+// inicial de APP_NAME (fallback del repo core, sin logo propio todavía).
+export const APP_LOGO: string | null = '/logo.webp';
+
+// Plataforma sobre la que corre la suite (RestoApp.pe) — se muestra como
+// atribución, no como marca principal. Distinto de APP_NAME a propósito:
+// esto NO cambia por cliente, es siempre RestoApp.pe.
+export const PLATFORM_NAME = 'RestoApp.pe';
+export const PLATFORM_CREDIT = 'Basado en RestoApp del Ingeniero en Sistemas e Informática Max Alessandro García López · v1.0';
 
 export const APP_CONFIG = {
   nombreLocal: APP_NAME,

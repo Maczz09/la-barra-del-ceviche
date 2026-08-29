@@ -14,6 +14,15 @@ import {
   ProductoCreadoPayload,
   ProductoActualizadoPayload,
   StockInsuficientePayload,
+  CuentaAsociadaPayload,
+  ItemArea,
+  EstadoItem,
+  AnularItemPreparadoCommand,
+  ListarAnulacionesQuery,
+  ActualizarAnulacionCommand,
+  InvalidarAnulacionCommand,
+  AnularAtencionMesaCommand,
+  AnularPedidoCommand,
 } from '@org/contracts';
 import { Prisma } from '../generated/prisma';
 import { resolveSedeId } from '@org/shared-auth';
@@ -151,6 +160,7 @@ export class AppService {
             precio: p.precio,
             stockActual: p.stockActual ?? null,
             categoriaNombre: p.categoria?.nombre ?? 'COCINA',
+            categoriaArea: p.categoria?.area ?? 'COCINA',
             disponible: p.disponible ?? true,
           },
           update: {
@@ -158,11 +168,22 @@ export class AppService {
             precio: p.precio,
             stockActual: p.stockActual ?? null,
             categoriaNombre: p.categoria?.nombre ?? 'COCINA',
+            categoriaArea: p.categoria?.area ?? 'COCINA',
             disponible: p.disponible ?? true,
           },
         })
       ));
     }
+  }
+
+  /** Mapea el área de la categoría del producto (COCINA/BARRA/INVENTARIO) al
+   * área de ítem de pedido: COCINA/BARRA pasan por producción (KDS), un valor
+   * desconocido/legado cae en Cocina por seguridad — nunca al revés
+   * (INVENTARIO por defecto ocultaría un plato de la vista de cocina). */
+  private mapearAreaCategoriaAItemArea(categoriaArea: string | null | undefined): ItemArea {
+    if (categoriaArea === 'BARRA') return ItemArea.Bar;
+    if (categoriaArea === 'INVENTARIO') return ItemArea.Directo;
+    return ItemArea.Cocina;
   }
 
   private async validarYMapearItems(itemsToProcess: PedidoItemInput[]): Promise<PedidoItemMapeado[]> {
@@ -190,7 +211,10 @@ export class AppService {
         cantidad: item.cantidad,
         precioUnitario: Number(p.precio),
         stockActual: p.stockActual,
-        area: p.categoriaNombre?.toLowerCase().includes('bebida') ? 'BAR' : 'COCINA',
+        // El área la elige el dueño en la categoría (nunca se infiere del
+        // nombre) — Cocina/Barra pasan por producción, Inventario va directo
+        // a cuenta (ver persistirPedido).
+        area: this.mapearAreaCategoriaAItemArea(p.categoriaArea),
         notas: item.notas,
         comensal: item.identificadorComensal || 1,
       } satisfies PedidoItemMapeado;
@@ -255,12 +279,21 @@ export class AppService {
         }
       }
 
+      // "Cocina manda": un ítem de Inventario (DIRECTO) no necesita
+      // preparación — el mesero lo sirve directo, así que nace ENTREGADO.
+      // Cocina Y Barra sí pasan por producción. Si el pedido no tiene NINGÚN
+      // ítem de producción, no hay nada que derive luego (nunca se llama a
+      // actualizarEstadoItem), así que el pedido entero arranca ya ENTREGADO
+      // en vez de quedar PENDIENTE para siempre.
+      const tieneItemDeProduccion = items.some((item) => item.area !== ItemArea.Directo);
+      const estadoInicialPedido = tieneItemDeProduccion ? PedidoEstado.Pendiente : PedidoEstado.Entregado;
+
       const pedido = await prisma.pedido.create({
         data: {
           mesaId,
           sedeId,
           numeroMesa,
-          estado: PedidoEstado.Pendiente,
+          estado: estadoInicialPedido,
           total,
           cliente,
           telefono,
@@ -276,6 +309,7 @@ export class AppService {
               cantidad: item.cantidad,
               precioUnitario: item.precioUnitario,
               area: item.area,
+              estado: item.area === ItemArea.Directo ? EstadoItem.Entregado : EstadoItem.Pendiente,
               notas: item.notas,
               comensal: item.comensal,
               meseroId: mesero?.id,
@@ -318,9 +352,17 @@ export class AppService {
       ...(query.mesaId ? { mesaId: query.mesaId } : {}),
       ...(query.estado
         ? { estado: query.estado }
-        : { estado: { notIn: [PedidoEstado.Pagado, PedidoEstado.Cancelado] } }),
+        // Buscar por correlativo típicamente apunta a un pedido ya cerrado
+        // (cross-referencing desde Mermas/Auditoría) — no tiene sentido
+        // aplicarle el filtro "solo activos" por defecto.
+        : !query.search
+          ? { estado: { notIn: [PedidoEstado.Pagado, PedidoEstado.Cancelado] } }
+          : {}),
       ...(query.updatedSince
         ? { updatedAt: { gte: new Date(query.updatedSince) } }
+        : {}),
+      ...(query.search
+        ? { cuentaCorrelativo: { contains: query.search, mode: 'insensitive' } }
         : {}),
     };
     const pedidos = await this.prisma.pedido.findMany({
@@ -353,8 +395,71 @@ export class AppService {
     return this.saga.actualizarEstado(id, command);
   }
 
-  async actualizarEstadoItem(itemId: string, command: ActualizarEstadoItemCommand): Promise<{ message: string }> {
-    return this.saga.actualizarEstadoItem(itemId, command);
+  async actualizarEstadoItem(
+    itemId: string,
+    command: ActualizarEstadoItemCommand,
+    usuarioId?: string | null,
+    usuarioNombre?: string | null,
+  ): Promise<{ message: string }> {
+    return this.saga.actualizarEstadoItem(itemId, command, usuarioId, usuarioNombre);
+  }
+
+  // CU-01/CU-05: anulación de ítems ya preparados y su auditoría, delegadas
+  // en PedidosSagaService (misma dueña de las transiciones de estado y del
+  // recálculo de total cobrable que ya usaba actualizarEstadoItem).
+  async anularItemPreparado(
+    itemId: string,
+    command: AnularItemPreparadoCommand,
+    usuarioSedeId?: string | null,
+    sedeIdSolicitado?: string,
+    usuarioId?: string | null,
+    usuarioNombre?: string | null,
+  ) {
+    return this.saga.anularItemPreparado(itemId, command, usuarioSedeId, sedeIdSolicitado, usuarioId, usuarioNombre);
+  }
+
+  // CU-02: delegada también en PedidosSagaService (necesita las mismas
+  // primitivas de cancelación/recálculo de total, más el HTTP client de mesas).
+  async anularAtencionMesa(
+    mesaId: string,
+    command: AnularAtencionMesaCommand,
+    usuarioSedeId?: string | null,
+    sedeIdSolicitado?: string,
+    usuarioId?: string | null,
+    usuarioNombre?: string | null,
+  ) {
+    return this.saga.anularAtencionMesa(mesaId, command, usuarioSedeId, sedeIdSolicitado, usuarioId, usuarioNombre);
+  }
+
+  // Anular UN pedido puntual desde el tablero de Pedidos — delegada también
+  // en PedidosSagaService, mismo criterio que anularAtencionMesa.
+  async anularPedido(
+    pedidoId: string,
+    command: AnularPedidoCommand,
+    usuarioSedeId?: string | null,
+    sedeIdSolicitado?: string,
+    usuarioId?: string | null,
+    usuarioNombre?: string | null,
+  ) {
+    return this.saga.anularPedido(pedidoId, command, usuarioSedeId, sedeIdSolicitado, usuarioId, usuarioNombre);
+  }
+
+  async listarAnulaciones(query: ListarAnulacionesQuery, usuarioSedeId?: string | null, sedeIdSolicitado?: string) {
+    return this.saga.listarAnulaciones(query, usuarioSedeId, sedeIdSolicitado);
+  }
+
+  async actualizarAnulacion(id: string, command: ActualizarAnulacionCommand, usuarioSedeId?: string | null, sedeIdSolicitado?: string) {
+    return this.saga.actualizarAnulacion(id, command, usuarioSedeId, sedeIdSolicitado);
+  }
+
+  async invalidarAnulacion(
+    id: string,
+    command: InvalidarAnulacionCommand,
+    usuarioSedeId?: string | null,
+    sedeIdSolicitado?: string,
+    usuarioNombre?: string | null,
+  ) {
+    return this.saga.invalidarAnulacion(id, command, usuarioSedeId, sedeIdSolicitado, usuarioNombre);
   }
 
   async upsertMesaLocal(mesa: { id: string; numero: number; sedeId: string }): Promise<void> {
@@ -371,6 +476,7 @@ export class AppService {
     precio: number;
     stockActual: number | null;
     categoriaNombre: string;
+    categoriaArea?: string;
     disponible: boolean;
     allowStockIncrease?: boolean;
     stockDelta?: number;
@@ -389,6 +495,7 @@ export class AppService {
         precio: payload.precio,
         stockActual: payload.stockActual ?? null,
         categoriaNombre: payload.categoriaNombre ?? 'COCINA',
+        categoriaArea: payload.categoriaArea ?? 'COCINA',
         disponible: payload.disponible,
         allowStockIncrease: false,
       }),
@@ -407,6 +514,7 @@ export class AppService {
         stockDelta: payload.stockDelta,
         stockSyncMode: payload.stockSyncMode,
         categoriaNombre: payload.categoriaNombre ?? 'COCINA',
+        categoriaArea: payload.categoriaArea ?? 'COCINA',
         disponible: payload.disponible,
         allowStockIncrease: payload.stockSyncMode === 'REPOSICION' && (payload.stockDelta ?? 0) > 0,
       }),
@@ -416,6 +524,10 @@ export class AppService {
   /** T-40: compensación de la saga de stock delegada en PedidosSagaService. */
   async procesarStockInsuficiente(payload: StockInsuficientePayload): Promise<void> {
     return this.saga.procesarStockInsuficiente(payload);
+  }
+
+  async procesarCuentaAsociada(payload: CuentaAsociadaPayload): Promise<void> {
+    return this.saga.procesarCuentaAsociada(payload);
   }
 
   private async procesarEventoProducto(
@@ -454,6 +566,7 @@ export class AppService {
     stockDelta?: number;
     stockSyncMode?: 'REPOSICION' | 'CONSUMO_PEDIDO' | 'MERMA';
     categoriaNombre: string;
+    categoriaArea?: string;
     disponible: boolean;
     allowStockIncrease?: boolean;
   }): Promise<void> {
@@ -482,6 +595,7 @@ export class AppService {
         precio: producto.precio,
         stockActual,
         categoriaNombre: producto.categoriaNombre,
+        categoriaArea: producto.categoriaArea ?? 'COCINA',
         disponible: producto.disponible,
       },
       create: {
@@ -490,6 +604,7 @@ export class AppService {
         precio: producto.precio,
         stockActual,
         categoriaNombre: producto.categoriaNombre,
+        categoriaArea: producto.categoriaArea ?? 'COCINA',
         disponible: producto.disponible,
       },
     });

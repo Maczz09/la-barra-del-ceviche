@@ -1,7 +1,7 @@
 import { Controller, UseInterceptors } from '@nestjs/common';
 import { EventPattern, Payload } from '@nestjs/microservices';
 import { AppService } from './app.service';
-import { CompraRecibidaPayload, PedidoCreadoPayload, RoutingKeys } from '@org/contracts';
+import { CompraRecibidaPayload, PedidoCreadoPayload, PedidoItemAnuladoConMermaPayload, StockRestauradoPayload, RoutingKeys } from '@org/contracts';
 import { RabbitMQRetryInterceptor } from '@org/resiliencia';
 
 @UseInterceptors(RabbitMQRetryInterceptor)
@@ -21,5 +21,19 @@ export class EventsController {
     @Payload() payload: CompraRecibidaPayload,
   ) {
     await this.appService.procesarCompraRecibida(payload);
+  }
+
+  @EventPattern(RoutingKeys.PedidoItemAnuladoConMerma)
+  async handlePedidoItemAnuladoConMerma(
+    @Payload() payload: PedidoItemAnuladoConMermaPayload,
+  ) {
+    await this.appService.procesarItemAnuladoConMerma(payload);
+  }
+
+  @EventPattern(RoutingKeys.StockRestaurado)
+  async handleStockRestaurado(
+    @Payload() payload: StockRestauradoPayload,
+  ) {
+    await this.appService.procesarStockRestaurado(payload);
   }
 }

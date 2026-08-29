@@ -87,13 +87,28 @@ test-output
 # SonarQube token local
 infra/sonarqube/.sonar-token.local
 
+# Certificados digitales SUNAT (facturacion electronica) — nunca versionar.
+certificates/
+*.p12
+*.pfx
+
 # AI Agents directories
 .agent/
-.agents/
-.gemini/
-.opencode/
+# scripts/sync-agent-skills.mjs proyecta .agents/skills (fuente canonica) a
+# las otras 3 herramientas + .github/skills (ese ya trackeado aparte). Las
+# 4 copias de skills/ deben viajar con el repo o el check de CI
+# (agent-skills-drift) no tiene contra que comparar y falla siempre, en
+# cualquier checkout limpio — el resto de cada carpeta (config local de la
+# herramienta) sigue ignorado.
+.agents/*
+!.agents/skills/
+.gemini/*
+!.gemini/skills/
+.opencode/*
+!.opencode/skills/
 .claude/
-.cursor/
+.cursor/*
+!.cursor/skills/
 .codex/
 .commandcode/
 

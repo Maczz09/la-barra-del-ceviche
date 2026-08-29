@@ -28,7 +28,7 @@ function ListaRow({ p, onAvanzar, onDetalle, actionLoading, online, now }: { p: 
   const nextLabel = nextLabelFor(p);
   return (
     <tr style={{ cursor: 'pointer' }} onClick={() => onDetalle(p)}>
-      <td className="mono"><strong>{p.id.slice(0, 6)}</strong></td>
+      <td className="mono"><strong>{p.cuentaCorrelativo ?? p.id.slice(0, 6)}</strong></td>
       <td><span className={`tag-canal ${meta.cls}`}><Ic s={12} /> {meta.label}</span></td>
       <td>
         {p.canal === 'SALON'
