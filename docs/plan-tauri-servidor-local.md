@@ -10,7 +10,7 @@ Entregar La Barra del Ceviche como un instalador de Windows que convierta la lap
 - celulares de meseros y comensales mediante navegador/PWA;
 - estación de cocina con pantalla de pedidos e impresión automática.
 
-La base actual usa 11 microservicios, 11 bases PostgreSQL, RabbitMQ y Kong. Ejecutarla de esa forma en la laptop exigiría Docker Desktop y demasiada operación manual. El instalador final no debe depender de Docker, Node.js, PostgreSQL ni RabbitMQ instalados por el restaurante.
+La base actual usa un monorepo Nx con 11 microservicios, 11 bases PostgreSQL, RabbitMQ y Kong. Se conservarán el monorepo, los límites de cada servicio, sus contratos y la propiedad separada de los datos. Lo que cambiará será la forma de distribución: el instalador final coordinará todo para que el restaurante no tenga que instalar ni operar Docker, Node.js, PostgreSQL o RabbitMQ por separado.
 
 ## Arquitectura recomendada
 
@@ -33,52 +33,61 @@ La base actual usa 11 microservicios, 11 bases PostgreSQL, RabbitMQ y Kong. Ejec
               | - copiar URL y mostrar QR             |
               | - inicio automático y bandeja         |
               |                                       |
-              | Sidecar servidor-local                |
-              | - PWA + API + WebSocket               |
-              | - módulos de negocio NestJS           |
-              | - cola durable de impresión           |
-              | - SQLite WAL + copias de seguridad    |
+              | Supervisor local                      |
+              | - gateway + PWA + WebSocket           |
+              | - sidecars de los microservicios      |
+              | - transporte durable de eventos       |
+              | - datos separados por servicio        |
+              | - impresión y copias de seguridad     |
               +---------------------------------------+
 ```
 
 ### Decisión central
 
-Crear un **monolito modular local** reutilizando contratos, reglas y pruebas de los servicios actuales. Los límites de identidad, mesas, pedidos, cuentas, caja, inventario, cocina, reportes, facturación y compras se conservan como módulos, pero se ejecutan en un solo proceso.
+Mantener el **monorepo y la separación lógica y ejecutable de los microservicios**, pero empaquetarlos para que operativamente se comporten como una sola aplicación de escritorio. Así se conserva la arquitectura de RestoApp sin trasladar su complejidad operativa al restaurante.
 
-- RabbitMQ se reemplaza por eventos internos y una outbox durable.
-- Kong se reemplaza por un único servidor HTTP con las mismas rutas públicas necesarias.
-- Las bases por servicio se consolidan en SQLite con WAL, migraciones versionadas y transacciones cortas.
-- El servidor NestJS se compila como binario autocontenido y Tauri lo inicia como sidecar. Tauri documenta oficialmente el empaquetado de un servidor Node.js sin requerir Node en la computadora final: <https://v2.tauri.app/learn/sidecar-nodejs/>.
+- Nx seguirá administrando aplicaciones, librerías compartidas, contratos, pruebas y tareas de compilación.
+- Identidad, mesas, pedidos, cuentas, caja, inventario, cocina, reportes, facturación y compras conservarán sus propios límites y procesos; no se fusionarán en un monolito.
+- Tauri no contendrá reglas de negocio. Actuará como interfaz, instalador y supervisor: iniciará los servicios en orden, comprobará su salud, reiniciará únicamente el que falle y realizará un cierre limpio.
+- Cada microservicio se compilará como sidecar autocontenido, sin requerir Node.js instalado en la laptop. Tauri documenta oficialmente este patrón: <https://v2.tauri.app/learn/sidecar-nodejs/>.
+- Un gateway local mantendrá una sola URL pública y ocultará los puertos internos. Los celulares nunca tendrán que conocer la dirección individual de cada servicio.
+- Los contratos de eventos seguirán desacoplados. Para el perfil local se incorporará un transporte durable empaquetado y una outbox por servicio; el código de dominio no dependerá directamente de RabbitMQ ni de otro servicio.
+- Se conservará la propiedad de datos por servicio. Ningún microservicio accederá directamente a las tablas o archivos de otro. El perfil local podrá usar almacenamiento embebido separado por servicio, mientras el perfil servidor conservará PostgreSQL/RabbitMQ mediante adaptadores.
+- El repositorio seguirá permitiendo el despliegue distribuido actual. Tauri será un perfil adicional de ejecución y distribución, no una reescritura que elimine la arquitectura existente.
 
-Esta opción exige más trabajo de migración que envolver Docker, pero produce el resultado correcto para el negocio: instalación simple, menor consumo, respaldo de un solo archivo de datos y arranque automático.
+Esta opción requiere construir un supervisor, perfiles de infraestructura y empaquetado reproducible, pero ofrece instalación simple, arranque automático y recuperación controlada sin dejar de ser un monorepo de microservicios.
 
 ## Fases de ejecución
 
 ### Fase 1. Contrato y línea base
 
-1. Congelar los contratos HTTP y WebSocket que usa la PWA.
-2. Ejecutar y registrar tests actuales por módulo.
-3. Crear pruebas de paridad para mesa → pedido → cocina → cuenta → pago.
-4. Definir el formato de datos local, directorio de aplicación y política de respaldo.
+1. Inventariar los 11 microservicios, sus puertos, dependencias, eventos, bases y orden de arranque.
+2. Congelar los contratos HTTP, eventos y WebSocket que usa la PWA.
+3. Documentar como invariantes que cada servicio mantiene proceso, API y propiedad de datos independientes.
+4. Ejecutar y registrar tests actuales por servicio.
+5. Crear pruebas de paridad para mesa → pedido → cocina → cuenta → pago.
+6. Definir perfiles de infraestructura `servidor` y `tauri-local`, directorios de aplicación y política de respaldo.
 
 **Salida:** matriz de endpoints/eventos y línea base verde. No cambia todavía el comportamiento visible.
 
-### Fase 2. Servidor local único
+### Fase 2. Runtime local de microservicios
 
-1. Crear `apps/servidor-local` como aplicación NestJS modular.
-2. Reutilizar controladores, servicios, contratos y validaciones actuales.
-3. Migrar persistencia a SQLite WAL con una sola cola de escritura.
-4. Sustituir RabbitMQ por event bus interno + outbox con reintentos e idempotencia.
-5. Servir la PWA compilada, API y WebSocket desde el mismo origen.
-6. Añadir migraciones automáticas, health check, logs rotativos y recuperación tras cierre inesperado.
+1. Crear un perfil `tauri-local` para compilar y ejecutar cada microservicio como sidecar independiente.
+2. Mantener los controladores, servicios, contratos y validaciones en sus aplicaciones actuales; no crear un `servidor-local` monolítico.
+3. Incorporar adaptadores de persistencia local respetando una base o archivo independiente por servicio, migraciones versionadas y transacciones cortas.
+4. Incorporar transporte durable local compatible con los contratos de eventos, outbox, reintentos e idempotencia.
+5. Empaquetar un gateway local que sirva la PWA y enrute API/WebSocket a los servicios sin exponer puertos internos.
+6. Añadir health checks por servicio, logs rotativos identificados por origen y recuperación individual tras un cierre inesperado.
+7. Medir tiempo de arranque, memoria, CPU y espacio para decidir qué infraestructura embebida cumple el perfil de la laptop real.
 
-**Gate:** el flujo principal y los módulos críticos deben pasar las pruebas de paridad antes de retirar la pila Docker del instalador.
+**Gate:** el flujo principal debe pasar las pruebas de paridad y debe demostrarse que siguen existiendo procesos y datos aislados por servicio antes de retirar la pila Docker del instalador.
 
 ### Fase 3. Aplicación Tauri para la laptop servidor
 
-1. Crear Tauri 2 sobre la PWA actual y empaquetar `servidor-local` como sidecar.
-2. Garantizar una sola instancia, inicio ordenado y cierre limpio.
-3. Crear el módulo **Servidor local** con:
+1. Crear Tauri 2 sobre la PWA actual y empaquetar el gateway, el transporte local y los microservicios como sidecars.
+2. Garantizar una sola instancia del supervisor, inicio por dependencias y cierre limpio de todos los procesos.
+3. Vigilar health checks y reiniciar de forma aislada el servicio que falle, con límite de intentos y diagnóstico visible.
+4. Crear el módulo **Servidor local** con:
    - estado y tiempo activo;
    - IP, puerto y URL completa;
    - botón **Copiar dirección**;
@@ -87,8 +96,8 @@ Esta opción exige más trabajo de migración que envolver Docker, pero produce 
    - diagnóstico de red, base de datos e impresora;
    - iniciar, reiniciar y exportar logs;
    - crear y restaurar respaldo.
-4. Configurar arranque con Windows y funcionamiento en bandeja.
-5. Crear instalador NSIS `La-Barra-del-Ceviche-Setup.exe`, con iconos de marca y WebView2 disponible sin depender de Internet. Tauri admite instaladores NSIS/MSI y modos de WebView2 para equipos sin conexión: <https://v2.tauri.app/distribute/windows-installer/>.
+5. Configurar arranque con Windows y funcionamiento en bandeja.
+6. Crear instalador NSIS `La-Barra-del-Ceviche-Setup.exe`, con iconos de marca y WebView2 disponible sin depender de Internet. Tauri admite instaladores NSIS/MSI y modos de WebView2 para equipos sin conexión: <https://v2.tauri.app/distribute/windows-installer/>.
 
 ### Fase 4. Dirección estable y QR único
 
@@ -132,6 +141,7 @@ Tauri 2 permite compartir frontend con Android, pero la compilación móvil requ
 5. Crear respaldo diario automático de base y adjuntos, retención configurable y restauración probada.
 6. Registrar arranque, migración, conexión, pedido, impresión, reintento y restauración con correlation ID.
 7. Añadir exportación de diagnóstico en ZIP sin contraseñas ni datos sensibles.
+8. Mantener aislamiento de credenciales, datos, migraciones y logs por microservicio.
 
 ### Fase 8. Validación e instalación piloto
 
@@ -146,6 +156,8 @@ Tauri 2 permite compartir frontend con Android, pero la compilación móvil requ
 ## Criterios de aceptación
 
 - Doble clic inicia la aplicación y el servidor sin consola ni Docker.
+- El supervisor inicia y vigila los microservicios como procesos separados; la caída de uno no obliga a reiniciar todos.
+- Cada servicio conserva su API, contratos y propiedad exclusiva de datos dentro del monorepo Nx.
 - El módulo muestra una URL copiable y un QR verificable.
 - El QR sigue funcionando después de reiniciar router y laptop.
 - Meseros crean pedidos desde sus celulares y cocina los recibe en tiempo real.
