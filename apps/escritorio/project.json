@@ -1,0 +1,39 @@
+{
+  "name": "escritorio",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/escritorio/src-tauri/src",
+  "projectType": "application",
+  "tags": ["desktop", "tauri", "windows"],
+  "targets": {
+    "icons": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tauri icon icon-source.png --output src-tauri/icons",
+        "cwd": "apps/escritorio"
+      }
+    },
+    "prepare": {
+      "executor": "nx:run-commands",
+      "options": { "command": "node tools/tauri-local/prepare-runtime.mjs" }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["icons", "prepare"],
+      "outputs": ["{projectRoot}/src-tauri/target/release/bundle"],
+      "options": {
+        "command": "powershell -NoProfile -Command \"$env:Path = (Join-Path $env:USERPROFILE '.cargo\\bin') + ';' + $env:Path; tauri build\"",
+        "cwd": "apps/escritorio"
+      }
+    },
+    "check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "powershell -NoProfile -Command \"& (Join-Path $env:USERPROFILE '.cargo\\bin\\cargo.exe') check --manifest-path apps/escritorio/src-tauri/Cargo.toml\""
+      }
+    },
+    "eval": {
+      "executor": "nx:run-commands",
+      "options": { "command": "node tools/tauri-local/eval-runtime.mjs" }
+    }
+  }
+}

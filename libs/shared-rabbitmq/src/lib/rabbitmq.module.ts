@@ -2,6 +2,7 @@ import { DynamicModule, Logger, Module } from '@nestjs/common';
 import * as amqp from 'amqp-connection-manager';
 import { RABBITMQ_CONNECTION } from './rabbitmq.constants';
 import { RabbitMQPublisherService } from './rabbitmq-publisher.service';
+import { connectLocalJetStream } from './local-jetstream';
 
 const logger = new Logger('RabbitMQConnection');
 
@@ -19,7 +20,12 @@ export class RabbitMQModule {
 
     const connectionProvider = {
       provide: RABBITMQ_CONNECTION,
-      useFactory: () => {
+      useFactory: async () => {
+        const localBrokerUrl = process.env['LOCAL_BROKER_URL'];
+        if (localBrokerUrl) {
+          logger.log(`Conectando al transporte local durable en ${localBrokerUrl}`);
+          return connectLocalJetStream(localBrokerUrl);
+        }
         if (!uri) {
           throw new Error('RABBITMQ_URI environment variable is required');
         }

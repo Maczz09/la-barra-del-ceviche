@@ -1,6 +1,17 @@
-# Plan propuesto: Tauri, servidor local, carta QR y cocina
+# Plan ejecutado: Tauri, servidor local, carta QR y cocina
 
-**Estado:** propuesta para revisión. No implementar hasta aprobación.
+**Estado al 30 de agosto de 2026:** primera versión funcional implementada y validada localmente. Pendientes del piloto: probar el instalador en una laptop limpia, reservar la IP en el router real y calibrar la impresora física.
+
+## Resultado de la ejecución
+
+- Se conserva el monorepo Nx y los 11 microservicios como procesos y bases independientes.
+- Tauri 2 inicia y supervisa PostgreSQL portable, NATS JetStream, los servicios y el gateway/PWA.
+- La aplicación publica `http://la-barra-del-ceviche.local:3210`, muestra la IP alternativa y permite copiar/crear el QR.
+- El módulo **Servidor local** informa salud, dispositivos, red, impresora, respaldos y permite reiniciar cada servicio.
+- El primer arranque crea de forma local al administrador inicial.
+- Los pedidos `pedido.creado` generan una comanda durable; la impresión RAW de Windows evita duplicados por `eventId`, reintenta fallos y excluye ítems de despacho directo.
+- El instalador NSIS incluye WebView2, reglas de firewall para red privada, inicio automático, bandeja y el icono oficial entregado.
+- La validación portable levantó 13 de 13 procesos saludables: PostgreSQL, NATS y 11 microservicios.
 
 ## Objetivo
 

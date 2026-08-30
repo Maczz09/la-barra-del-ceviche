@@ -4,7 +4,7 @@ Proyecto basado en **RestoApp**, del **Ingeniero en Sistemas e Informática Max 
 
 Esta base fue preparada para La Barra del Ceviche y conserva la arquitectura funcional de RestoApp: monorepo **Nx**, microservicios event-driven en NestJS y una PWA React + Vite. Cada servicio es dueño de su base de datos y se comunica de forma asíncrona vía RabbitMQ; todo el tráfico del cliente entra por Kong.
 
-> La migración a aplicación de escritorio, servidor para la red local, dirección compartible, QR estable y estación de cocina está planteada en `docs/plan-tauri-servidor-local.md`. Su implementación queda detenida hasta aprobación.
+El perfil de escritorio Tauri ya está implementado: empaqueta los 11 microservicios, PostgreSQL, NATS JetStream, la PWA y el gateway local en un único instalador para Windows. El despliegue Docker/Kong se conserva como perfil distribuido.
 
 ```
 ┌──────────────┐      :8000 (Kong)        ┌────────────────────────────────────────┐
@@ -31,6 +31,8 @@ Esta base fue preparada para La Barra del Ceviche y conserva la arquitectura fun
 |---------|-----------|
 | `apps/servicio-*` | 11 microservicios NestJS + sus suites e2e (`*-e2e`) |
 | `apps/pwa-cliente` | Frontend PWA (React 19, Vite, React Query, React Router v7) |
+| `apps/runtime-local` | Supervisor portable, gateway LAN, mDNS, onboarding, respaldos y cola de impresión |
+| `apps/escritorio` | Aplicación e instalador Tauri 2 para Windows |
 | `libs/contracts` | Contratos compartidos: comandos/queries por dominio, routing keys, envelope de eventos |
 | `libs/shared-auth` | Guard JWT + estrategia Passport + validación CSRF (double-submit) |
 | `libs/shared-prisma` | `PrismaService` con hooks de apagado |
@@ -87,18 +89,31 @@ npm exec nx run @org/source:test   # vitest raíz: *.spec de pwa + shared-auth (
 npm exec nx run-many -- --target=e2e --all --parallel=1   # contra stack Docker/Kong levantado
 ```
 
+## Aplicación de escritorio y servidor local
+
+El perfil `tauri-local` mantiene los 11 microservicios como procesos separados, pero los opera como una sola aplicación. La laptop sirve la PWA por el puerto fijo `3210`; meseros, cocina y comensales acceden con `http://la-barra-del-ceviche.local:3210` o con la dirección IP mostrada en el módulo **Servidor local**.
+
+```sh
+npm run desktop:prepare    # compila y reúne el runtime portable
+npm run desktop:check      # valida el backend Rust/Tauri
+npm run eval:tauri-local   # comprueba arquitectura y recursos empaquetados
+npm run desktop:build      # genera el instalador NSIS de Windows
+```
+
+El primer inicio crea las 11 bases, aplica migraciones y solicita el administrador inicial. Para que un único QR sobreviva cambios y reinicios del router, configura una reserva DHCP para la MAC que muestra la aplicación. Consulta [la guía de operación](docs/operacion-servidor-local.md).
+
 > `build` empaqueta artefactos, pero no reemplaza `typecheck`. CI ejecuta `typecheck build test`; localmente corre ambos antes de cerrar cambios.
 > Los e2e locales validan la pila Docker/Kong existente; levanta primero `docker compose -f infra/docker-compose.yml --profile infra up -d`.
 
 > **Estado actual de Calidad:** 100% de tests exitosos en backend y PWA. Quality Gate de SonarQube certificado en **Excellence** (0 bugs, 0 code smells, 81% de cobertura). La cobertura tiene **pisos anti-regresión** en `vitest.config.mts` (objetivo: mantener sobre 80%).
 
-## Despliegue heredado de la base
+## Despliegue distribuido conservado
 
 **CI/CD:** `.github/workflows/deploy.yml` construye y publica las 13 imágenes
 (11 servicios + Kong + PWA) a GHCR en cada push a `main`. `docker-compose.prod.yml`
 las consume por tag (`${REGISTRY}/<servicio>:latest`) y un `watchtower` con
 `--label-enable` las jala y reinicia automáticamente en el host. Este flujo se
-conserva para validación de la base; no es todavía el instalador local propuesto.
+conserva como alternativa al instalador local.
 
 Resumen de lo que hay que preparar antes del primer `up -d`:
 
@@ -158,7 +173,8 @@ Lista viva con owner y acción: [docs/ficha-validacion-operativa-s33.md §10](do
 `infra/docker-compose.yml` y `scripts/poblar-datos.ts` son solo para desarrollo: contienen credenciales demo y datos de prueba. Producción usa `infra/docker-compose.prod.yml` con `.env` real.
 
 ## Documentación
-- `docs/plan-tauri-servidor-local.md` — propuesta pendiente de aprobación para escritorio, LAN, QR, cocina e impresión.
+- `docs/plan-tauri-servidor-local.md` — arquitectura y estado de ejecución del perfil de escritorio.
+- `docs/operacion-servidor-local.md` — instalación, primer arranque, red, QR, impresora, respaldo y diagnóstico.
 - `docs/ficha-validacion-operativa-s33.md` — **ficha de validación operativa (S33)**: gates, fitness functions y brechas.
 - `docs/catalogo-servicios.md` — catálogo de los 11 servicios (puertos, BD, eventos, health).
 - `docs/matriz-resiliencia.md` — falla → mecanismo → evidencia → script.

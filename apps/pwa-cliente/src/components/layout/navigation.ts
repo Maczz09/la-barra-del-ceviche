@@ -42,6 +42,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'usuarios', label: 'Usuarios', shortLabel: 'Usuarios', icon: 'Usuarios', priority: 11 },
       { key: 'sedes', label: 'Sedes', shortLabel: 'Sedes', icon: 'Sede', priority: 12 },
       { key: 'auditoria-anulaciones', label: 'Auditoría de anulaciones', shortLabel: 'Anulaciones', icon: 'Lock', priority: 12.5 },
+      { key: 'servidor-local', label: 'Servidor local', shortLabel: 'Servidor', icon: 'Layers', priority: 12.8 },
     ],
   },
   {

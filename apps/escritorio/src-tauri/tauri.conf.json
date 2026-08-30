@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "La Barra del Ceviche",
+  "version": "1.0.0",
+  "identifier": "pe.restoapp.labarradelceviche",
+  "build": { "frontendDist": "../loading" },
+  "app": {
+    "security": { "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'" },
+    "windows": [{
+      "label": "main",
+      "title": "La Barra del Ceviche · RestoApp",
+      "width": 1280,
+      "height": 820,
+      "minWidth": 980,
+      "minHeight": 650,
+      "center": true,
+      "resizable": true
+    }]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "Max Alessandro García López",
+    "copyright": "© 2026 Max Alessandro García López",
+    "shortDescription": "RestoApp para La Barra del Ceviche",
+    "longDescription": "Sistema local de gestión de restaurante basado en RestoApp.",
+    "resources": { "resources/runtime/**/*": "runtime/" },
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "./windows/hooks.nsh",
+        "displayLanguageSelector": false,
+        "languages": ["Spanish"]
+      },
+      "webviewInstallMode": { "type": "embedBootstrapper", "silent": true }
+    }
+  }
+}

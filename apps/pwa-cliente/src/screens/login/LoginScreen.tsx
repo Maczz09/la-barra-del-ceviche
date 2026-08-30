@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-misused-promises, @typescript-eslint/no-floating-promises */
 // screens/login/LoginScreen.tsx — Login real con auth store
 
-import { useState, type SubmitEvent } from 'react';
+import { useEffect, useState, type SubmitEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth.store';
 import { ApiError } from '../../api/client';
 import { APP_NAME, APP_LOGO, PLATFORM_CREDIT } from '../../config';
+import { localRuntimeApi } from '../../api/local-runtime.api';
 
 export function LoginScreen() {
   const login = useAuthStore((s) => s.login);
@@ -18,6 +19,12 @@ export function LoginScreen() {
   // `field: true` marca los inputs en rojo. Solo aplica a credenciales (401);
   // un 429 o un fallo de red no significan que el correo/contraseña estén mal.
   const [error, setError] = useState<{ kind: string; text: string; field?: boolean } | null>(null);
+
+  useEffect(() => {
+    void localRuntimeApi.onboarding()
+      .then(({ complete }) => { if (!complete) navigate('/configuracion-inicial', { replace: true }); })
+      .catch(() => undefined);
+  }, [navigate]);
 
   const submit = async (e: SubmitEvent) => {
     e.preventDefault();

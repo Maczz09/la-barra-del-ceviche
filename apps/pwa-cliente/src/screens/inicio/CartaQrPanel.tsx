@@ -8,14 +8,17 @@ import QRCode from 'qrcode';
 import { Icons } from '../../components/ui/icons';
 import { useToast } from '../../components/ui/ToastProvider';
 import { useSedeActualQuery } from '../../hooks/queries/useSedesQuery';
+import { useLocalServerInfo } from '../../hooks/useLocalServerInfo';
 
 export function CartaQrPanel() {
   const { sede, loading } = useSedeActualQuery();
   const { toast } = useToast();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copiado, setCopiado] = useState(false);
+  const localInfo = useLocalServerInfo();
 
-  const link = sede ? `${window.location.origin}/carta/${sede.id}` : null;
+  const publicOrigin = localInfo?.url ?? window.location.origin;
+  const link = sede ? `${publicOrigin}/carta/${sede.id}` : null;
 
   useEffect(() => {
     if (!link || !canvasRef.current) return;

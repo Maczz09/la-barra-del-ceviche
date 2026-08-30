@@ -24,6 +24,8 @@ const SedesScreen = lazy(() => import('../screens/sedes/SedesScreen').then(m => 
 const CartaScreen = lazy(() => import('../screens/carta/CartaScreen').then(m => ({ default: m.CartaScreen })));
 const ComprasScreen = lazy(() => import('../screens/compras/ComprasScreen').then(m => ({ default: m.ComprasScreen })));
 const FacturacionScreen = lazy(() => import('../screens/facturacion/FacturacionScreen').then(m => ({ default: m.FacturacionScreen })));
+const ServidorLocalScreen = lazy(() => import('../screens/admin/ServidorLocalScreen').then(m => ({ default: m.ServidorLocalScreen })));
+const ConfiguracionInicialScreen = lazy(() => import('../screens/admin/ConfiguracionInicialScreen').then(m => ({ default: m.ConfiguracionInicialScreen })));
 const TicketPrintPage = lazy(() => import('../screens/print/TicketPrintPage').then(m => ({ default: m.TicketPrintPage })));
 const ComprobantePrintPage = lazy(() => import('../screens/print/ComprobantePrintPage').then(m => ({ default: m.ComprobantePrintPage })));
 const ZTicketPrintPage = lazy(() => import('../screens/print/ZTicketPrintPage').then(m => ({ default: m.ZTicketPrintPage })));
@@ -117,6 +119,7 @@ export function AppRouter() {
         {/* Carta pública/QR (T-XX): sin auth, sin Shell — cualquiera con el
             link o que escanee el QR de Inicio la ve. */}
         <Route path="/carta/:sedeId" element={<Suspense fallback={null}><PublicCartaScreen /></Suspense>} />
+        <Route path="/configuracion-inicial" element={<Suspense fallback={<ScreenLoading />}><ConfiguracionInicialScreen /></Suspense>} />
 
         {/* Rutas públicas */}
         <Route element={<PublicRoute />}>
@@ -146,6 +149,7 @@ export function AppRouter() {
           <Route path="carta" element={<RutaPorRol ruta="carta"><ScreenBoundary modulo="Carta"><CartaScreen /></ScreenBoundary></RutaPorRol>} />
           <Route path="compras" element={<RutaPorRol ruta="compras"><ScreenBoundary modulo="Compras"><ComprasScreen /></ScreenBoundary></RutaPorRol>} />
           <Route path="facturacion" element={<RutaPorRol ruta="facturacion"><ScreenBoundary modulo="Facturación"><FacturacionScreen /></ScreenBoundary></RutaPorRol>} />
+          <Route path="servidor-local" element={<RutaPorRol ruta="servidor-local"><ScreenBoundary modulo="Servidor local"><ServidorLocalScreen /></ScreenBoundary></RutaPorRol>} />
         </Route>
 
 

@@ -28,6 +28,7 @@ export const TODAS_LAS_RUTAS = [
   'sedes',
   'facturacion',
   'auditoria-anulaciones',
+  'servidor-local',
 ] as const;
 
 export type RutaApp = (typeof TODAS_LAS_RUTAS)[number];

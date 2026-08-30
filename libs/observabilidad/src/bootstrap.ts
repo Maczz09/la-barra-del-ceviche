@@ -24,6 +24,7 @@ import { shutdownTracing } from './lib/tracing';
 import { OperableLog } from './lib/operable-log';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import { LocalJetStreamServer } from '@org/shared-rabbitmq';
 
 // Red de seguridad de proceso: un rejection/excepción no capturada (p. ej. en un
 // fire-and-forget o en las internals de socket.io) mataría el proceso con un
@@ -83,8 +84,8 @@ export interface BootstrapOptions {
 export async function bootstrapNachoppsService(options: BootstrapOptions): Promise<void> {
   const { serviceName, module, queue, swagger, defaultPort } = options;
 
-  if (!process.env.RABBITMQ_URI) {
-    throw new Error('RABBITMQ_URI environment variable is required');
+  if (!process.env.RABBITMQ_URI && !process.env.LOCAL_BROKER_URL) {
+    throw new Error('RABBITMQ_URI or LOCAL_BROKER_URL environment variable is required');
   }
   if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGIN) {
     throw new Error('CORS_ORIGIN environment variable is required in production');
@@ -117,26 +118,35 @@ export async function bootstrapNachoppsService(options: BootstrapOptions): Promi
   app.useGlobalFilters(new GlobalExceptionFilter());
 
   if (queue) {
-    app.connectMicroservice({
-      transport: Transport.RMQ,
-      options: {
-        urls: [process.env.RABBITMQ_URI],
-        queue,
-        queueOptions: {
-          durable: true,
-          arguments: {
-            'x-dead-letter-exchange': 'NACHOPPS_DLX',
-            'x-dead-letter-routing-key': `dlq.${queue}`,
+    if (process.env.LOCAL_BROKER_URL) {
+      app.connectMicroservice({
+        strategy: new LocalJetStreamServer({
+          servers: [process.env.LOCAL_BROKER_URL],
+          queue,
+        }),
+      });
+    } else {
+      app.connectMicroservice({
+        transport: Transport.RMQ,
+        options: {
+          urls: [process.env.RABBITMQ_URI],
+          queue,
+          queueOptions: {
+            durable: true,
+            arguments: {
+              'x-dead-letter-exchange': 'NACHOPPS_DLX',
+              'x-dead-letter-routing-key': `dlq.${queue}`,
+            },
           },
+          exchange: 'nachopps_exchange',
+          exchangeType: 'topic',
+          noAck: false,
+          // Backpressure: cap de mensajes en vuelo por consumidor (R-09). No toca
+          // la declaración de colas → sin riesgo de redeclare.
+          prefetchCount: Number(process.env.RMQ_PREFETCH ?? 20),
         },
-        exchange: 'nachopps_exchange',
-        exchangeType: 'topic',
-        noAck: false,
-        // Backpressure: cap de mensajes en vuelo por consumidor (R-09). No toca
-        // la declaración de colas → sin riesgo de redeclare.
-        prefetchCount: Number(process.env.RMQ_PREFETCH ?? 20),
-      },
-    });
+      });
+    }
   }
 
   if (swagger && process.env.NODE_ENV !== 'production') {
@@ -165,7 +175,7 @@ export async function bootstrapNachoppsService(options: BootstrapOptions): Promi
   const nombre = serviceName.replace('servicio-', '');
   Logger.log(`🚀 Servicio ${nombre} corriendo en: http://localhost:${port}/${globalPrefix}`);
   if (queue) {
-    Logger.log(`📡 Microservicio RabbitMQ escuchando en la cola: ${queue}`);
+    Logger.log(`📡 Microservicio escuchando en la cola: ${queue}`);
   }
 
   // Apagado graceful con un único dueño (antes competían el handler de

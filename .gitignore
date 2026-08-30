@@ -71,6 +71,10 @@ Thumbs.db
 .nx/self-healing
 vite.config.*.timestamp*
 test-output
+/.cache/
+/apps/escritorio/src-tauri/resources/runtime/*
+!/apps/escritorio/src-tauri/resources/runtime/README.txt
+/apps/escritorio/src-tauri/target/
 
 # Playwright (output de corridas e2e)
 **/test-results/

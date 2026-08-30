@@ -1,0 +1,17 @@
+{
+  "node": {
+    "version": "22.23.0",
+    "url": "https://nodejs.org/dist/v22.23.0/win-x64/node.exe",
+    "sha256": "17347995af08dadcc73a1a154f0942559fbc3f37b9ba57d4576b4d2bcb2834a2"
+  },
+  "postgres": {
+    "version": "16.15-1",
+    "url": "https://get.enterprisedb.com/postgresql/postgresql-16.15-1-windows-x64-binaries.zip",
+    "sha256": "25e6fcdfb8caec38691bf461125e7564508760666f7b8e5dc6a5f0818f58f81e"
+  },
+  "nats": {
+    "version": "2.14.5",
+    "url": "https://github.com/nats-io/nats-server/releases/download/v2.14.5/nats-server-v2.14.5-windows-amd64.zip",
+    "sha256": "f66f840a211ab665083b88e9b7edbcf6296cda143be47e53e6f6bb8520692bbb"
+  }
+}

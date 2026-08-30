@@ -83,6 +83,9 @@
     },
     {
       "path": "./libs/shared-auth"
+    },
+    {
+      "path": "./apps/runtime-local"
     }
   ]
 }

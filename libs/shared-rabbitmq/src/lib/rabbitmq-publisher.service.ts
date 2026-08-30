@@ -8,6 +8,18 @@ import { ConfirmChannel } from 'amqplib';
 import { randomUUID } from 'node:crypto';
 import { RABBITMQ_CONNECTION } from './rabbitmq.constants';
 import { context, propagation } from '@opentelemetry/api';
+import { StringCodec } from 'nats';
+import {
+  localPublishHeaders,
+  toLocalSubject,
+  type LocalJetStreamConnection,
+} from './local-jetstream';
+
+type BrokerConnection = amqp.AmqpConnectionManager | LocalJetStreamConnection;
+
+function isLocalConnection(connection: BrokerConnection): connection is LocalJetStreamConnection {
+  return 'mode' in connection && connection.mode === 'jetstream';
+}
 
 @Injectable()
 export class RabbitMQPublisherService implements OnModuleInit {
@@ -16,13 +28,17 @@ export class RabbitMQPublisherService implements OnModuleInit {
 
   constructor(
     @Inject(RABBITMQ_CONNECTION)
-    private readonly connection: amqp.AmqpConnectionManager,
+    private readonly connection: BrokerConnection,
     @Optional()
     @Inject('RABBITMQ_OPTIONS')
     private readonly options?: { queue?: string, bindings?: string[] }
   ) {}
 
   onModuleInit() {
+    if (isLocalConnection(this.connection)) {
+      this.logger.log('Publicador conectado a JetStream local durable');
+      return;
+    }
     this.channelWrapper = this.connection.createChannel({
       json: true,
       setup: async (channel: ConfirmChannel) => {
@@ -68,6 +84,9 @@ export class RabbitMQPublisherService implements OnModuleInit {
    * RabbitMQ está caído, en vez de quemar `attempts` publicando al vacío.
    */
   isConnected(): boolean {
+    if (isLocalConnection(this.connection)) {
+      return !this.connection.connection.isClosed();
+    }
     return this.connection.isConnected();
   }
 
@@ -93,13 +112,24 @@ export class RabbitMQPublisherService implements OnModuleInit {
     // así el consumidor siempre tiene una clave con la que deduplicar.
     carrier['x-event-id'] = eventId ?? randomUUID();
 
-    await this.channelWrapper.publish(NACHOPPS_EXCHANGE, routingKey, {
-      pattern: routingKey,
-      data,
-    }, {
-      headers: carrier,
-      persistent: true,
-    });
+    if (isLocalConnection(this.connection)) {
+      await this.connection.client.publish(
+        toLocalSubject(routingKey),
+        StringCodec().encode(JSON.stringify({ pattern: routingKey, data })),
+        {
+          msgID: carrier['x-event-id'],
+          headers: localPublishHeaders(carrier),
+        },
+      );
+    } else {
+      await this.channelWrapper.publish(NACHOPPS_EXCHANGE, routingKey, {
+        pattern: routingKey,
+        data,
+      }, {
+        headers: carrier,
+        persistent: true,
+      });
+    }
     this.logger.log(`Evento publicado: ${routingKey}`);
   }
 }
