@@ -1,6 +1,6 @@
 // api/auth.api.ts — Llamadas de autenticación
 
-import { client, setAuthToken } from './client';
+import { client, getAuthToken, refreshAccessToken, setAuthToken } from './client';
 import type {
   LoginRequest,
   LoginResponseDto,
@@ -21,7 +21,14 @@ export async function login(req: LoginRequest): Promise<UserDto> {
 }
 
 /** GET /identidad/auth/me — Restaurar sesión activa */
-export function me(): Promise<UserDto> {
+export async function me(): Promise<UserDto> {
+  // El access token vive solo en memoria. Tras cerrar/reabrir la PWA queda la
+  // cookie de refresh, pero no el Bearer que exigen los demás microservicios.
+  // Lo reconstruimos antes de restaurar el perfil para que la primera pantalla
+  // protegida no dispare una ráfaga de 401 al cargar sus widgets.
+  if (!getAuthToken()) {
+    await refreshAccessToken();
+  }
   return client.get<UserDto>('/identidad/auth/me');
 }
 

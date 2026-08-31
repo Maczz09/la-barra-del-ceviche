@@ -2,6 +2,7 @@ mod printer;
 
 use std::{
     fs::{self, OpenOptions},
+    io::Write,
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
     time::Duration,
@@ -15,16 +16,52 @@ use tauri_plugin_autostart::ManagerExt;
 
 type RuntimeChild = Arc<Mutex<Option<Child>>>;
 
+fn report_startup_error(app: &AppHandle, error: &str) {
+    if let Ok(data) = app.path().app_local_data_dir() {
+        let logs = data.join("logs");
+        let _ = fs::create_dir_all(&logs);
+        if let Ok(mut log) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(logs.join("desktop-runtime.log"))
+        {
+            let _ = writeln!(log, "RESTOAPP_DESKTOP_FATAL {error}");
+        }
+    }
+
+    if let Some(window) = app.get_webview_window("main") {
+        let message = serde_json::to_string(error)
+            .unwrap_or_else(|_| "\"Error desconocido al iniciar el servidor local\"".into());
+        let script = format!(
+            "document.querySelector('h1').textContent='No se pudo iniciar el servidor';\
+             document.querySelector('p').textContent={message};\
+             document.querySelector('.dots').style.display='none';"
+        );
+        let _ = window.eval(&script);
+        let _ = window.set_title("La Barra del Ceviche · Error al iniciar servidor");
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 fn launch_runtime(app: &AppHandle) -> Result<Child, String> {
     let resources = app.path().resource_dir().map_err(|error| error.to_string())?;
     let data = app.path().app_local_data_dir().map_err(|error| error.to_string())?;
     fs::create_dir_all(data.join("logs")).map_err(|error| error.to_string())?;
     let node = resources.join("runtime/node/node.exe");
-    let entry = resources.join("runtime/runtime-local/main.js");
+    let runtime_directory = resources.join("runtime/runtime-local");
+    let entry = runtime_directory.join("main.js");
+    if !node.is_file() {
+        return Err(format!("No se encontró Node.js en {}", node.display()));
+    }
+    if !entry.is_file() {
+        return Err(format!("No se encontró el runtime local en {}", entry.display()));
+    }
     let stdout = OpenOptions::new().create(true).append(true).open(data.join("logs/desktop-runtime.log")).map_err(|error| error.to_string())?;
     let stderr = stdout.try_clone().map_err(|error| error.to_string())?;
     let mut command = Command::new(&node);
-    command.arg(entry)
+    command.current_dir(&runtime_directory)
+        .arg("main.js")
         .env("RESTOAPP_RESOURCES_DIR", &resources)
         .env("RESTOAPP_DATA_DIR", &data)
         .stdin(Stdio::null()).stdout(stdout).stderr(stderr);
@@ -91,9 +128,13 @@ pub fn run() {
         .setup(move |app| {
             build_tray(app)?;
             if !app.autolaunch().is_enabled().unwrap_or(false) { let _ = app.autolaunch().enable(); }
-            let child = launch_runtime(app.handle()).map_err(std::io::Error::other)?;
-            *runtime_setup.lock().expect("runtime mutex") = Some(child);
-            tauri::async_runtime::spawn(wait_and_open(app.handle().clone()));
+            match launch_runtime(app.handle()) {
+                Ok(child) => {
+                    *runtime_setup.lock().expect("runtime mutex") = Some(child);
+                    tauri::async_runtime::spawn(wait_and_open(app.handle().clone()));
+                }
+                Err(error) => report_startup_error(app.handle(), &error),
+            }
             Ok(())
         })
         .build(tauri::generate_context!())

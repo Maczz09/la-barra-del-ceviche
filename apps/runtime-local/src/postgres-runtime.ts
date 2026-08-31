@@ -12,6 +12,15 @@ export function postgresConnectionString(config: RuntimeConfig, database: string
   return `postgresql://${encodeURIComponent(config.dbUser)}:${encodeURIComponent(config.dbPassword)}@127.0.0.1:${POSTGRES_PORT}/${assertSafeDatabaseName(database)}?schema=public`;
 }
 
+/**
+ * URL para las herramientas nativas de PostgreSQL (pg_dump, pg_restore, etc.).
+ * `schema=public` es un parámetro propio de Prisma y libpq lo rechaza como una
+ * opción de conexión desconocida, por lo que no debe llegar a esos binarios.
+ */
+export function postgresCliConnectionString(config: RuntimeConfig, database: string): string {
+  return `postgresql://${encodeURIComponent(config.dbUser)}:${encodeURIComponent(config.dbPassword)}@127.0.0.1:${POSTGRES_PORT}/${assertSafeDatabaseName(database)}`;
+}
+
 function run(binary: string, args: string[], env?: NodeJS.ProcessEnv): void {
   const result = spawnSync(binary, args, { env: { ...process.env, ...env }, encoding: 'utf8', windowsHide: true });
   if (result.status !== 0) {

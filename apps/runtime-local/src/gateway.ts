@@ -28,6 +28,25 @@ export interface DeviceSeen { address: string; lastSeen: string; requests: numbe
 
 export interface ServiceProxyRoute { target: string; path: string }
 
+export function closeHttpServer(server: http.Server, timeoutMs = 2_000): Promise<void> {
+  return new Promise((resolveClose) => {
+    let settled = false;
+    let timeout: NodeJS.Timeout;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolveClose();
+    };
+    timeout = setTimeout(() => {
+      server.closeAllConnections();
+      finish();
+    }, timeoutMs);
+    server.close(finish);
+    server.closeIdleConnections();
+  });
+}
+
 export function resolveServiceProxy(pathname: string, search = ''): ServiceProxyRoute | undefined {
   const versioned = /^\/v1\/([^/]+)(\/.*)?$/.exec(pathname);
   const direct = /^\/([^/]+)(\/.*)?$/.exec(pathname);
@@ -39,6 +58,12 @@ export function resolveServiceProxy(pathname: string, search = ''): ServiceProxy
     target: `http://127.0.0.1:${service.port}`,
     path: `/api${match[2] ?? ''}${search}`,
   };
+}
+
+function notificationTarget(): string {
+  const notificationService = serviceByGatewayPath('notificaciones');
+  if (!notificationService) throw new Error('No está definido servicio-notificaciones');
+  return `http://127.0.0.1:${notificationService.port}`;
 }
 
 const proxy = httpProxy.createProxyServer({ xfwd: true, ws: true });
@@ -67,7 +92,7 @@ export class LocalGateway {
         return;
       }
       request.url = request.url?.replace(notificationPrefix, '/api');
-      proxy.ws(request, socket, head, { target: 'http://127.0.0.1:3008' });
+      proxy.ws(request, socket, head, { target: notificationTarget() });
     });
     await new Promise<void>((resolveStart, reject) => {
       this.server?.once('error', reject);
@@ -77,7 +102,9 @@ export class LocalGateway {
 
   async close(): Promise<void> {
     if (!this.server) return;
-    await new Promise<void>((resolveClose) => this.server?.close(() => resolveClose()));
+    const server = this.server;
+    this.server = undefined;
+    await closeHttpServer(server);
   }
 
   connectedDevices(): DeviceSeen[] {
@@ -115,7 +142,7 @@ export class LocalGateway {
     }
     if (url.pathname.startsWith('/notificaciones')) {
       request.url = request.url?.replace(/^\/notificaciones/, '/api');
-      proxy.web(request, response, { target: 'http://127.0.0.1:3008' });
+      proxy.web(request, response, { target: notificationTarget() });
       return;
     }
     return this.serveStatic(url.pathname, response);

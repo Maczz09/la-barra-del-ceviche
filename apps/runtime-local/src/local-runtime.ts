@@ -1,6 +1,6 @@
 import { closeSync, existsSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { createConnection } from 'node:net';
+import { createConnection, createServer } from 'node:net';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { BackupManager } from './backup-manager';
@@ -39,6 +39,12 @@ export class LocalRuntime implements RuntimeAdminApi {
     this.acquireLock();
     if (process.env['RESTOAPP_SKIP_CHILDREN'] !== '1') {
       this.assertPackagedResources();
+      await assertPortsAvailable([
+        { port: POSTGRES_PORT, name: 'PostgreSQL' },
+        { port: NATS_PORT, name: 'NATS' },
+        { port: NATS_MONITOR_PORT, name: 'monitor NATS' },
+        ...SERVICE_DEFINITIONS.map((service) => ({ port: service.port, name: service.name })),
+      ]);
       initializePostgres(this.paths, this.config);
       this.startPostgres();
       this.startNats();
@@ -281,6 +287,27 @@ export class LocalRuntime implements RuntimeAdminApi {
   private releaseLock(): void {
     if (this.lockHandle != null) closeSync(this.lockHandle);
     rmSync(this.lockFile, { force: true });
+  }
+}
+
+export async function assertPortsAvailable(
+  targets: ReadonlyArray<{ port: number; name: string }>,
+): Promise<void> {
+  for (const target of targets) {
+    const available = await new Promise<boolean>((resolveAvailable) => {
+      const probe = createServer();
+      probe.unref();
+      probe.once('error', () => resolveAvailable(false));
+      probe.listen(target.port, '127.0.0.1', () => {
+        probe.close(() => resolveAvailable(true));
+      });
+    });
+    if (!available) {
+      throw new Error(
+        `El puerto interno ${target.port} (${target.name}) está ocupado. ` +
+        'Cierra la otra aplicación o servicio y vuelve a abrir La Barra del Ceviche.',
+      );
+    }
   }
 }
 

@@ -71,6 +71,8 @@ function findFile(directory, filename) {
 
 function runtimeDependencies() {
   const dependencies = { ...JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).dependencies };
+  const prismaClient = JSON.parse(readFileSync(join(root, 'node_modules', '@prisma', 'client', 'package.json'), 'utf8'));
+  Object.assign(dependencies, prismaClient.dependencies ?? {});
   for (const name of services) {
     Object.assign(dependencies, JSON.parse(readFileSync(join(root, 'apps', name, 'package.json'), 'utf8')).dependencies ?? {});
   }

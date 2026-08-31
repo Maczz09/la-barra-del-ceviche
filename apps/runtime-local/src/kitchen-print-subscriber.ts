@@ -7,6 +7,18 @@ interface PedidoCreadoPacket {
   data: { pedido?: KitchenTicket & { id?: string; modalidad?: string } };
 }
 
+export async function closeNatsConnection(connection: NatsConnection, timeoutMs = 3_000): Promise<void> {
+  let timeout: NodeJS.Timeout | undefined;
+  const drained = await Promise.race([
+    connection.drain().then(() => true, () => false),
+    new Promise<boolean>((resolve) => {
+      timeout = setTimeout(() => resolve(false), timeoutMs);
+    }),
+  ]);
+  if (timeout) clearTimeout(timeout);
+  if (!drained) await connection.close().catch(() => undefined);
+}
+
 export class KitchenPrintSubscriber {
   private connection?: NatsConnection;
   private subscription?: JetStreamSubscription;
@@ -70,6 +82,6 @@ export class KitchenPrintSubscriber {
 
   async close(): Promise<void> {
     this.subscription?.unsubscribe();
-    await this.connection?.drain();
+    if (this.connection) await closeNatsConnection(this.connection);
   }
 }

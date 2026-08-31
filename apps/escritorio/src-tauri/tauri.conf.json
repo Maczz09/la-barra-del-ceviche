@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "La Barra del Ceviche",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "identifier": "pe.restoapp.labarradelceviche",
   "build": { "frontendDist": "../loading" },
   "app": {
@@ -24,7 +24,7 @@
     "copyright": "© 2026 Max Alessandro García López",
     "shortDescription": "RestoApp para La Barra del Ceviche",
     "longDescription": "Sistema local de gestión de restaurante basado en RestoApp.",
-    "resources": { "resources/runtime/**/*": "runtime/" },
+    "resources": { "resources/runtime/": "runtime/" },
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
     "windows": {
       "nsis": {

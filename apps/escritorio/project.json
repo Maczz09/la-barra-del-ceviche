@@ -25,6 +25,14 @@
         "cwd": "apps/escritorio"
       }
     },
+    "binary": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/src-tauri/target/release/la-barra-del-ceviche.exe"],
+      "options": {
+        "command": "powershell -NoProfile -Command \"$env:Path = (Join-Path $env:USERPROFILE '.cargo\\bin') + ';' + $env:Path; tauri build --no-bundle\"",
+        "cwd": "apps/escritorio"
+      }
+    },
     "check": {
       "executor": "nx:run-commands",
       "options": {

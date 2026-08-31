@@ -26,10 +26,18 @@ function defaultDataDirectory(): string {
   return resolve(process.cwd(), '.local-data');
 }
 
+export function normalizeWindowsExtendedPath(value: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform !== 'win32') return value;
+  if (value.startsWith('\\\\?\\UNC\\')) return `\\\\${value.slice(8)}`;
+  if (value.startsWith('\\\\?\\')) return value.slice(4);
+  return value;
+}
+
 export function resolveRuntimePaths(): RuntimePaths {
-  const workspaceRoot = process.env['RESTOAPP_WORKSPACE_ROOT'];
-  const resources = resolve(process.env['RESTOAPP_RESOURCES_DIR'] || (workspaceRoot ? workspaceRoot : dirname(process.execPath)));
-  const data = resolve(process.env['RESTOAPP_DATA_DIR'] || defaultDataDirectory());
+  const workspaceRootValue = process.env['RESTOAPP_WORKSPACE_ROOT'];
+  const workspaceRoot = workspaceRootValue ? normalizeWindowsExtendedPath(workspaceRootValue) : undefined;
+  const resources = resolve(normalizeWindowsExtendedPath(process.env['RESTOAPP_RESOURCES_DIR'] || (workspaceRoot ? workspaceRoot : dirname(process.execPath))));
+  const data = resolve(normalizeWindowsExtendedPath(process.env['RESTOAPP_DATA_DIR'] || defaultDataDirectory()));
   const packagedRuntime = join(resources, 'runtime');
   const packaged = existsSync(packagedRuntime);
   const runtimeRoot = packaged ? packagedRuntime : resources;

@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { join } from 'node:path';
 
@@ -21,6 +21,11 @@ export interface ProcessSpec {
   cwd: string;
   env?: NodeJS.ProcessEnv;
   restart?: boolean;
+}
+
+export function windowsTaskkillArgs(pid: number): string[] {
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error(`PID inválido: ${String(pid)}`);
+  return ['/PID', String(pid), '/T', '/F'];
 }
 
 interface ManagedProcess {
@@ -69,6 +74,7 @@ export class ProcessSupervisor {
     child.on('error', (error: Error) => {
       managed.status.state = 'failed';
       managed.status.lastError = error.message;
+      managed.log.write(`[supervisor] error al iniciar ${spec.name}: ${error.stack ?? error.message}\n`);
     });
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call
     child.on('exit', (code: number | null) => {
@@ -76,6 +82,7 @@ export class ProcessSupervisor {
       managed.status.pid = undefined;
       managed.status.lastExitCode = code;
       managed.status.state = code === 0 ? 'stopped' : 'failed';
+      if (code !== 0) managed.log.write(`[supervisor] ${spec.name} terminó con código ${String(code)}\n`);
       if (!this.shuttingDown && spec.restart !== false) this.scheduleRestart(managed);
     });
     return managed.status;
@@ -111,6 +118,13 @@ export class ProcessSupervisor {
     if (managed.restartTimer) clearTimeout(managed.restartTimer);
     const child = managed.child;
     if (!child || child.killed) return;
+    if (process.platform === 'win32' && child.pid) {
+      const exited = waitForChildExit(child, 10_000);
+      await terminateWindowsProcessTree(child.pid);
+      await exited;
+      managed.status.state = 'stopped';
+      return;
+    }
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
         child.kill('SIGKILL');
@@ -125,4 +139,25 @@ export class ProcessSupervisor {
     });
     managed.status.state = 'stopped';
   }
+}
+
+function terminateWindowsProcessTree(pid: number): Promise<void> {
+  return new Promise((resolve) => {
+    execFile('taskkill.exe', windowsTaskkillArgs(pid), { windowsHide: true, timeout: 10_000 }, () => resolve());
+  });
+}
+
+function waitForChildExit(child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<void> {
+  if (child.exitCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      child.kill('SIGKILL');
+      resolve();
+    }, timeoutMs);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+    child.once('exit', () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
 }

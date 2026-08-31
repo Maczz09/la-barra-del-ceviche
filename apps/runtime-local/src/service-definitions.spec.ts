@@ -1,4 +1,4 @@
-import { SERVICE_DEFINITIONS, assertSafeDatabaseName, serviceByGatewayPath } from './service-definitions';
+import { LOCAL_SERVICE_PORT_BASE, SERVICE_DEFINITIONS, assertSafeDatabaseName, serviceByGatewayPath } from './service-definitions';
 
 describe('definiciones del runtime local', () => {
   it('mantiene 11 microservicios con puertos, bases y rutas exclusivas', () => {
@@ -6,6 +6,8 @@ describe('definiciones del runtime local', () => {
     expect(new Set(SERVICE_DEFINITIONS.map((service) => service.port)).size).toBe(11);
     expect(new Set(SERVICE_DEFINITIONS.map((service) => service.database)).size).toBe(11);
     expect(new Set(SERVICE_DEFINITIONS.map((service) => service.gatewayPath)).size).toBe(11);
+    expect(SERVICE_DEFINITIONS.every((service) => service.port >= LOCAL_SERVICE_PORT_BASE)).toBe(true);
+    expect(SERVICE_DEFINITIONS.every((service) => service.port < LOCAL_SERVICE_PORT_BASE + 100)).toBe(true);
   });
 
   it('resuelve el gateway sin exponer puertos al cliente', () => {

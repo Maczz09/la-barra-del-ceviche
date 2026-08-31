@@ -14,18 +14,27 @@ export function listPrivateIpv4(): NetworkAddress[] {
       result.push({ name, address: address.address, mac: address.mac });
     }
   }
-  return result.sort((a, b) => scoreAddress(b.address) - scoreAddress(a.address));
+  return result.sort((a, b) => scoreAddress(b) - scoreAddress(a));
 }
 
-function scoreAddress(address: string): number {
-  if (address.startsWith('192.168.')) return 3;
-  if (address.startsWith('10.')) return 2;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(address)) return 1;
-  return 0;
+function scoreAddress(value: NetworkAddress): number {
+  const addressScore = value.address.startsWith('192.168.')
+    ? 30
+    : value.address.startsWith('10.')
+      ? 20
+      : /^172\.(1[6-9]|2\d|3[01])\./.test(value.address) ? 10 : 0;
+  // VirtualBox, Docker, Hyper-V y WSL suelen crear adaptadores privados que
+  // el celular no puede alcanzar. Nunca deben ganar sobre Ethernet/Wi-Fi real.
+  const virtual = /virtual|vethernet|wsl|docker|vmware|hyper-v/i.test(value.name);
+  return addressScore - (virtual ? 100 : 0);
+}
+
+export function selectPrimaryLanAddress(addresses: readonly NetworkAddress[]): NetworkAddress | null {
+  return [...addresses].sort((a, b) => scoreAddress(b) - scoreAddress(a))[0] ?? null;
 }
 
 export function primaryLanAddress(): NetworkAddress | null {
-  return listPrivateIpv4()[0] ?? null;
+  return selectPrimaryLanAddress(listPrivateIpv4());
 }
 
 export function localServerUrl(port: number): string {

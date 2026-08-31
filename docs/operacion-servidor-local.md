@@ -4,7 +4,7 @@ Basado en RestoApp del Ingeniero en Sistemas e Informática Max Alessandro Garc�
 
 ## Instalación y primer inicio
 
-1. Ejecuta el instalador de Windows como administrador. La instalación es por máquina y agrega las reglas privadas de firewall para TCP 3210 y mDNS UDP 5353.
+1. Ejecuta el instalador de Windows como administrador. La instalación es por máquina y agrega reglas de firewall para TCP 3210 y mDNS UDP 5353, limitadas a la subred local y válidas aunque Windows clasifique la red del restaurante como pública.
 2. Abre **La Barra del Ceviche**. El primer arranque puede tardar varios minutos: inicializa PostgreSQL, crea 11 bases, aplica migraciones y espera que todos los microservicios estén saludables.
 3. Completa **Configuración inicial** con el nombre, correo y contraseña del administrador. Este formulario solo está disponible desde la laptop servidor.
 4. En **Administración → Servidor local**, confirma que todos los procesos estén activos.
@@ -53,6 +53,8 @@ Si la impresora está desconectada o sin papel, el trabajo queda fallido con rei
 4. Revisa en **Servidor local** los estados individuales; reinicia únicamente el servicio que falle.
 5. Revisa los logs dentro del directorio de datos y conserva el mensaje exacto del último error.
 6. Para impresión, confirma nombre de impresora, papel, cola de Windows y una página de prueba.
+
+Si el runtime no puede iniciarse, la ventana permanece abierta mostrando el error y también lo registra en `%LOCALAPPDATA%\pe.restoapp.labarradelceviche\logs\desktop-runtime.log`.
 
 ## Validación de desarrollo
 

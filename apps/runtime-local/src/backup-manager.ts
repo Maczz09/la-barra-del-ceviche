@@ -4,7 +4,7 @@ import { basename, join } from 'node:path';
 import type { RuntimeConfig } from './runtime-config';
 import type { RuntimePaths } from './runtime-paths';
 import { SERVICE_DEFINITIONS } from './service-definitions';
-import { postgresConnectionString } from './postgres-runtime';
+import { postgresCliConnectionString } from './postgres-runtime';
 
 export interface BackupResult {
   path: string;
@@ -36,7 +36,7 @@ export class BackupManager {
       run(join(this.paths.postgresBin, 'pg_dump.exe'), [
         '--format=custom', '--no-owner', '--no-acl',
         '--file', join(staging, 'databases', `${service.database}.dump`),
-        postgresConnectionString(this.config, service.database),
+        postgresCliConnectionString(this.config, service.database),
       ]);
     }
 

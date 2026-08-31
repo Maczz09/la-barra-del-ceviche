@@ -54,6 +54,28 @@ describe('client', () => {
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/test'), expect.any(Object));
   });
 
+  it('adjunta el access token como Bearer a los microservicios', async () => {
+    const mockRes = { ok: true, status: 200, json: vi.fn().mockResolvedValue({ ok: true }) };
+    vi.mocked(fetch).mockResolvedValue(mockRes as any);
+    setAuthToken('access-token-vigente');
+
+    await client.get('/mesas');
+
+    const [, init] = vi.mocked(fetch).mock.calls.at(-1)!;
+    expect((init.headers as Headers).get('Authorization')).toBe('Bearer access-token-vigente');
+  });
+
+  it('respeta un Authorization explícito del llamador', async () => {
+    const mockRes = { ok: true, status: 200, json: vi.fn().mockResolvedValue({ ok: true }) };
+    vi.mocked(fetch).mockResolvedValue(mockRes as any);
+    setAuthToken('token-global');
+
+    await client.get('/mesas', { headers: { Authorization: 'Bearer token-especifico' } });
+
+    const [, init] = vi.mocked(fetch).mock.calls.at(-1)!;
+    expect((init.headers as Headers).get('Authorization')).toBe('Bearer token-especifico');
+  });
+
   it('client.post includes Idempotency-Key and JSON body', async () => {
     const mockRes = { ok: true, status: 201, json: vi.fn().mockResolvedValue({ id: 2 }) };
     vi.mocked(fetch).mockResolvedValue(mockRes as any);
@@ -101,6 +123,8 @@ describe('client', () => {
     const data = await client.get('/protected');
     expect(data).toEqual({ ok: true });
     expect(getAuthToken()).toBe('new-token');
+    const [, retryInit] = vi.mocked(fetch).mock.calls.at(-1)!;
+    expect((retryInit.headers as Headers).get('Authorization')).toBe('Bearer new-token');
   });
 
   it('client.postForm manda el FormData tal cual, sin fijar Content-Type', async () => {

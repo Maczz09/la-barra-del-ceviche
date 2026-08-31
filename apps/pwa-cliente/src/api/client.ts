@@ -175,6 +175,14 @@ function applyHeaders(headers: Headers, method: string, body?: BodyInit | null):
   if (!esFormData && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
+  // Identidad puede restaurar la sesión desde su cookie httpOnly, pero los
+  // demás microservicios validan el JWT desde Authorization. Todas las
+  // llamadas comparten este cliente, así que el Bearer debe agregarse aquí.
+  // Respetamos un Authorization explícito para no impedir integraciones o
+  // pruebas que necesiten enviar sus propias credenciales.
+  if (authToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${authToken}`);
+  }
   const csrfToken = getCookie(CSRF_COOKIE_KEY);
   if (csrfToken && MUTATING_METHODS.has(method) && !headers.has(CSRF_HEADER_KEY)) {
     headers.set(CSRF_HEADER_KEY, csrfToken);

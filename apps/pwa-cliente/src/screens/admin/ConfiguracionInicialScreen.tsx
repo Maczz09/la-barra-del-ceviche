@@ -15,7 +15,18 @@ export function ConfiguracionInicialScreen() {
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError('');
     try { await localRuntimeApi.createAdmin(form); void navigate('/login', { replace: true }); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) {
+      try {
+        const status = await localRuntimeApi.onboarding();
+        if (status.complete) {
+          setComplete(true);
+          return;
+        }
+      } catch {
+        // Conserva el error original del POST, que describe mejor la operación fallida.
+      }
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
     finally { setBusy(false); }
   };
 
