@@ -17,4 +17,8 @@ export class CertificadoService {
     this.cache.set(slot, claves);
     return claves;
   }
+
+  invalidarSlot(slot: number): void {
+    this.cache.delete(slot);
+  }
 }

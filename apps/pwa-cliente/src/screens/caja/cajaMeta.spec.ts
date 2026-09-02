@@ -27,4 +27,22 @@ describe('cajaMeta', () => {
     expect(kpis.porMetodo.PLIN).toBe(0);
     expect(kpis.porMetodo.TRANSFERENCIA).toBe(0);
   });
+
+  it('cuenta una sola cuenta cobrada aunque tenga varios métodos de pago', () => {
+    const base = {
+      turnoId: 'turno-1', mesaId: 'mesa-1', donde: 'Mesa 1', descuento: 0,
+      motivo: 'Pago combinado', createdAt: '2026-09-01T10:00:00.000Z',
+    };
+    const movs: MovimientoCajaDto[] = [
+      { ...base, id: '1', transaccionId: 'tx-1', cuentaId: 'cuenta-1', tipo: 'VENTA', metodo: 'EFECTIVO', monto: 40, propina: 0 },
+      { ...base, id: '2', transaccionId: 'tx-2', cuentaId: 'cuenta-1', tipo: 'VENTA', metodo: 'YAPE', monto: 60, propina: 0 },
+      { ...base, id: '3', transaccionId: 'tx-3', cuentaId: 'cuenta-2', tipo: 'VENTA', metodo: 'TARJETA', monto: 25, propina: 0 },
+    ];
+
+    const kpis = computeKpis(movs);
+
+    expect(kpis.totalVentas).toBe(125);
+    expect(kpis.comprobantes).toBe(2);
+    expect(kpis.porMetodo).toMatchObject({ EFECTIVO: 40, YAPE: 60, TARJETA: 25 });
+  });
 });

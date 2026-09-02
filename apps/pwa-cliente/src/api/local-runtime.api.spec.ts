@@ -6,9 +6,9 @@ describe('localRuntimeApi', () => {
   beforeEach(() => vi.restoreAllMocks());
 
   it('consulta la dirección pública sin enviar secretos', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ url: 'http://la-barra-del-ceviche.local:3210' }) });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ url: 'http://192.168.100.5:3210' }) });
     vi.stubGlobal('fetch', fetchMock);
-    await expect(localRuntimeApi.info()).resolves.toMatchObject({ url: 'http://la-barra-del-ceviche.local:3210' });
+    await expect(localRuntimeApi.info()).resolves.toMatchObject({ url: 'http://192.168.100.5:3210' });
     expect(fetchMock).toHaveBeenCalledWith('/local-info', expect.any(Object));
   });
 

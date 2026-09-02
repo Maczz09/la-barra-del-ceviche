@@ -21,6 +21,7 @@ describe('AppService — Facturación', () => {
     empresa: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
+      count: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -31,13 +32,21 @@ describe('AppService — Facturación', () => {
     encriptar: jest.fn((buf: Buffer) => Buffer.concat([Buffer.from('enc:'), buf])),
     encriptarTexto: jest.fn((texto: string) => `enc:${texto}`),
   };
+  const certificado = { invalidarSlot: jest.fn() };
+  const soap = { invalidarRuc: jest.fn() };
 
   let service: AppService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    prisma.empresa.count.mockResolvedValue(0);
     crypto.configurada.mockReturnValue(true);
-    service = new AppService(prisma as unknown as PrismaService, crypto as unknown as CredencialesCryptoService);
+    service = new AppService(
+      prisma as unknown as PrismaService,
+      crypto as unknown as CredencialesCryptoService,
+      certificado as never,
+      soap as never,
+    );
   });
 
   describe('registrarComprobantePago', () => {
@@ -212,14 +221,27 @@ describe('AppService — Facturación', () => {
       expect(resultado).toEqual({ id: 'e-nueva', slot: 1, ruc: dto.ruc, razonSocial: dto.razonSocial, activo: true });
     });
 
-    it('rechaza si la sede pedida ya tiene otra empresa enlazada', async () => {
-      prisma.empresa.findUnique.mockImplementation(({ where }) =>
-        Promise.resolve(where.sedeId ? { id: 'e-otra', sedeId: 'sede-1' } : null),
-      );
+    it('rechaza si la sede pedida ya tiene los dos RUC enlazados', async () => {
+      prisma.empresa.findUnique.mockResolvedValue(null);
+      prisma.empresa.count.mockResolvedValue(2);
       await expect(
         service.crearEmpresa({ ...dto, sedeId: 'sede-1' }, pfxBuffer),
-      ).rejects.toThrow(/ya tiene una empresa emisora enlazada/);
+      ).rejects.toThrow(/2 RUC emisores/);
       expect(prisma.empresa.create).not.toHaveBeenCalled();
+    });
+
+    it('permite enlazar el segundo RUC a la misma sede', async () => {
+      prisma.empresa.findUnique.mockResolvedValue(null);
+      prisma.empresa.count.mockResolvedValue(1);
+      prisma.empresa.findMany.mockResolvedValue([{ slot: 1 }]);
+      (extraerClavesDesdePfx as jest.Mock).mockReturnValue({ privateKeyPem: 'pem', certPem: 'pem' });
+      prisma.empresa.create.mockImplementation(({ data }) => ({ id: 'e-2', ...data }));
+
+      await service.crearEmpresa({ ...dto, sedeId: 'sede-1' }, pfxBuffer);
+
+      expect(prisma.empresa.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sedeId: 'sede-1', slot: 2 }) }),
+      );
     });
 
     it('guarda la sede cuando viene y no está ocupada', async () => {
@@ -260,7 +282,7 @@ describe('AppService — Facturación', () => {
   });
 
   describe('actualizarEmpresa', () => {
-    const empresaExistente = { id: 'e-1', ruc: '20123456786', razonSocial: 'Empresa Demo S.A.C.', activo: true };
+    const empresaExistente = { id: 'e-1', slot: 1, ruc: '20123456786', razonSocial: 'Empresa Demo S.A.C.', activo: true };
 
     it('lanza NotFoundException si la empresa no existe', async () => {
       prisma.empresa.findUnique.mockResolvedValue(null);
@@ -279,6 +301,8 @@ describe('AppService — Facturación', () => {
         data: { razonSocial: 'Nuevo nombre' },
         select: expect.objectContaining({ id: true, solUsuario: true }) as unknown,
       });
+      expect(certificado.invalidarSlot).toHaveBeenCalledWith(1);
+      expect(soap.invalidarRuc).toHaveBeenCalledWith('20123456786');
       expect(crypto.encriptarTexto).not.toHaveBeenCalled();
     });
 
@@ -348,11 +372,10 @@ describe('AppService — Facturación', () => {
       );
     });
 
-    it('rechaza si la sede pedida ya tiene OTRA empresa enlazada', async () => {
-      prisma.empresa.findUnique.mockImplementation(({ where }) =>
-        Promise.resolve(where.id ? empresaExistente : { id: 'e-otra', sedeId: 'sede-1' }),
-      );
-      await expect(service.actualizarEmpresa('e-1', { sedeId: 'sede-1' })).rejects.toThrow(/ya tiene una empresa emisora enlazada/);
+    it('rechaza si la sede pedida ya tiene otros dos RUC enlazados', async () => {
+      prisma.empresa.findUnique.mockResolvedValue(empresaExistente);
+      prisma.empresa.count.mockResolvedValue(2);
+      await expect(service.actualizarEmpresa('e-1', { sedeId: 'sede-1' })).rejects.toThrow(/2 RUC emisores/);
       expect(prisma.empresa.update).not.toHaveBeenCalled();
     });
 

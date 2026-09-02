@@ -6,7 +6,7 @@ import { queryClient } from '../../api/queryClient';
 import { MESAS_QUERY_KEY } from './useMesasQuery';
 import { PEDIDOS_QUERY_KEY } from './usePedidosQuery';
 import { CAJA_QUERY_KEY } from './useCajaQuery';
-import type { DividirCuentaPayload, RegistrarPagoPayload } from '../../types/cuenta.types';
+import type { DividirCuentaPayload, RegistrarPagoCombinadoPayload, RegistrarPagoPayload } from '../../types/cuenta.types';
 import { primerMensaje } from '../../utils/feedback';
 
 export const CUENTAS_QUERY_KEY = ['cuentas'];
@@ -59,6 +59,16 @@ export function useCuentasQuery(mesaId?: string) {
     },
   });
 
+  const mutationRegistrarPagoCombinado = useMutation({
+    mutationFn: (payload: RegistrarPagoCombinadoPayload) => cuentasApi.registrarPagoCombinado(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: CUENTAS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: MESAS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: PEDIDOS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: CAJA_QUERY_KEY });
+    },
+  });
+
   const mutationCerrar = useMutation({
     mutationFn: async ({ id, descuento }: { id: string; descuento?: number }) => {
       return cuentasApi.cerrar(id, { descuento });
@@ -79,8 +89,8 @@ export function useCuentasQuery(mesaId?: string) {
 
   return {
     cuentaActiva: query.data ?? null,
-    loading: query.isLoading || mutationAbrir.isPending || mutationRegistrarPago.isPending || mutationCerrar.isPending,
-    error: query.isError ? (query.error as Error).message : mutationAbrir.error?.message || mutationRegistrarPago.error?.message || mutationCerrar.error?.message || null,
+    loading: query.isLoading || mutationAbrir.isPending || mutationRegistrarPago.isPending || mutationRegistrarPagoCombinado.isPending || mutationCerrar.isPending,
+    error: query.isError ? (query.error as Error).message : mutationAbrir.error?.message || mutationRegistrarPago.error?.message || mutationRegistrarPagoCombinado.error?.message || mutationCerrar.error?.message || null,
     // T-04: distingue "no se pudo cargar la cuenta" (recuperable con refetch)
     // de un fallo de mutación (pagar/abrir/cerrar) — refetch no reintenta eso.
     queryError: query.isError,
@@ -90,6 +100,7 @@ export function useCuentasQuery(mesaId?: string) {
       // "cierre de cuenta en proceso" (degradación honesta de caja). Reflejamos
       // su mensaje real cuando viene; si no, el genérico de siempre.
       [mutationRegistrarPago.isSuccess, mutationRegistrarPago.data?.message ?? 'Pago registrado correctamente.'],
+      [mutationRegistrarPagoCombinado.isSuccess, mutationRegistrarPagoCombinado.data?.message ?? 'Pago combinado registrado correctamente.'],
       [mutationCerrar.isSuccess, mutationCerrar.data?.message],
     ),
     ticket: mutationRegistrarPago.data?.ticket ?? mutationCerrar.data?.ticket ?? null,
@@ -108,6 +119,7 @@ export function useCuentasQuery(mesaId?: string) {
     registrarPago: async (payload: RegistrarPagoPayload) => {
       return mutationRegistrarPago.mutateAsync(payload);
     },
+    registrarPagoCombinado: (payload: RegistrarPagoCombinadoPayload) => mutationRegistrarPagoCombinado.mutateAsync(payload),
     cerrar: async (descuento = 0) => {
       if (query.data?.id) {
         await mutationCerrar.mutateAsync({ id: query.data.id, descuento });
@@ -121,6 +133,7 @@ export function useCuentasQuery(mesaId?: string) {
     clearFeedback: () => {
       mutationAbrir.reset();
       mutationRegistrarPago.reset();
+      mutationRegistrarPagoCombinado.reset();
       mutationCerrar.reset();
       mutationDividir.reset();
     },

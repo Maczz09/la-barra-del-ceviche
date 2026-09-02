@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { CobroMesaDrawer } from './CobroMesaDrawer';
+import { CobroMesaDrawer, construirTramosPago } from './CobroMesaDrawer';
 import { useCuentasQuery } from '../../hooks/queries/useCuentasQuery';
 import { useSedeActualQuery } from '../../hooks/queries/useSedesQuery';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
@@ -65,6 +65,33 @@ const mockCuenta = {
     }
   ]
 };
+
+describe('construirTramosPago', () => {
+  it('cuadra base y propina por método sin perder céntimos', () => {
+    const tramos = construirTramosPago({
+      EFECTIVO: '40', TARJETA: '35.55', YAPE: '30', PLIN: '', TRANSFERENCIA: '',
+    }, 100.55, 5);
+    expect(tramos.map((tramo) => tramo.metodo)).toEqual(['EFECTIVO', 'TARJETA', 'YAPE']);
+    expect(tramos.reduce((suma, tramo) => suma + tramo.total, 0)).toBeCloseTo(105.55, 2);
+    expect(tramos.reduce((suma, tramo) => suma + tramo.monto, 0)).toBeCloseTo(100.55, 2);
+    expect(tramos.reduce((suma, tramo) => suma + tramo.propina, 0)).toBeCloseTo(5, 2);
+  });
+
+  it('rechaza una distribución que no coincide con el total', () => {
+    expect(construirTramosPago({
+      EFECTIVO: '40', TARJETA: '30', YAPE: '', PLIN: '', TRANSFERENCIA: '',
+    }, 100, 0)).toEqual([]);
+  });
+
+  it('exige dos métodos reales y no deja que la propina absorba un tramo', () => {
+    expect(construirTramosPago({
+      EFECTIVO: '100', TARJETA: '', YAPE: '', PLIN: '', TRANSFERENCIA: '',
+    }, 100, 0)).toEqual([]);
+    expect(construirTramosPago({
+      EFECTIVO: '50', TARJETA: '50.01', YAPE: '', PLIN: '', TRANSFERENCIA: '',
+    }, 0.01, 100)).toEqual([]);
+  });
+});
 
 describe('CobroMesaDrawer', () => {
   beforeEach(() => {
@@ -144,7 +171,7 @@ describe('CobroMesaDrawer', () => {
     fireEvent.change(inputs[1], { target: { value: '5' } });
     
     // Keypad C
-    const recibidoInput = screen.getByLabelText('Recibido') as HTMLInputElement;
+    const recibidoInput = screen.getByLabelText(/Recibido en efectivo/) as HTMLInputElement;
     fireEvent.click(screen.getByText('C'));
     
     // Keypad 100
@@ -170,6 +197,38 @@ describe('CobroMesaDrawer', () => {
       expect(onPaid).toHaveBeenCalled();
       expect(onClose).toHaveBeenCalled();
     });
+  });
+
+  it('combina dos métodos y registra cada tramo en la cascada de caja', async () => {
+    const registrarPago = vi.fn();
+    const registrarPagoCombinado = vi.fn().mockResolvedValue({
+      pendiente: 0,
+      transaccion: { id: 'tx-2', metodo: 'TARJETA' },
+      transacciones: [{ id: 'tx-1', metodo: 'EFECTIVO' }, { id: 'tx-2', metodo: 'TARJETA' }],
+    });
+    vi.mocked(useCuentasQuery).mockReturnValue({
+      cuentaActiva: mockCuenta, loading: false, error: null, success: null,
+      registrarPago, registrarPagoCombinado, clearFeedback: vi.fn(), refetchCuenta: vi.fn(),
+    } as any);
+    const onClose = vi.fn();
+
+    render(<CobroMesaDrawer mesaId="mesa1" mesaNumero="12" onClose={onClose} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Combinar métodos' }));
+    fireEvent.change(screen.getByLabelText('Monto Efectivo'), { target: { value: '40' } });
+    fireEvent.change(screen.getByLabelText('Monto Tarjeta'), { target: { value: '60' } });
+    fireEvent.click(screen.getByRole('button', { name: /Registrar pago y cerrar cuenta/i }));
+
+    await waitFor(() => expect(registrarPagoCombinado).toHaveBeenCalledTimes(1));
+    expect(registrarPagoCombinado).toHaveBeenCalledWith(expect.objectContaining({
+      cuentaId: 'cuenta1',
+      pagos: [
+        { metodo: 'EFECTIVO', monto: 40, propina: 0 },
+        { metodo: 'TARJETA', monto: 60, propina: 0 },
+      ],
+      notas: 'Pago combinado · EFECTIVO + TARJETA',
+    }));
+    expect(registrarPago).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
   });
 
   it('muestra la boleta interna imprimible cuando el pago devuelve un ticket, en vez de cerrar de una', async () => {
@@ -221,7 +280,7 @@ describe('CobroMesaDrawer', () => {
 
     await waitFor(() => {
       expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Caja cerrada: pago en espera', kind: 'warn' }));
-      expect(onPaid).toHaveBeenCalled();
+      expect(onPaid).not.toHaveBeenCalled();
       expect(onClose).toHaveBeenCalled();
     });
     expect(screen.queryByText('Boleta de venta')).not.toBeInTheDocument();
@@ -234,12 +293,12 @@ describe('CobroMesaDrawer', () => {
     fireEvent.click(screen.getByText('Yape'));
     
     // Keypad is not there for Yape
-    expect(screen.queryByText('Recibido')).toBeNull();
+    expect(screen.queryByText(/Recibido en efectivo/)).toBeNull();
     
     // Change back to Efectivo
     fireEvent.click(screen.getByText('Efectivo'));
     
-    const input = screen.getByLabelText('Recibido') as HTMLInputElement;
+    const input = screen.getByLabelText(/Recibido en efectivo/) as HTMLInputElement;
     fireEvent.change(input, { target: { value: '50' } }); // 50 < 100 total
     
     expect(screen.getByText(/El monto recibido es menor al total./i)).toBeDefined();

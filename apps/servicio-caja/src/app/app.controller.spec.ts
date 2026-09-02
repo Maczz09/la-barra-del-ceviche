@@ -12,6 +12,7 @@ describe('AppController — Caja', () => {
   beforeEach(() => {
     service = {
       registrarPago: jest.fn().mockResolvedValue({ ok: true }),
+      registrarPagoCombinado: jest.fn().mockResolvedValue({ ok: true, transacciones: [] }),
       listarTransacciones: jest.fn().mockResolvedValue({ data: [] }),
       listarTurnos: jest.fn().mockResolvedValue({ data: [], nextCursor: null }),
       abrirTurno: jest.fn().mockResolvedValue({ id: 'turno-1' }),
@@ -44,6 +45,25 @@ describe('AppController — Caja', () => {
     const body = { cuentaId: 'c-1', montoRecibido: 50, metodo: 'EFECTIVO' } as any;
     await expect(controller.registrarPago(body, 'svc-caja', null, null, null)).resolves.toEqual({ ok: true });
     expect(service.registrarPago).toHaveBeenCalledWith(body, 'svc-caja', 'svc-caja', null);
+  });
+
+  it('registrarPagoCombinado delega el grupo completo y la identidad del cajero', async () => {
+    const body = {
+      cuentaId: 'c-1',
+      pagos: [
+        { metodo: 'EFECTIVO', monto: 20 },
+        { metodo: 'YAPE', monto: 30 },
+      ],
+    } as any;
+
+    await controller.registrarPagoCombinado(body, 'u-1', 'Cajero Uno', null, 'sede-001');
+
+    expect(service.registrarPagoCombinado).toHaveBeenCalledWith(
+      body,
+      'u-1',
+      'Cajero Uno',
+      'sede-001',
+    );
   });
 
   it('listarTurnos delega el query (historial de cierres)', async () => {

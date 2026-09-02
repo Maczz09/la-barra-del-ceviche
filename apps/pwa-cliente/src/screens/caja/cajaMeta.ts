@@ -49,7 +49,11 @@ export function computeKpis(movs: MovimientoCajaDto[], efectivoEsperado = 0): Ca
     return acc;
   }, {} as Record<MetodoPagoCaja, number>);
 
-  const comprobantes = ventas.length;
+  // Un pago combinado genera una operación por método, pero corresponde a
+  // una sola cuenta cobrada. Los movimientos históricos sin cuentaId se
+  // conservan como comprobantes independientes para no ocultar datos previos.
+  const comprobantes = new Set(ventas.map((venta) => venta.cuentaId).filter(Boolean)).size
+    + ventas.filter((venta) => !venta.cuentaId).length;
   const pendientes = 0;
 
   return { ventas, totalVentas, totalIngresos, totalEgresos, propinas, porMetodo, comprobantes, pendientes, efectivoEsperado };

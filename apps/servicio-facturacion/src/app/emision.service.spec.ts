@@ -56,4 +56,17 @@ describe('EmisionService — sede (T-23 Fase 2)', () => {
       service.emitir('c-1', { tipoComprobante: 'BOLETA', empresaRuc: '20123456789' } as never, null),
     ).rejects.toThrow('no está configurada');
   });
+
+  it('rechaza un RUC enlazado a otra sede aunque el usuario sea admin general', async () => {
+    prisma.comprobantePago.findUnique.mockResolvedValue({
+      id: 'cp-1', cuentaId: 'c-1', sedeId: 'sede-001', estado: 'DISPONIBLE',
+    });
+    prisma.empresa.findUnique.mockResolvedValue({
+      id: 'e-2', ruc: '20999999999', sedeId: 'sede-002', activo: true,
+    });
+
+    await expect(
+      service.emitir('c-1', { tipoComprobante: 'BOLETA', empresaRuc: '20999999999' } as never, null),
+    ).rejects.toThrow(/debe estar enlazado a la sede/);
+  });
 });

@@ -76,16 +76,16 @@ function ScreenLoading() {
         <div className="skel loading-action" />
       </div>
       <div className="loading-grid">
-        {Array.from({ length: 4 }).map((_) => (
-          <div className="stat" key={crypto.randomUUID()}>
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div className="stat" key={`loading-stat-${index}`}>
             <div className="skel stat-skel-title" />
             <div className="skel stat-skel-value" />
           </div>
         ))}
       </div>
       <div className="panel loading-panel">
-        {Array.from({ length: 5 }).map((_) => (
-          <div className="skeleton-row" key={crypto.randomUUID()}>
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div className="skeleton-row" key={`loading-row-${index}`}>
             <div className="skel" />
           </div>
         ))}

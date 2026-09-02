@@ -23,6 +23,12 @@ interface ToastContextValue {
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
+let toastSequence = 0;
+
+function nextToastId(): string {
+  toastSequence += 1;
+  return `toast-${Date.now()}-${toastSequence}`;
+}
 
 const sinToast = (prev: ToastItem[], id: string) => prev.filter((t) => t.id !== id);
 
@@ -70,7 +76,10 @@ export function ToastProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const toast = useCallback((opts: ToastOptions) => {
-    const id = crypto.randomUUID();
+    // randomUUID no está disponible en varios navegadores cuando la PWA se
+    // abre por HTTP usando la IP LAN. Un identificador local incremental es
+    // suficiente para las claves efímeras de los avisos.
+    const id = nextToastId();
     setToasts((prev) => [...prev, { ...opts, id }]);
     setTimeout(() => {
       setToasts((prev) => sinToast(prev, id));

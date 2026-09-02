@@ -16,8 +16,7 @@ import type { SedeDto } from '../../types/sede.types';
 interface Props {
   guardando: boolean;
   error: string | null;
-  // Solo sedes que todavía no tienen otra empresa enlazada — una sede no
-  // puede emitir con dos empresas distintas (ver AppService.crearEmpresa).
+  // Sedes con menos de dos RUC enlazados (ver AppService.crearEmpresa).
   sedesDisponibles: SedeDto[];
   onGuardar: (payload: CrearEmpresaPayload) => Promise<unknown>;
   onClose: () => void;
@@ -123,7 +122,7 @@ export function ConfigurarEmpresaModal({ guardando, error, sedesDisponibles, onG
                 </select>
               </div>
               {sedesDisponibles.length === 0 && (
-                <span className="hint">Todas las sedes ya tienen una empresa emisora enlazada.</span>
+                <span className="hint">Todas las sedes ya tienen sus dos RUC emisores enlazados.</span>
               )}
             </div>
           </div>

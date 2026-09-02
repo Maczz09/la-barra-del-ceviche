@@ -10,6 +10,7 @@ import {
   CerrarTurnoCajaCommand,
   CrearMovimientoCajaCommand,
   PagarCuentaCajaCommand,
+  PagarCuentaCombinadoCommand,
   RegistrarArqueoCajaCommand,
 } from './caja.dto';
 
@@ -33,6 +34,23 @@ export class AppController {
     @UsuarioActual('sedeId') usuarioSedeId: string | null,
   ) {
     return this.appService.registrarPago(
+      body,
+      usuarioId,
+      usuarioNombre ?? usuarioEmail ?? usuarioId,
+      usuarioSedeId,
+    );
+  }
+
+  @UseInterceptors(IdempotencyInterceptor)
+  @Post('pagos/combinado')
+  registrarPagoCombinado(
+    @Body() body: PagarCuentaCombinadoCommand,
+    @UsuarioActual() usuarioId: string | null,
+    @UsuarioActual('nombre') usuarioNombre: string | null,
+    @UsuarioActual('email') usuarioEmail: string | null,
+    @UsuarioActual('sedeId') usuarioSedeId: string | null,
+  ) {
+    return this.appService.registrarPagoCombinado(
       body,
       usuarioId,
       usuarioNombre ?? usuarioEmail ?? usuarioId,

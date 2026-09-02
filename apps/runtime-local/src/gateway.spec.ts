@@ -1,5 +1,5 @@
 import type http from 'node:http';
-import { closeHttpServer, resolveServiceProxy } from './gateway';
+import { closeHttpServer, resolveServiceProxy, sanitizeInternalProxyHeaders } from './gateway';
 
 describe('resolveServiceProxy', () => {
   it('acepta las rutas originales que ya usa la PWA', () => {
@@ -19,6 +19,17 @@ describe('resolveServiceProxy', () => {
   it('no confunde recursos estáticos con microservicios', () => {
     expect(resolveServiceProxy('/assets/index.js')).toBeUndefined();
     expect(resolveServiceProxy('/brand/logo-principal.png')).toBeUndefined();
+  });
+});
+
+describe('sanitizeInternalProxyHeaders', () => {
+  it('elimina el Origin LAN antes de reenviar al backend privado', () => {
+    const headers = { origin: 'http://192.168.50.20:3210', authorization: 'Bearer token' };
+
+    sanitizeInternalProxyHeaders(headers);
+
+    expect(headers).not.toHaveProperty('origin');
+    expect(headers.authorization).toBe('Bearer token');
   });
 });
 

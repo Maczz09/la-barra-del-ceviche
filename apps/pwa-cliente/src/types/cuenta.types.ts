@@ -108,6 +108,19 @@ export interface RegistrarPagoPayload {
   tipoComprobante?: TipoComprobante;
   /** DNI (boleta) o RUC (factura) del cliente. Opcional, informativo — no es el comprobante SUNAT. */
   clienteDocumento?: string;
+  /** Traza visible en operaciones/caja; se usa para identificar cada tramo de un pago combinado. */
+  notas?: string;
+}
+
+export interface RegistrarPagoCombinadoPayload {
+  cuentaId: string;
+  pagos: Array<{ metodo: MetodoPago; monto: number; propina?: number }>;
+  descuento?: number;
+  mesaNumero?: string;
+  mesaUnidaCon?: string;
+  tipoComprobante?: TipoComprobante;
+  clienteDocumento?: string;
+  notas?: string;
 }
 
 export interface TransaccionDto {
@@ -132,6 +145,8 @@ export interface RegistrarPagoResponse {
   // todavía.
   queued?: boolean;
   transaccion?: TransaccionDto;
+  /** Todos los tramos, cuando el cobro usó varios métodos. */
+  transacciones?: TransaccionDto[];
   ticket?: TicketDto;
   // Saldo que queda por cobrar de la cuenta tras este pago; 0 cuando el pago
   // (parcial o único) completó el total y la cuenta quedó cerrada.

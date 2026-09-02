@@ -6,7 +6,7 @@
 
 - Se conserva el monorepo Nx y los 11 microservicios como procesos y bases independientes.
 - Tauri 2 inicia y supervisa PostgreSQL portable, NATS JetStream, los servicios y el gateway/PWA.
-- La aplicación publica `http://la-barra-del-ceviche.local:3210`, muestra la IP alternativa y permite copiar/crear el QR.
+- La aplicación publica la URL IP de la laptop en el puerto fijo `3210` y permite copiarla o crear el QR.
 - El módulo **Servidor local** informa salud, dispositivos, red, impresora, respaldos y permite reiniciar cada servicio.
 - El primer arranque crea de forma local al administrador inicial.
 - Los pedidos `pedido.creado` generan una comanda durable; la impresión RAW de Windows evita duplicados por `eventId`, reintenta fallos y excluye ítems de despacho directo.
@@ -114,11 +114,11 @@ Esta opción requiere construir un supervisor, perfiles de infraestructura y emp
 
 Una aplicación no puede obligar por sí sola al router a entregar siempre la misma IP. La garantía real será una **reserva DHCP por MAC en el router**. El instalador detectará IP, MAC, adaptador y perfil de red, y el módulo mostrará si la reserva está pendiente o validada.
 
-1. Usar un puerto fijo, propuesto `3210`, y escuchar solo en red privada.
+1. Usar el puerto fijo `3210` y aceptar conexiones LAN; el firewall limita el acceso a la subred local.
 2. Crear la regla de Windows Firewall durante la instalación.
 3. Reservar una IP para la laptop en el router del restaurante.
 4. Generar un QR por sede con la ruta estable `http://IP-FIJA:3210/carta/<sedeId>`.
-5. Mantener `barra-ceviche.local` como alias mDNS de apoyo, no como única garantía.
+5. Mostrar y copiar únicamente la URL con IP, sin depender de nombres `.local` ni mDNS.
 6. Añadir un asistente que pruebe la URL desde otro dispositivo antes de dar el QR por definitivo.
 
 **Gate:** apagar y encender router y laptop; el mismo QR debe abrir la carta sin regenerarse.

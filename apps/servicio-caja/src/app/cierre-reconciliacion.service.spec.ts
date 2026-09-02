@@ -13,6 +13,11 @@ function makeService() {
   const prisma = {
     transaccion: {
       findMany: jest.fn().mockResolvedValue([{ cuentaId: 'c1' }]),
+      groupBy: jest.fn().mockResolvedValue([{
+        cuentaId: 'c1',
+        _sum: { monto: 100 },
+        _max: { descuento: 0, createdAt: new Date(Date.now() - 10 * 60 * 1000) },
+      }]),
     },
     cuentaAbierta: {
       findMany: jest.fn().mockResolvedValue([
@@ -55,6 +60,33 @@ describe('CierreReconciliacionService (H-2)', () => {
     await service.reconciliarCierresPendientes();
 
     expect(prisma.cuentaAbierta.findMany).not.toHaveBeenCalled();
+    expect(cuentasHttp.cerrarCuenta).not.toHaveBeenCalled();
+  });
+
+  it('un pago parcial viejo no cierra la cuenta con saldo pendiente', async () => {
+    const { service, prisma, cuentasHttp } = makeService();
+    prisma.transaccion.groupBy.mockResolvedValue([{
+      cuentaId: 'c1',
+      _sum: { monto: 40 },
+      _max: { descuento: 0, createdAt: new Date(Date.now() - 10 * 60 * 1000) },
+    }]);
+
+    await service.reconciliarCierresPendientes();
+
+    expect(cuentasHttp.cerrarCuenta).not.toHaveBeenCalled();
+    expect(prisma.cuentaAbierta.update).not.toHaveBeenCalled();
+  });
+
+  it('espera cinco minutos desde el último tramo, no desde el primero', async () => {
+    const { service, prisma, cuentasHttp } = makeService();
+    prisma.transaccion.groupBy.mockResolvedValue([{
+      cuentaId: 'c1',
+      _sum: { monto: 100 },
+      _max: { descuento: 0, createdAt: new Date() },
+    }]);
+
+    await service.reconciliarCierresPendientes();
+
     expect(cuentasHttp.cerrarCuenta).not.toHaveBeenCalled();
   });
 });

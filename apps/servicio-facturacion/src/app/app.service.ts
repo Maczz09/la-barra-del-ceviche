@@ -7,6 +7,8 @@ import { CredencialesCryptoService } from '../sunat/credenciales-crypto.service'
 import { extraerClavesDesdePfx } from '../sunat/certificado';
 import { CrearEmpresaDto } from './dto/crear-empresa.dto';
 import { ActualizarEmpresaDto } from './dto/actualizar-empresa.dto';
+import { CertificadoService } from '../sunat/certificado.service';
+import { SunatSoapClient } from '../sunat/sunat-soap.client';
 
 // Mismo límite que SunatConfigService: el mecanismo de credenciales por
 // variables de entorno solo conoce SUNAT_*_EMPRESA_1_* y _2_* — agregar un
@@ -37,6 +39,8 @@ export class AppService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: CredencialesCryptoService,
+    private readonly certificado: CertificadoService,
+    private readonly soap: SunatSoapClient,
   ) {}
 
   /**
@@ -136,6 +140,7 @@ export class AppService {
       take: 200,
       include: {
         comprobanteAfectado: { select: { tipo: true, serie: true, correlativo: true } },
+        empresa: { select: { ruc: true, razonSocial: true, nombreComercial: true, direccion: true } },
       },
     });
   }
@@ -177,9 +182,9 @@ export class AppService {
     }
 
     if (dto.sedeId) {
-      const sedeOcupada = await this.prisma.empresa.findUnique({ where: { sedeId: dto.sedeId } });
-      if (sedeOcupada) {
-        throw new ConflictException('Esa sede ya tiene una empresa emisora enlazada.');
+      const emisoresEnSede = await this.prisma.empresa.count({ where: { sedeId: dto.sedeId } });
+      if (emisoresEnSede >= 2) {
+        throw new ConflictException('Esa sede ya tiene los 2 RUC emisores permitidos.');
       }
     }
 
@@ -225,6 +230,9 @@ export class AppService {
       message: `Empresa ${dto.razonSocial} (RUC ${dto.ruc}) configurada en slot ${slot} vía formulario.`,
     } satisfies OperableLog);
 
+    this.certificado.invalidarSlot(slot);
+    this.soap.invalidarRuc(empresa.ruc);
+
     return empresa;
   }
 
@@ -266,9 +274,11 @@ export class AppService {
     }
 
     if (dto.sedeId !== undefined && dto.sedeId !== '') {
-      const sedeOcupada = await this.prisma.empresa.findUnique({ where: { sedeId: dto.sedeId } });
-      if (sedeOcupada && sedeOcupada.id !== id) {
-        throw new ConflictException('Esa sede ya tiene una empresa emisora enlazada.');
+      const otrosEmisoresEnSede = await this.prisma.empresa.count({
+        where: { sedeId: dto.sedeId, id: { not: id } },
+      });
+      if (otrosEmisoresEnSede >= 2) {
+        throw new ConflictException('Esa sede ya tiene los 2 RUC emisores permitidos.');
       }
     }
 
@@ -287,6 +297,11 @@ export class AppService {
     }
 
     const actualizada = await this.prisma.empresa.update({ where: { id }, data, select: EMPRESA_SELECT });
+
+    // Una renovación de PFX/Clave SOL debe tomar efecto en la siguiente
+    // emisión, sin obligar a reiniciar todo el restaurante.
+    this.certificado.invalidarSlot(empresa.slot);
+    this.soap.invalidarRuc(empresa.ruc);
 
     this.logger.log({
       operation: 'actualizarEmpresa',

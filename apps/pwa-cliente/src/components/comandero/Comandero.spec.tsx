@@ -3,7 +3,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { Comandero } from './Comandero';
+import { Comandero, groupCatalogProducts } from './Comandero';
 
 vi.mock('../../hooks/queries/useInventarioQuery', () => ({
   useInventarioQuery: () => ({
@@ -68,6 +68,14 @@ vi.mock('../ui/ToastProvider', () => ({
 }));
 
 describe('Comandero', () => {
+  it('agrupa los platos por categoría respetando el orden de los filtros', () => {
+    const arroz = { id: 'p1', categoriaNombre: 'Arroces' };
+    const ceviche = { id: 'p2', categoriaNombre: 'Ceviches' };
+    const grupos = groupCatalogProducts([arroz, ceviche], ['Ceviches', 'Arroces']);
+    expect(grupos.map((grupo) => grupo.nombre)).toEqual(['Ceviches', 'Arroces']);
+    expect(grupos[0].productos).toEqual([ceviche]);
+  });
+
   it('debe renderizar el título de Nuevo pedido', () => {
     render(<Comandero onClose={vi.fn()} />);
     expect(screen.getByText('Nuevo pedido')).toBeInTheDocument();

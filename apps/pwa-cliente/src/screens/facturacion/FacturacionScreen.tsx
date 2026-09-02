@@ -78,21 +78,27 @@ export function FacturacionScreen() {
   const [editarEmpresa, setEditarEmpresa] = useState<EmpresaDto | null>(null);
 
   const sedeNombrePorId = useMemo(() => new Map(sedes.map((s) => [s.id, s.nombre])), [sedes]);
-  // Una sede no puede tener dos empresas emisoras — "libre" = ninguna
-  // empresa ya la tiene enlazada (o es la propia empresa que se está
-  // editando, para no bloquearse a sí misma al reabrir el modal).
-  const sedesConEmpresa = useMemo(
-    () => new Set(empresas.filter((e) => e.sedeId).map((e) => e.sedeId as string)),
-    [empresas],
-  );
+  // Cada sede puede tener hasta dos RUC emisores. Contamos las empresas
+  // enlazadas para permitir el segundo RUC e impedir un tercero.
+  const empresasPorSede = useMemo(() => {
+    const conteo = new Map<string, number>();
+    empresas.forEach((empresa) => {
+      if (empresa.sedeId) conteo.set(empresa.sedeId, (conteo.get(empresa.sedeId) ?? 0) + 1);
+    });
+    return conteo;
+  }, [empresas]);
   const sedesLibresParaCrear = useMemo(
-    () => sedes.filter((s) => s.activa && !sedesConEmpresa.has(s.id)),
-    [sedes, sedesConEmpresa],
+    () => sedes.filter((s) => s.activa && (empresasPorSede.get(s.id) ?? 0) < 2),
+    [sedes, empresasPorSede],
   );
   const sedesDisponiblesParaEditar = useMemo(() => {
     if (!editarEmpresa) return [];
-    return sedes.filter((s) => s.activa && (!sedesConEmpresa.has(s.id) || s.id === editarEmpresa.sedeId));
-  }, [sedes, sedesConEmpresa, editarEmpresa]);
+    return sedes.filter((s) => {
+      if (!s.activa) return false;
+      const otras = (empresasPorSede.get(s.id) ?? 0) - (editarEmpresa.sedeId === s.id ? 1 : 0);
+      return otras < 2;
+    });
+  }, [sedes, empresasPorSede, editarEmpresa]);
 
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
@@ -144,6 +150,7 @@ export function FacturacionScreen() {
   const [clienteRazonSocial, setClienteRazonSocial] = useState('');
   const [clienteDni, setClienteDni] = useState('');
   const [clienteNombre, setClienteNombre] = useState('');
+  const [empresaRucSeleccionada, setEmpresaRucSeleccionada] = useState('');
   const modalRef = useRef<HTMLDialogElement>(null);
 
   const cerrarModal = () => setEmitir(null);
@@ -212,8 +219,14 @@ export function FacturacionScreen() {
   // listarEmpresas() ahora devuelve activas e inactivas (para poder
   // reactivarlas/editarlas) — el selector de emisión solo considera activas.
   const empresasActivas = useMemo(() => empresas.filter((e) => e.activo), [empresas]);
-  const empresaUnica = empresasActivas.length === 1 ? empresasActivas[0] : null;
-  const puedeEmitir = empresasActivas.length > 0;
+  const puedeEmitir = empresasActivas.some((empresa) => !!empresa.sedeId);
+  const puedeEmitirVenta = (venta: ComprobantePagoDto) =>
+    empresasActivas.some((empresa) => empresa.sedeId === venta.sedeId);
+  const emisoresParaVenta = useMemo(() => {
+    if (!emitir) return [];
+    return empresasActivas.filter((empresa) => empresa.sedeId === emitir.sedeId);
+  }, [empresasActivas, emitir]);
+  const empresaSeleccionada = emisoresParaVenta.find((empresa) => empresa.ruc === empresaRucSeleccionada) ?? null;
 
   const abrirEmision = (c: ComprobantePagoDto) => {
     setEmitir(c);
@@ -222,10 +235,12 @@ export function FacturacionScreen() {
     setClienteRazonSocial('');
     setClienteDni('');
     setClienteNombre('');
+    const emisores = empresasActivas.filter((empresa) => empresa.sedeId === c.sedeId);
+    setEmpresaRucSeleccionada(emisores[0]?.ruc ?? '');
   };
 
   const confirmarEmision = async () => {
-    if (!emitir || !empresaUnica) return;
+    if (!emitir || !empresaSeleccionada) return;
     if (tipo === 'FACTURA' && clienteRuc.trim().length !== 11) {
       toast({ title: 'RUC inválido', msg: 'La factura electrónica exige un RUC de 11 dígitos.', icon: 'Alert', kind: 'err' });
       return;
@@ -233,7 +248,7 @@ export function FacturacionScreen() {
     try {
       await emitirComprobante(emitir.cuentaId, {
         tipoComprobante: tipo,
-        empresaRuc: empresaUnica.ruc,
+        empresaRuc: empresaSeleccionada.ruc,
         clienteRuc: tipo === 'FACTURA' ? clienteRuc.trim() : undefined,
         clienteRazonSocial: tipo === 'FACTURA' ? clienteRazonSocial.trim() || undefined : undefined,
         clienteDni: tipo === 'BOLETA' ? clienteDni.trim() || undefined : undefined,
@@ -436,7 +451,7 @@ export function FacturacionScreen() {
                         </button>
                         <button
                           className="btn btn-sm btn-primary"
-                          disabled={!online || !puedeEmitir}
+                          disabled={!online || !puedeEmitirVenta(c)}
                           onClick={() => abrirEmision(c)}
                         >
                           Emitir
@@ -644,11 +659,25 @@ export function FacturacionScreen() {
               <button className="icon-btn" onClick={cerrarModal} aria-label="Cerrar"><Icons.Close s={17} /></button>
             </div>
             <div className="modal-scroll" style={{ padding: '18px 20px' }}>
-              {empresaUnica && (
-                <div className="hint" style={{ marginBottom: 12 }}>
-                  Emisor: {empresaUnica.razonSocial} · RUC {empresaUnica.ruc}
+              <div className="field" style={{ marginBottom: 12 }}>
+                <label htmlFor="fact-emisor">RUC emisor</label>
+                <div className="input">
+                  <select
+                    id="fact-emisor"
+                    value={empresaRucSeleccionada}
+                    onChange={(e) => setEmpresaRucSeleccionada(e.target.value)}
+                  >
+                    {emisoresParaVenta.map((empresa) => (
+                      <option key={empresa.id} value={empresa.ruc}>
+                        {empresa.razonSocial} · RUC {empresa.ruc}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              )}
+                {emisoresParaVenta.length === 0 && (
+                  <div className="hint" style={{ marginTop: 6 }}>No hay un RUC activo habilitado para esta sede.</div>
+                )}
+              </div>
 
               <div className="row" style={{ gap: 6, marginBottom: 12 }}>
                 {([{ v: 'BOLETA', l: 'Boleta' }, { v: 'FACTURA', l: 'Factura' }] as { v: TipoComprobante; l: string }[]).map((c) => (
@@ -711,7 +740,7 @@ export function FacturacionScreen() {
               <span className="spacer" />
               <button
                 className="btn btn-primary"
-                disabled={emitiendo || !empresaUnica || (tipo === 'FACTURA' && clienteRuc.trim().length !== 11)}
+                disabled={emitiendo || !empresaSeleccionada || (tipo === 'FACTURA' && clienteRuc.trim().length !== 11)}
                 onClick={() => void confirmarEmision()}
               >
                 {emitiendo ? <span className="spinner" /> : <Icons.Check s={15} />} Emitir {tipo === 'FACTURA' ? 'factura' : 'boleta'}
@@ -737,6 +766,10 @@ export function FacturacionScreen() {
                   <span>{errorNota}</span>
                 </div>
               )}
+
+              <div className="hint" style={{ marginBottom: 12 }}>
+                RUC emisor: {notaPara.empresa.razonSocial} · {notaPara.empresa.ruc}. La nota conserva obligatoriamente el emisor del comprobante original.
+              </div>
 
               <div className="row" style={{ gap: 6, marginBottom: 12 }}>
                 {([{ v: 'NOTA_CREDITO', l: 'Nota de crédito' }, { v: 'NOTA_DEBITO', l: 'Nota de débito' }] as { v: TipoNota; l: string }[]).map((t) => (
@@ -923,7 +956,7 @@ export function FacturacionScreen() {
               {detalle.kind === 'disponible' && (
                 <button
                   className="btn btn-primary"
-                  disabled={!online || !puedeEmitir}
+                  disabled={!online || !puedeEmitirVenta(detalle.data)}
                   onClick={() => {
                     const c = detalle.data;
                     cerrarDetalle();

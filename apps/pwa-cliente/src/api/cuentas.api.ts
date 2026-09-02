@@ -9,6 +9,7 @@ import type {
   DividirCuentaPayload,
   DividirCuentaResponse,
   RegistrarPagoPayload,
+  RegistrarPagoCombinadoPayload,
   RegistrarPagoResponse,
 } from '../types/cuenta.types';
 
@@ -41,4 +42,9 @@ export function dividir(id: string, payload: DividirCuentaPayload): Promise<Divi
 /** POST /caja/pagos - Registrar pago en caja */
 export function registrarPago(payload: RegistrarPagoPayload): Promise<RegistrarPagoResponse> {
   return client.post<RegistrarPagoResponse>('/caja/pagos', payload);
+}
+
+/** POST atómico: todos los métodos se guardan o ninguno se guarda. */
+export function registrarPagoCombinado(payload: RegistrarPagoCombinadoPayload): Promise<RegistrarPagoResponse> {
+  return client.post<RegistrarPagoResponse>('/caja/pagos/combinado', payload);
 }

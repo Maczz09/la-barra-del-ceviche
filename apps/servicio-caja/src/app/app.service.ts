@@ -27,6 +27,7 @@ import {
   CerrarTurnoCajaCommand,
   CrearMovimientoCajaCommand,
   PagarCuentaCajaCommand,
+  PagarCuentaCombinadoCommand,
   RegistrarArqueoCajaCommand,
 } from './caja.dto';
 import { CuentasHttpClient, CuentaRemota } from './cuentas-http.client';
@@ -66,6 +67,38 @@ export class AppService {
 
   private money(value: number | string | Prisma.Decimal) {
     return new Prisma.Decimal(value);
+  }
+
+  /**
+   * Una cuenta dividida calcula su saldo desde el total original menos UN
+   * descuento. Permitir que una parte posterior cambie ese descuento mueve la
+   * meta mientras ya hay dinero registrado. Además de rechazar el cambio,
+   * detectamos datos históricos que ya tengan dos descuentos distintos para
+   * no seguir operando sobre un saldo ambiguo.
+   */
+  private validarDescuentoConsistente(
+    pagosPrevios: {
+      _min?: { descuento?: Prisma.Decimal | null };
+      _max?: { descuento?: Prisma.Decimal | null };
+    },
+    descuento: Prisma.Decimal,
+  ): void {
+    const minimo = pagosPrevios._min?.descuento;
+    const maximo = pagosPrevios._max?.descuento;
+    if (minimo == null && maximo == null) return;
+
+    const descuentoMinimo = this.money(minimo ?? maximo!);
+    const descuentoMaximo = this.money(maximo ?? minimo!);
+    if (!descuentoMinimo.equals(descuentoMaximo)) {
+      throw new BadRequestException(
+        'La cuenta tiene pagos previos con descuentos inconsistentes; revísala antes de continuar.',
+      );
+    }
+    if (!descuentoMinimo.equals(descuento)) {
+      throw new BadRequestException(
+        `El descuento debe mantenerse en ${descuentoMinimo.toFixed(2)} para todos los pagos de la cuenta.`,
+      );
+    }
   }
 
   async abrirTurno(
@@ -630,7 +663,10 @@ export class AppService {
       const pagosPrevios = await prisma.transaccion.aggregate({
         where: { cuentaId: command.cuentaId },
         _sum: { monto: true },
+        _min: { descuento: true },
+        _max: { descuento: true },
       });
+      this.validarDescuentoConsistente(pagosPrevios, descuento);
       const montoTotalPagado = this.money(pagosPrevios._sum.monto ?? 0);
       const montoPendienteAntes = Prisma.Decimal.max(new Prisma.Decimal(0), totalConDescuento.minus(montoTotalPagado));
 
@@ -684,7 +720,9 @@ export class AppService {
           donde: command.mesaNumero ? `Mesa ${command.mesaNumero}` : `Mesa ${cuenta.mesaId}`,
           metodo: command.metodo,
           monto: montoRecibido,
-          descuento,
+          // El descuento es de la cuenta, no de cada parte. Transaccion lo
+          // conserva como invariante; la cascada visual lo muestra una vez.
+          descuento: montoTotalPagado.isZero() ? descuento : new Prisma.Decimal(0),
           propina: this.money(command.propina ?? 0),
           motivo: command.notas,
           cuentaCorrelativo: cuentaRemota.correlativo ?? undefined,
@@ -758,6 +796,256 @@ export class AppService {
       ticket,
       turno: this.mapTurno(turno),
       pendiente: montoPendienteDespues.toNumber(),
+    };
+  }
+
+  /**
+   * Registra todos los medios de un pago combinado como una sola unidad de
+   * trabajo. No hace N llamadas a registrarPago: eso permitiría confirmar un
+   * método y fallar en el siguiente. Las transacciones, movimientos y eventos
+   * de todos los tramos se escriben en una única transacción PostgreSQL bajo el
+   * mismo advisory lock de la cuenta.
+   */
+  async registrarPagoCombinado(
+    command: PagarCuentaCombinadoCommand,
+    usuarioId?: string | null,
+    cajeroNombre?: string | null,
+    usuarioSedeId?: string | null,
+  ): Promise<{
+    message: string;
+    transacciones: TransaccionDto[];
+    transaccion: TransaccionDto;
+    ticket?: unknown;
+    turno: unknown;
+    pendiente: number;
+  }> {
+    if (!Array.isArray(command.pagos) || command.pagos.length < 2) {
+      throw new BadRequestException('Un pago combinado requiere al menos dos métodos de pago.');
+    }
+
+    const metodos = new Set(command.pagos.map((pago) => pago.metodo));
+    if (metodos.size !== command.pagos.length) {
+      throw new BadRequestException('Cada método debe aparecer una sola vez en el pago combinado.');
+    }
+
+    const pagos = command.pagos.map((pago) => ({
+      metodo: pago.metodo,
+      monto: this.money(pago.monto),
+      propina: this.money(pago.propina ?? 0),
+    }));
+    if (pagos.some((pago) => pago.monto.lessThanOrEqualTo(0) || pago.propina.lessThan(0))) {
+      throw new BadRequestException('Los montos deben ser mayores que cero y la propina no puede ser negativa.');
+    }
+    if (pagos.some((pago) => pago.monto.decimalPlaces() > 2 || pago.propina.decimalPlaces() > 2)) {
+      throw new BadRequestException('Los importes del pago combinado deben tener como máximo dos decimales.');
+    }
+
+    let cuentaRemota: CuentaRemota;
+    try {
+      cuentaRemota = await this.cuentasHttp.fetchCuenta(command.cuentaId);
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { status: number } };
+      if (axiosError.response?.status === 404) {
+        throw new NotFoundException(`Cuenta ${command.cuentaId} no encontrada.`);
+      }
+      throw new ServiceUnavailableException('No se pudo obtener la cuenta. Reintente.');
+    }
+
+    const sedeId = cuentaRemota.sedeId ?? SEDE_PRINCIPAL_ID;
+    if (usuarioSedeId && usuarioSedeId !== sedeId) {
+      throw new ForbiddenException('La cuenta pertenece a otra sede.');
+    }
+
+    const turno = await this.prisma.turnoCaja.findFirst({
+      where: { estado: 'ABIERTA', sedeId },
+      orderBy: { abiertoAt: 'desc' },
+    });
+    if (!turno) {
+      // Sin una entidad de cola grupal no existe forma de prometer atomicidad:
+      // varias filas PagoPendiente podrían procesarse solo en parte. Es más
+      // seguro rechazar antes de escribir cualquier tramo.
+      throw new BadRequestException(
+        'Abre un turno de caja antes de registrar un pago combinado; no se guardó ningún cobro.',
+      );
+    }
+
+    const descuento = this.money(command.descuento ?? 0);
+    if (descuento.lessThan(0) || descuento.decimalPlaces() > 2) {
+      throw new BadRequestException('El descuento debe ser positivo y tener como máximo dos decimales.');
+    }
+    const totalConDescuento = Prisma.Decimal.max(
+      new Prisma.Decimal(0),
+      this.money(cuentaRemota.total).minus(descuento),
+    );
+    const totalPagoCombinado = pagos.reduce(
+      (total, pago) => total.plus(pago.monto),
+      new Prisma.Decimal(0),
+    );
+
+    const resultado = await this.prisma.$transaction(async (prisma: import('../generated/prisma').Prisma.TransactionClient) => {
+      await prisma.$executeRaw`SELECT pg_advisory_xact_lock(1234, ('x' || substr(md5(${command.cuentaId}), 1, 8))::bit(32)::int)`;
+
+      const cuenta = await prisma.cuentaAbierta.upsert({
+        where: { cuentaId: command.cuentaId },
+        create: {
+          cuentaId: cuentaRemota.id,
+          mesaId: cuentaRemota.mesaId,
+          sedeId,
+          total: cuentaRemota.total,
+          estado: cuentaRemota.estado,
+        },
+        update: {
+          total: cuentaRemota.total,
+          estado: cuentaRemota.estado,
+          mesaId: cuentaRemota.mesaId,
+          sedeId,
+        },
+      });
+
+      if (cuenta.estado !== 'ABIERTA') {
+        throw new BadRequestException(`La cuenta ya está ${cuenta.estado.toLowerCase()}.`);
+      }
+
+      const pagosPrevios = await prisma.transaccion.aggregate({
+        where: { cuentaId: command.cuentaId },
+        _sum: { monto: true },
+        _min: { descuento: true },
+        _max: { descuento: true },
+      });
+      this.validarDescuentoConsistente(pagosPrevios, descuento);
+
+      const montoTotalPagado = this.money(pagosPrevios._sum.monto ?? 0);
+      const montoPendienteAntes = Prisma.Decimal.max(
+        new Prisma.Decimal(0),
+        totalConDescuento.minus(montoTotalPagado),
+      );
+      if (montoPendienteAntes.lessThanOrEqualTo(AppService.TOLERANCIA_CENTAVO)) {
+        throw new BadRequestException('La cuenta ya fue cobrada por completo.');
+      }
+      if (totalPagoCombinado.greaterThan(montoPendienteAntes.plus(AppService.TOLERANCIA_CENTAVO))) {
+        throw new BadRequestException(
+          `El pago combinado (${totalPagoCombinado.toNumber()}) supera lo pendiente de la cuenta (${montoPendienteAntes.toNumber()}).`,
+        );
+      }
+
+      const transacciones = [];
+      let montoPendiente = montoPendienteAntes;
+      for (const [indice, pago] of pagos.entries()) {
+        const etiqueta = `Pago combinado ${indice + 1}/${pagos.length}`;
+        const notas = command.notas ? `${etiqueta} · ${command.notas}` : etiqueta;
+        const tx = await prisma.transaccion.create({
+          data: {
+            cuentaId: command.cuentaId,
+            sedeId,
+            turnoId: turno.id,
+            mesaId: cuenta.mesaId,
+            monto: pago.monto,
+            descuento,
+            metodo: pago.metodo,
+            referencia: command.referencia,
+            notas,
+            usuarioId: usuarioId ?? undefined,
+            cajeroNombre: cajeroNombre ?? undefined,
+            meseroId: cuentaRemota.meseroId ?? undefined,
+            meseroNombre: cuentaRemota.meseroNombre ?? undefined,
+            cuentaCorrelativo: cuentaRemota.correlativo ?? undefined,
+            mesaNumero: command.mesaNumero ?? undefined,
+            mesaUnidaCon: command.mesaUnidaCon ?? undefined,
+            tipoComprobante: command.tipoComprobante ?? 'BOLETA',
+            clienteDocumento: command.clienteDocumento ?? undefined,
+          },
+        });
+
+        await prisma.movimientoCaja.create({
+          data: {
+            turnoId: turno.id,
+            tipo: 'VENTA',
+            cuentaId: command.cuentaId,
+            transaccionId: tx.id,
+            mesaId: cuenta.mesaId,
+            donde: command.mesaNumero ? `Mesa ${command.mesaNumero}` : `Mesa ${cuenta.mesaId}`,
+            metodo: pago.metodo,
+            monto: pago.monto,
+            descuento: montoTotalPagado.isZero() && indice === 0
+              ? descuento
+              : new Prisma.Decimal(0),
+            propina: pago.propina,
+            motivo: notas,
+            cuentaCorrelativo: cuentaRemota.correlativo ?? undefined,
+          },
+        });
+
+        montoPendiente = Prisma.Decimal.max(new Prisma.Decimal(0), montoPendiente.minus(pago.monto));
+        const payload: PagoRegistradoPayload = {
+          transaccionId: tx.id,
+          cuentaId: command.cuentaId,
+          mesaId: cuenta.mesaId,
+          monto: pago.monto.toNumber(),
+          metodo: pago.metodo,
+          pendiente: montoPendiente.toNumber(),
+        };
+        await prisma.outboxEvent.create({
+          data: {
+            routingKey: RoutingKeys.PagoRegistrado,
+            payload: JSON.stringify(payload),
+            status: 'PENDING',
+          },
+        });
+        transacciones.push(tx);
+      }
+
+      return { transacciones, montoPendienteDespues: montoPendiente };
+    });
+
+    let ticket: unknown;
+    const cierreCompleta = resultado.montoPendienteDespues.lessThanOrEqualTo(AppService.TOLERANCIA_CENTAVO);
+    if (cierreCompleta) {
+      const cierreStart = Date.now();
+      try {
+        const cierre = await this.cuentasHttp.cerrarCuenta(command.cuentaId, descuento.toNumber());
+        ticket = (cierre as Record<string, unknown>)?.ticket;
+        await this.prisma.cuentaAbierta.update({
+          where: { cuentaId: command.cuentaId },
+          data: { estado: 'CERRADA', total: totalConDescuento },
+        });
+      } catch (error) {
+        this.pagosCierrePendienteCounter.inc();
+        this.logger.warn({
+          operation: 'cerrarCuenta',
+          aggregateId: command.cuentaId,
+          dependency: 'cuentas',
+          durationMs: Date.now() - cierreStart,
+          errorCode: 'CIERRE_REMOTO_FAILED',
+          resultingState: 'PAGO_SIN_CIERRE_CONFIRMADO',
+          message: `Pago combinado registrado; cierre remoto pendiente: ${(error as Error).message}`,
+        } satisfies OperableLog);
+      }
+    }
+
+    const transaccionesDto = resultado.transacciones.map((tx) => this.mapTransaccion(tx));
+    for (const pago of pagos) {
+      this.pagosCounter.inc({ metodo: pago.metodo });
+      this.pagoMontoHistogram.observe({ metodo: pago.metodo }, pago.monto.toNumber());
+    }
+    this.logger.log({
+      operation: 'registrarPagoCombinado',
+      aggregateId: command.cuentaId,
+      message: cierreCompleta
+        ? `Pago combinado registrado con ${pagos.length} métodos; completa el total.`
+        : `Pago combinado parcial registrado con ${pagos.length} métodos; pendiente ${resultado.montoPendienteDespues.toNumber()}.`,
+    } satisfies OperableLog);
+
+    return {
+      message: !cierreCompleta
+        ? `Pago combinado parcial registrado. Falta ${resultado.montoPendienteDespues.toNumber()} por cobrar.`
+        : ticket
+          ? 'Pago combinado registrado, cuenta cerrada y ticket generado'
+          : 'Pago combinado registrado; cierre de cuenta en proceso',
+      transacciones: transaccionesDto,
+      transaccion: transaccionesDto.at(-1)!,
+      ticket,
+      turno: this.mapTurno(turno),
+      pendiente: resultado.montoPendienteDespues.toNumber(),
     };
   }
 
@@ -907,7 +1195,11 @@ export class AppService {
       propinas: propinas.toNumber(),
       porMetodo,
       efectivoEsperado: this.computeEfectivoEsperado(movimientos).toNumber(),
-      comprobantes: ventas.length,
+      // Un pago combinado/dividido genera un movimiento por método o parte,
+      // pero sigue siendo una sola cuenta/comprobante interno.
+      comprobantes:
+        new Set(ventas.map((venta) => venta.cuentaId).filter(Boolean)).size
+        + ventas.filter((venta) => !venta.cuentaId).length,
       pendientes: 0,
       arqueo: turno.arqueos?.[0] ? this.mapArqueo(turno.arqueos[0]) : null,
       cierre: turno.cierre ? this.mapCierre(turno.cierre) : null,

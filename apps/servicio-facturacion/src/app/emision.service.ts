@@ -48,6 +48,11 @@ export class EmisionService {
     if (!empresa || !empresa.activo) {
       throw new NotFoundException(`Empresa con RUC ${dto.empresaRuc} no está configurada`);
     }
+    if (empresa.sedeId !== comprobantePago.sedeId) {
+      throw new BadRequestException(
+        `El RUC ${empresa.ruc} debe estar enlazado a la sede de esta venta.`,
+      );
+    }
 
     const itemsSnapshot = (Array.isArray(comprobantePago.items) ? comprobantePago.items : []) as unknown as PedidoSnapshotItem[];
     const items: ItemComprobante[] = itemsSnapshot.map((item) => ({

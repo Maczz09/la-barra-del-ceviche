@@ -1,4 +1,5 @@
 import {
+  ArrayMinSize,
   IsArray,
   IsIn,
   IsNumber,
@@ -8,7 +9,9 @@ import {
   IsUUID,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export const MetodoPagoCaja = [
   'EFECTIVO',
@@ -124,6 +127,41 @@ export class PagarCuentaCajaCommand {
   @IsString()
   @MaxLength(15)
   clienteDocumento?: string;
+}
+
+export class PagoCombinadoItemCommand {
+  @IsIn(MetodoPagoCaja)
+  metodo: (typeof MetodoPagoCaja)[number];
+
+  /** Importe aplicado al saldo de la cuenta (sin propina). */
+  @IsNumber()
+  @Min(0.01)
+  monto: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  propina?: number;
+}
+
+/** Un solo comando HTTP y una sola transacción DB para todos los métodos. */
+export class PagarCuentaCombinadoCommand {
+  @IsUUID()
+  cuentaId: string;
+
+  @IsArray()
+  @ArrayMinSize(2)
+  @ValidateNested({ each: true })
+  @Type(() => PagoCombinadoItemCommand)
+  pagos: PagoCombinadoItemCommand[];
+
+  @IsOptional() @IsNumber() @Min(0) descuento?: number;
+  @IsOptional() @IsString() @MaxLength(20) mesaNumero?: string;
+  @IsOptional() @IsString() @MaxLength(60) mesaUnidaCon?: string;
+  @IsOptional() @IsString() @MaxLength(120) referencia?: string;
+  @IsOptional() @IsString() @MaxLength(240) notas?: string;
+  @IsOptional() @IsIn(TipoComprobante) tipoComprobante?: (typeof TipoComprobante)[number];
+  @IsOptional() @IsString() @MaxLength(15) clienteDocumento?: string;
 }
 
 export interface CajaResumenDto {

@@ -30,6 +30,10 @@ export class SunatSoapClient {
   private readonly logger = new Logger(SunatSoapClient.name);
   private readonly clientesPorRuc = new Map<string, soap.Client>();
 
+  invalidarRuc(ruc: string): void {
+    this.clientesPorRuc.delete(ruc);
+  }
+
   private async obtenerCliente(ruc: string, solUsuario: string, solClave: string): Promise<soap.Client> {
     const existente = this.clientesPorRuc.get(ruc);
     if (existente) return existente;

@@ -1,6 +1,6 @@
 import { closeSync, existsSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { createConnection, createServer } from 'node:net';
+import { createConnection, createServer, type Server } from 'node:net';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { BackupManager } from './backup-manager';
@@ -14,7 +14,6 @@ import { ensureDatabasesAndMigrations, initializePostgres, postgresConnectionStr
 import { loadOrCreateRuntimeConfig, saveRuntimeConfig, type PrinterConfig, type RuntimeConfig } from './runtime-config';
 import { resolveRuntimePaths, serviceEntry, type RuntimePaths } from './runtime-paths';
 import { GATEWAY_PORT, NATS_MONITOR_PORT, NATS_PORT, POSTGRES_PORT, SERVICE_DEFINITIONS } from './service-definitions';
-import { LOCAL_HOSTNAME, MdnsResponder } from './mdns-responder';
 
 interface HealthState { ok: boolean; checkedAt: string; error?: string; latencyMs?: number }
 
@@ -30,7 +29,6 @@ export class LocalRuntime implements RuntimeAdminApi {
   private lockHandle?: number;
   private gateway?: LocalGateway;
   private printerSubscriber?: KitchenPrintSubscriber;
-  private readonly mdns = new MdnsResponder();
   private healthTimer?: NodeJS.Timeout;
   private backupTimer?: NodeJS.Timeout;
   private shuttingDown = false;
@@ -65,7 +63,6 @@ export class LocalRuntime implements RuntimeAdminApi {
 
     this.gateway = new LocalGateway(this.paths.pwa, this);
     await this.gateway.start(GATEWAY_PORT);
-    this.mdns.start();
     this.healthTimer = setInterval(() => void this.refreshHealth(), 5_000);
     this.healthTimer.unref();
     this.scheduleDailyBackup();
@@ -79,7 +76,6 @@ export class LocalRuntime implements RuntimeAdminApi {
     if (this.healthTimer) clearInterval(this.healthTimer);
     if (this.backupTimer) clearTimeout(this.backupTimer);
     await this.gateway?.close();
-    this.mdns.close();
     await this.printerSubscriber?.close();
     await this.supervisor.stopAll();
     this.releaseLock();
@@ -90,7 +86,7 @@ export class LocalRuntime implements RuntimeAdminApi {
     return {
       app: 'La Barra del Ceviche',
       platform: 'RestoApp',
-      url: `http://${LOCAL_HOSTNAME}:${GATEWAY_PORT}`,
+      url: localServerUrl(GATEWAY_PORT),
       ipUrl: localServerUrl(GATEWAY_PORT),
       loopbackUrl: `http://127.0.0.1:${GATEWAY_PORT}`,
       port: GATEWAY_PORT,
@@ -170,7 +166,6 @@ export class LocalRuntime implements RuntimeAdminApi {
   private startServices(): void {
     const origins = [
       `http://127.0.0.1:${GATEWAY_PORT}`, `http://localhost:${GATEWAY_PORT}`,
-      `http://${LOCAL_HOSTNAME}:${GATEWAY_PORT}`,
       ...listPrivateIpv4().map((address) => `http://${address.address}:${GATEWAY_PORT}`),
     ].join(',');
     const selected = process.env['RESTOAPP_ONLY_SERVICES']
@@ -185,7 +180,7 @@ export class LocalRuntime implements RuntimeAdminApi {
         args: [entry],
         cwd: dirname(entry),
         env: {
-          NODE_ENV: 'production', NODE_OPTIONS: service.name === 'servicio-compras' ? '--max-old-space-size=320' : '--max-old-space-size=256',
+          NODE_ENV: 'production', HOST: '127.0.0.1', NODE_OPTIONS: service.name === 'servicio-compras' ? '--max-old-space-size=320' : '--max-old-space-size=256',
           PORT: String(service.port), SERVICE_NAME: service.name, SERVICE_AUD_ENFORCE: 'true',
           DATABASE_URL: postgresConnectionString(this.config, service.database),
           LOCAL_BROKER_URL: `nats://127.0.0.1:${NATS_PORT}`,
@@ -295,8 +290,11 @@ export async function assertPortsAvailable(
 ): Promise<void> {
   for (const target of targets) {
     const available = await new Promise<boolean>((resolveAvailable) => {
-      const probe = createServer();
+      const probe: Server = createServer();
       probe.unref();
+      // @types/node deja este overload de EventEmitter sin resolver bajo la
+      // combinación NodeNext + typed lint; `probe` está tipado como Server.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
       probe.once('error', () => resolveAvailable(false));
       probe.listen(target.port, '127.0.0.1', () => {
         probe.close(() => resolveAvailable(true));

@@ -4,7 +4,7 @@ Basado en RestoApp del Ingeniero en Sistemas e Informática Max Alessandro Garc�
 
 ## Instalación y primer inicio
 
-1. Ejecuta el instalador de Windows como administrador. La instalación es por máquina y agrega reglas de firewall para TCP 3210 y mDNS UDP 5353, limitadas a la subred local y válidas aunque Windows clasifique la red del restaurante como pública.
+1. Ejecuta el instalador de Windows como administrador. La instalación es por máquina y agrega una regla de firewall para TCP 3210, limitada a la subred local y válida aunque Windows clasifique la red del restaurante como pública.
 2. Abre **La Barra del Ceviche**. El primer arranque puede tardar varios minutos: inicializa PostgreSQL, crea 11 bases, aplica migraciones y espera que todos los microservicios estén saludables.
 3. Completa **Configuración inicial** con el nombre, correo y contraseña del administrador. Este formulario solo está disponible desde la laptop servidor.
 4. En **Administración → Servidor local**, confirma que todos los procesos estén activos.
@@ -13,12 +13,11 @@ No se requiere Docker, Node.js, PostgreSQL ni NATS instalados en la laptop.
 
 ## Acceso desde celulares y cocina
 
-- Dirección preferida: `http://la-barra-del-ceviche.local:3210`.
-- Alternativa: la URL con IP mostrada en **Servidor local**.
+- Dirección: la URL con IP mostrada en **Servidor local**, por ejemplo `http://192.168.100.5:3210`.
 - Los dispositivos deben estar conectados al mismo Wi-Fi privado del restaurante.
 - Usa **Copiar dirección** o el QR del módulo. La carta pública no requiere login; meseros, cocina, caja y administración usan sus credenciales y permisos.
 
-Si un celular no resuelve el nombre `.local`, usa la URL con IP. Para que esa IP no cambie, entra al router y crea una reserva DHCP para la dirección MAC indicada por la aplicación. Después prueba el QR apagando y encendiendo tanto el router como la laptop.
+Para que la IP no cambie, entra al router y crea una reserva DHCP para la dirección MAC indicada por la aplicación. Después prueba el mismo QR apagando y encendiendo tanto el router como la laptop.
 
 ## Cocina e impresión automática
 
@@ -32,7 +31,7 @@ Si la impresora está desconectada o sin papel, el trabajo queda fallido con rei
 
 ## Respaldos y datos
 
-- Los datos se guardan fuera de la carpeta del programa, bajo `%LOCALAPPDATA%\La Barra del Ceviche`.
+- Los datos se guardan fuera de la carpeta del programa, bajo `%LOCALAPPDATA%\pe.restoapp.labarradelceviche`.
 - Se crea un respaldo automático todos los días a las 03:00.
 - **Crear respaldo** permite generar uno en el momento y consultar el historial.
 - Desinstalar o actualizar la aplicación no debe borrar los datos del restaurante.
@@ -49,7 +48,7 @@ Si la impresora está desconectada o sin papel, el trabajo queda fallido con rei
 
 1. Confirma que Windows marque la red como **Privada**.
 2. Revisa que la laptop y el celular estén en la misma red y que no esté activo el aislamiento de clientes del router.
-3. Abre primero la URL con IP. Si funciona y la URL `.local` no, el problema es resolución mDNS.
+3. Copia exactamente la URL con IP que muestra **Servidor local** y comprueba que responda desde el celular.
 4. Revisa en **Servidor local** los estados individuales; reinicia únicamente el servicio que falle.
 5. Revisa los logs dentro del directorio de datos y conserva el mensaje exacto del último error.
 6. Para impresión, confirma nombre de impresora, papel, cola de Windows y una página de prueba.

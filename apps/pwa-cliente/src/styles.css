@@ -1128,6 +1128,15 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .method-opt { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 14px 8px; border: 1.5px solid var(--border); border-radius: var(--r); background: var(--surface); font-weight: 700; font-size: 12.5px; color: var(--text-2); }
 .method-opt .m-ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: #fff; }
 .method-opt.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+.mixed-payment-grid { display: grid; gap: 7px; }
+.mixed-payment-row { display: grid; grid-template-columns: 30px minmax(90px, 1fr) minmax(110px, 145px); gap: 9px; align-items: center; min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); color: var(--text-2); font-size: 13px; font-weight: 750; }
+.mixed-payment-row.on { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.mixed-payment-row .m-ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: #fff; }
+.mixed-payment-input { padding: 5px 8px; min-width: 0; }
+.mixed-payment-input input { min-width: 0; text-align: right; font-weight: 800; }
+.mixed-payment-summary { display: flex; justify-content: space-between; gap: 10px; padding: 9px 11px; border-radius: var(--r); font-size: 12px; }
+.mixed-payment-summary.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.mixed-payment-summary.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 
 /* segmented for comprobante */
 .cpe-seg { display: flex; gap: 8px; }
@@ -1304,7 +1313,8 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
    .module-grid/.report-stack/.inventory-list — mismo fix. */
 .cmd-catalog { display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: 16px; gap: 12px; }
 .cmd-filters { display: flex; align-items: center; gap: 10px; }
-.cmd-cats { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1; }
+.cmd-cats { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.cmd-cats .chip { flex: 0 0 auto; }
 /* Separador no clickeable entre categorías de Carta (Cocina/Barra) y las de
    Inventario (Agua Mineral, Cerveza…) dentro del mismo cmd-cats — antes se
    mezclaban alfabéticamente sin distinción visual. */
@@ -1318,15 +1328,21 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
    puede negarse a encoger por debajo del alto de su contenido (default
    min-height:auto de flexbox); con 184 platos reales eso lo infla en vez
    de scrollear "adentro". */
-.cmd-grid { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 11px; align-content: start; padding-bottom: 8px; }
-.dish-card { position: relative; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 13px; display: flex; flex-direction: column; gap: 8px; min-height: 96px; transition: border-color .1s, transform .1s, box-shadow .1s; color: var(--cmd-ink); }
+.cmd-grid { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; align-content: start; padding: 2px 2px 12px; }
+.cmd-category-section { grid-column: 1 / -1; display: grid; gap: 10px; min-width: 0; }
+.cmd-category-section + .cmd-category-section { margin-top: 10px; padding-top: 18px; border-top: 1px solid var(--border); }
+.cmd-category-heading { display: flex; align-items: baseline; gap: 10px; position: sticky; top: -2px; z-index: 2; padding: 7px 3px; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(8px); }
+.cmd-category-heading h3 { margin: 0; font-size: 16px; font-weight: 900; color: var(--cmd-ink); }
+.cmd-category-heading span { font-size: 11px; font-weight: 700; color: var(--muted); }
+.cmd-category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 11px; min-width: 0; align-items: stretch; }
+.dish-card { position: relative; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 13px; display: flex; flex-direction: column; gap: 7px; min-height: 132px; height: 100%; overflow: hidden; transition: border-color .1s, transform .1s, box-shadow .1s; color: var(--cmd-ink); }
 .dish-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
 .dish-card.has { border-color: var(--accent); background: var(--accent-soft); }
 .dish-badge { position: absolute; top: 9px; right: 9px; background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 800; min-width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
 .dish-cat { font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--cmd-ink); }
-.dish-name { font-weight: 700; font-size: 14px; flex: 1; line-height: 1.25; padding-right: 18px; color: var(--cmd-ink); }
-.dish-foot { display: flex; align-items: center; justify-content: space-between; }
-.dish-price { font-weight: 800; font-size: 14px; color: var(--cmd-ink); }
+.dish-name { font-weight: 700; font-size: 14px; flex: 1 1 auto; min-height: 0; line-height: 1.28; padding-right: 18px; overflow-wrap: anywhere; color: var(--cmd-ink); }
+.dish-foot { display: flex; flex: none; min-height: 24px; align-items: flex-end; justify-content: space-between; margin-top: auto; padding-top: 5px; border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent); }
+.dish-price { display: block; font-weight: 900; font-size: 15px; line-height: 1.2; white-space: nowrap; color: var(--cmd-ink); }
 .dish-mods { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; color: var(--accent-text); }
 
 .cmd-cart { background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -1701,6 +1717,13 @@ table.dt tbody tr.row-out:hover td { filter: brightness(.99); }
 @media (max-width: 560px) {
   .cmd-filters { flex-direction: column; align-items: stretch; }
   .cmd-search { width: 100%; }
+  .cmd-grid { display: block; padding-inline: 0; }
+  .cmd-category-section { margin-bottom: 18px; }
+  .cmd-category-section + .cmd-category-section { margin-top: 0; }
+  .cmd-category-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .dish-card { min-height: 146px; padding: 12px; }
+  .dish-name { font-size: 13.5px; padding-right: 8px; }
+  .dish-price { font-size: 15px; }
 }
 
 

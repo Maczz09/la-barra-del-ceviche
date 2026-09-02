@@ -316,6 +316,164 @@ describe('AppService — Caja', () => {
     });
   });
 
+  describe('registrarPagoCombinado', () => {
+    const turnoAbierto = {
+      id: 'turno-001',
+      sedeId: 'sede-001',
+      cajaId: 'T01',
+      cajaNombre: 'Terminal 01',
+      usuarioId: 'u-001',
+      cajeroNombre: 'Caja',
+      fondoInicial: 300,
+      estado: 'ABIERTA',
+      abiertoAt: new Date('2026-09-01T10:00:00.000Z'),
+      cerradoAt: null,
+      createdAt: new Date('2026-09-01T10:00:00.000Z'),
+      updatedAt: new Date('2026-09-01T10:00:00.000Z'),
+    };
+
+    const transaccion = (id: string, metodo: string, monto: number) => ({
+      id,
+      cuentaId: 'c-001',
+      sedeId: 'sede-001',
+      turnoId: 'turno-001',
+      mesaId: 'm-001',
+      monto,
+      descuento: 0,
+      metodo,
+      referencia: null,
+      notas: null,
+      usuarioId: 'cajero-1',
+      cajeroNombre: 'Ana',
+      meseroId: null,
+      meseroNombre: null,
+      cuentaCorrelativo: 'A0000001',
+      mesaNumero: '1',
+      mesaUnidaCon: null,
+      tipoComprobante: 'BOLETA',
+      clienteDocumento: null,
+      createdAt: new Date('2026-09-01T10:05:00.000Z'),
+    });
+
+    const prepararCuenta = (total = 100) => {
+      mockPrisma.turnoCaja.findFirst.mockResolvedValue(turnoAbierto);
+      jest.mocked(axios.get).mockResolvedValue({
+        data: { id: 'c-001', mesaId: 'm-001', sedeId: 'sede-001', total, estado: 'ABIERTA', correlativo: 'A0000001' },
+      });
+      mockPrisma.cuentaAbierta.upsert.mockResolvedValue({
+        cuentaId: 'c-001', mesaId: 'm-001', sedeId: 'sede-001', total, estado: 'ABIERTA',
+      });
+      mockPrisma.movimientoCaja.create.mockResolvedValue({});
+      mockPrisma.outboxEvent.create.mockResolvedValue({});
+      mockPrisma.cuentaAbierta.update.mockResolvedValue({});
+    };
+
+    it('persiste todos los métodos y eventos dentro de una sola transacción y cierra una sola vez', async () => {
+      prepararCuenta(110);
+      mockPrisma.transaccion.aggregate.mockResolvedValue({
+        _sum: { monto: 0 }, _min: { descuento: null }, _max: { descuento: null },
+      });
+      mockPrisma.transaccion.create
+        .mockResolvedValueOnce(transaccion('tx-1', 'EFECTIVO', 40))
+        .mockResolvedValueOnce(transaccion('tx-2', 'TARJETA', 60));
+      jest.mocked(axios.post).mockResolvedValue({ data: { ticket: { id: 'ticket-1', total: 100 } } });
+
+      const resultado = await service.registrarPagoCombinado({
+        cuentaId: 'c-001',
+        pagos: [
+          { metodo: 'EFECTIVO', monto: 40, propina: 2 },
+          { metodo: 'TARJETA', monto: 60, propina: 3 },
+        ],
+        descuento: 10,
+        mesaNumero: '1',
+      }, 'cajero-1', 'Ana', 'sede-001');
+
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.transaccion.create).toHaveBeenCalledTimes(2);
+      expect(mockPrisma.movimientoCaja.create).toHaveBeenCalledTimes(2);
+      expect(Number(mockPrisma.movimientoCaja.create.mock.calls[0][0].data.descuento)).toBe(10);
+      expect(Number(mockPrisma.movimientoCaja.create.mock.calls[1][0].data.descuento)).toBe(0);
+      expect(mockPrisma.outboxEvent.create).toHaveBeenCalledTimes(2);
+      expect(mockPrisma.outboxEvent.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        data: expect.objectContaining({
+          routingKey: 'pago.registrado',
+          payload: expect.stringContaining('"pendiente":60'),
+        }),
+      }));
+      expect(mockPrisma.outboxEvent.create).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        data: expect.objectContaining({ payload: expect.stringContaining('"pendiente":0') }),
+      }));
+      expect(axios.post).toHaveBeenCalledTimes(1);
+      expect(resultado.transacciones.map((tx) => tx.id)).toEqual(['tx-1', 'tx-2']);
+      expect(resultado.transaccion.id).toBe('tx-2');
+      expect(resultado.pendiente).toBe(0);
+      expect(resultado.ticket).toEqual({ id: 'ticket-1', total: 100 });
+    });
+
+    it('sin turno abierto rechaza el grupo completo y no encola ni escribe ningún tramo', async () => {
+      jest.mocked(axios.get).mockResolvedValue({
+        data: { id: 'c-001', mesaId: 'm-001', sedeId: 'sede-001', total: 100, estado: 'ABIERTA' },
+      });
+      mockPrisma.turnoCaja.findFirst.mockResolvedValue(null);
+
+      await expect(service.registrarPagoCombinado({
+        cuentaId: 'c-001',
+        pagos: [
+          { metodo: 'EFECTIVO', monto: 40 },
+          { metodo: 'TARJETA', monto: 60 },
+        ],
+      }, 'cajero-1', 'Ana', 'sede-001')).rejects.toThrow('Abre un turno de caja');
+
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+      expect(mockPrisma.pagoPendiente.create).not.toHaveBeenCalled();
+      expect(mockPrisma.transaccion.create).not.toHaveBeenCalled();
+      expect(mockPrisma.movimientoCaja.create).not.toHaveBeenCalled();
+    });
+
+    it('rechaza cambiar el descuento después de un pago parcial previo', async () => {
+      prepararCuenta();
+      mockPrisma.transaccion.aggregate.mockResolvedValue({
+        _sum: { monto: 30 }, _min: { descuento: 10 }, _max: { descuento: 10 },
+      });
+
+      await expect(service.registrarPagoCombinado({
+        cuentaId: 'c-001',
+        descuento: 0,
+        pagos: [
+          { metodo: 'EFECTIVO', monto: 20 },
+          { metodo: 'YAPE', monto: 30 },
+        ],
+      }, 'cajero-1', 'Ana', 'sede-001')).rejects.toThrow('El descuento debe mantenerse en 10.00');
+
+      expect(mockPrisma.transaccion.create).not.toHaveBeenCalled();
+      expect(mockPrisma.movimientoCaja.create).not.toHaveBeenCalled();
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    it('permite un grupo combinado parcial y devuelve el saldo sin cerrar la cuenta remota', async () => {
+      prepararCuenta();
+      mockPrisma.transaccion.aggregate.mockResolvedValue({
+        _sum: { monto: 0 }, _min: { descuento: null }, _max: { descuento: null },
+      });
+      mockPrisma.transaccion.create
+        .mockResolvedValueOnce(transaccion('tx-1', 'EFECTIVO', 20))
+        .mockResolvedValueOnce(transaccion('tx-2', 'YAPE', 30));
+
+      const resultado = await service.registrarPagoCombinado({
+        cuentaId: 'c-001',
+        pagos: [
+          { metodo: 'EFECTIVO', monto: 20 },
+          { metodo: 'YAPE', monto: 30 },
+        ],
+      }, 'cajero-1', 'Ana', 'sede-001');
+
+      expect(resultado.pendiente).toBe(50);
+      expect(resultado.message).toContain('parcial');
+      expect(axios.post).not.toHaveBeenCalled();
+      expect(mockPrisma.cuentaAbierta.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('abrirTurno — T-25 carrera', () => {
     const turnoAbierto = {
       id: 'turno-001',

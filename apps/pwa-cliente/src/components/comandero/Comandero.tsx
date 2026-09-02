@@ -64,7 +64,7 @@ export function Comandero({
     nextCursor,
     fetchMore,
     error: errorInv,
-  } = useInventarioQuery(undefined, { limit: 100, search: search || undefined });
+  } = useInventarioQuery(undefined, { limit: 500, search: search || undefined });
   const { menu: menuDelDia, loading: loadingMenu } = useMenuDiarioQuery();
   const { mesas } = useMesasQuery();
   const { crear } = usePedidosQuery(mesaId);
@@ -84,8 +84,16 @@ export function Comandero({
   // sembraban mezcladas alfabéticamente entre las de Cocina/Barra en los
   // chips de "Carta" — sin separación visual, un mesero no las distinguía
   // de un plato de cocina. Se agrupan aparte, bajo "Abarrotes".
-  const categoriasCarta = useMemo(() => categorias.filter((c) => c.area !== 'INVENTARIO'), [categorias]);
-  const categoriasAbarrotes = useMemo(() => categorias.filter((c) => c.area === 'INVENTARIO'), [categorias]);
+  const categoriasCarta = useMemo(() => {
+    const nombres = new Set(categorias.filter((c) => c.area !== 'INVENTARIO').map((c) => c.nombre));
+    productos.filter((p) => p.stockActual == null && p.categoriaNombre).forEach((p) => nombres.add(p.categoriaNombre!));
+    return [...nombres].sort((a, b) => a.localeCompare(b, 'es'));
+  }, [categorias, productos]);
+  const categoriasAbarrotes = useMemo(() => {
+    const nombres = new Set(categorias.filter((c) => c.area === 'INVENTARIO').map((c) => c.nombre));
+    productos.filter((p) => p.stockActual != null && p.categoriaNombre).forEach((p) => nombres.add(p.categoriaNombre!));
+    return [...nombres].sort((a, b) => a.localeCompare(b, 'es'));
+  }, [categorias, productos]);
 
   const productosFiltrados = useMemo(
     () => productos.filter((p) => {
@@ -94,6 +102,11 @@ export function Comandero({
       return okCat && okQ && p.disponible;
     }),
     [productos, cat, q],
+  );
+
+  const gruposCarta = useMemo(
+    () => groupCatalogProducts(productosFiltrados, [...categoriasCarta, ...categoriasAbarrotes]),
+    [productosFiltrados, categoriasCarta, categoriasAbarrotes],
   );
 
   // T-20: menú del día separado de la carta — solo platos activos hoy.
@@ -173,14 +186,14 @@ export function Comandero({
               {vista === 'CARTA' && (
                 <div className="cmd-cats">
                   <button className={`chip ${cat === 'TODAS' ? 'on' : ''}`} onClick={() => setCat('TODAS')}>Todos</button>
-                  {categoriasCarta.map((c) => (
-                    <button key={c.id} className={`chip ${cat === c.nombre ? 'on' : ''}`} onClick={() => setCat(c.nombre)}>{c.nombre}</button>
+                  {categoriasCarta.map((nombre) => (
+                    <button key={nombre} className={`chip ${cat === nombre ? 'on' : ''}`} onClick={() => setCat(nombre)}>{nombre}</button>
                   ))}
                   {categoriasAbarrotes.length > 0 && (
                     <>
                       <span className="cmd-cats-sep" aria-hidden="true">Abarrotes</span>
-                      {categoriasAbarrotes.map((c) => (
-                        <button key={c.id} className={`chip ${cat === c.nombre ? 'on' : ''}`} onClick={() => setCat(c.nombre)}>{c.nombre}</button>
+                      {categoriasAbarrotes.map((nombre) => (
+                        <button key={nombre} className={`chip ${cat === nombre ? 'on' : ''}`} onClick={() => setCat(nombre)}>{nombre}</button>
                       ))}
                     </>
                   )}
@@ -198,7 +211,7 @@ export function Comandero({
               <div className="cmd-grid">
                 {ComanderoEmptyGrid({ loadingInv, errorInv, productosLength: productos.length, productosFiltradosLength: productosFiltrados.length, nextCursor, loadingMoreInv, fetchMore }) ?? (
                   <>
-                    <ComanderoCatalogGrid productos={productosFiltrados} cmd={cmd} />
+                    <ComanderoCatalogGroups grupos={gruposCarta} cmd={cmd} />
                     <ComanderoCargarMas nextCursor={nextCursor} loadingMoreInv={loadingMoreInv} fetchMore={fetchMore} />
                   </>
                 )}
@@ -248,7 +261,36 @@ function ComanderoCanales({ cmd }: Readonly<{ cmd: ComandaCtrl }>) {
   );
 }
 
-function ComanderoCatalogGrid({ productos, cmd }: Readonly<{ productos: ProductoCatalogo[], cmd: ComandaCtrl }>) {
+export function groupCatalogProducts<T extends { categoriaNombre?: string | null }>(productos: T[], categoryOrder: string[]) {
+  const groups = new Map<string, T[]>();
+  for (const producto of productos) {
+    const name = producto.categoriaNombre?.trim() || 'Sin categoría';
+    const current = groups.get(name) ?? [];
+    current.push(producto);
+    groups.set(name, current);
+  }
+  const order = new Map(categoryOrder.map((name, index) => [name, index]));
+  return [...groups.entries()]
+    .map(([nombre, items]) => ({ nombre, productos: items }))
+    .sort((a, b) => (order.get(a.nombre) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.nombre) ?? Number.MAX_SAFE_INTEGER)
+      || a.nombre.localeCompare(b.nombre, 'es'));
+}
+
+function ComanderoCatalogGroups({ grupos, cmd }: Readonly<{ grupos: Array<{ nombre: string; productos: ProductoCatalogo[] }>, cmd: ComandaCtrl }>) {
+  return grupos.map((grupo) => (
+    <section className="cmd-category-section" key={grupo.nombre} aria-labelledby={`cmd-category-${grupo.nombre}`}>
+      <div className="cmd-category-heading">
+        <h3 id={`cmd-category-${grupo.nombre}`}>{grupo.nombre}</h3>
+        <span>{grupo.productos.length} {grupo.productos.length === 1 ? 'plato' : 'platos'}</span>
+      </div>
+      <div className="cmd-category-grid">
+        <ComanderoCatalogGrid productos={grupo.productos} cmd={cmd} showCategory={false} />
+      </div>
+    </section>
+  ));
+}
+
+function ComanderoCatalogGrid({ productos, cmd, showCategory = true }: Readonly<{ productos: ProductoCatalogo[], cmd: ComandaCtrl, showCategory?: boolean }>) {
   return (
     <>
       {productos.map((p) => {
@@ -256,7 +298,7 @@ function ComanderoCatalogGrid({ productos, cmd }: Readonly<{ productos: Producto
         return (
           <button key={p.id} className={`dish-card ${enCarrito ? 'has' : ''}`} onClick={() => cmd.addProducto(p)}>
             {enCarrito > 0 && <span className="dish-badge">{enCarrito}</span>}
-            <div className="dish-cat">{p.categoriaNombre ?? '—'}</div>
+            {showCategory && <div className="dish-cat">{p.categoriaNombre ?? '—'}</div>}
             <div className="dish-name">{p.nombre}</div>
             <div className="dish-foot">
               <span className="dish-price mono">{fmt(p.precio)}</span>

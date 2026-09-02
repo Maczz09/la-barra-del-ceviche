@@ -38,32 +38,44 @@ export class CierreReconciliacionService {
     const cutoff = new Date(Date.now() - this.UMBRAL_MS);
 
     // La antigüedad viene de la Transaccion (CuentaAbierta no tiene timestamps).
-    // Se arrastra también el `descuento` para reproducir el cierre con el mismo
-    // importe que el pago original: cerrar con 0 dejaba el ticket/total remoto en
-    // `cuentas` divergente del total ya registrado en caja (inconsistencia de
-    // dinero). `distinct` + `orderBy desc` → el descuento de la última
-    // transacción de cada cuenta (la que intentó el cierre degradado).
+    // Esta primera consulta solo acota candidatos; debajo se suman TODOS sus
+    // pagos y se verifica el saldo. Un pago parcial viejo no es un cierre
+    // degradado y jamás debe cerrar una cuenta que todavía tiene deuda.
     const transaccionesViejas = await this.prisma.transaccion.findMany({
       where: { createdAt: { lt: cutoff } },
-      select: { cuentaId: true, descuento: true },
+      select: { cuentaId: true },
       distinct: ['cuentaId'],
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
-    const descuentoPorCuenta = new Map(
-      transaccionesViejas.map((t) => [t.cuentaId, Number(t.descuento ?? 0)]),
-    );
-    const cuentaIds = [...descuentoPorCuenta.keys()];
+    const cuentaIds = transaccionesViejas.map((t) => t.cuentaId);
     if (cuentaIds.length === 0) return;
 
-    const pendientes = await this.prisma.cuentaAbierta.findMany({
-      where: { cuentaId: { in: cuentaIds }, estado: 'ABIERTA' },
-      take: this.LIMITE_POR_TICK,
+    const agregados = await this.prisma.transaccion.groupBy({
+      by: ['cuentaId'],
+      where: { cuentaId: { in: cuentaIds } },
+      _sum: { monto: true },
+      _max: { descuento: true, createdAt: true },
     });
+    const agregadoPorCuenta = new Map(agregados.map((a) => [a.cuentaId, a]));
+
+    const abiertas = await this.prisma.cuentaAbierta.findMany({
+      where: { cuentaId: { in: cuentaIds }, estado: 'ABIERTA' },
+    });
+    const pendientes = abiertas.filter((cuenta) => {
+      const agregado = agregadoPorCuenta.get(cuenta.cuentaId);
+      if (!agregado?._max.createdAt || agregado._max.createdAt >= cutoff) return false;
+      const pagado = Number(agregado._sum.monto ?? 0);
+      const descuento = Number(agregado._max.descuento ?? 0);
+      const totalConDescuento = Math.max(0, Number(cuenta.total) - descuento);
+      return pagado + 0.01 >= totalConDescuento;
+    }).slice(0, this.LIMITE_POR_TICK);
 
     for (const cuenta of pendientes) {
+      const agregado = agregadoPorCuenta.get(cuenta.cuentaId);
+      const descuento = Number(agregado?._max.descuento ?? 0);
       try {
-        await this.cuentasHttp.cerrarCuenta(cuenta.cuentaId, descuentoPorCuenta.get(cuenta.cuentaId) ?? 0);
+        await this.cuentasHttp.cerrarCuenta(cuenta.cuentaId, descuento);
         await this.prisma.cuentaAbierta.update({
           where: { cuentaId: cuenta.cuentaId },
           data: { estado: 'CERRADA' },

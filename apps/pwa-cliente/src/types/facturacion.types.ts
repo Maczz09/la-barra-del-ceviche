@@ -70,6 +70,7 @@ export interface NotaDto {
   motivoRechazo: string | null;
   createdAt: string;
   comprobanteAfectado: DocumentoAfectadoDto | null;
+  empresa: EmpresaComprobanteDto;
 }
 
 export interface ComprobantePagoDto {

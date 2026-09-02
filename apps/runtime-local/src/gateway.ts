@@ -1,4 +1,4 @@
-import http, { type IncomingMessage, type ServerResponse } from 'node:http';
+import http, { type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, resolve, sep } from 'node:path';
 import httpProxy from 'http-proxy';
@@ -27,6 +27,13 @@ export interface RuntimeAdminApi {
 export interface DeviceSeen { address: string; lastSeen: string; requests: number; userAgent?: string }
 
 export interface ServiceProxyRoute { target: string; path: string }
+
+export function sanitizeInternalProxyHeaders(headers: IncomingHttpHeaders): void {
+  // El navegador habla con el gateway en el mismo origen (IP dinámica:3210).
+  // Los microservicios son upstreams privados: reenviarles ese Origin obligaría
+  // a reiniciarlos cada vez que la laptop cambia de Wi-Fi para recalcular CORS.
+  delete headers.origin;
+}
 
 export function closeHttpServer(server: http.Server, timeoutMs = 2_000): Promise<void> {
   return new Promise((resolveClose) => {
@@ -92,6 +99,7 @@ export class LocalGateway {
         return;
       }
       request.url = request.url?.replace(notificationPrefix, '/api');
+      sanitizeInternalProxyHeaders(request.headers);
       proxy.ws(request, socket, head, { target: notificationTarget() });
     });
     await new Promise<void>((resolveStart, reject) => {
@@ -137,11 +145,13 @@ export class LocalGateway {
     const serviceRoute = resolveServiceProxy(url.pathname, url.search);
     if (serviceRoute) {
       request.url = serviceRoute.path;
+      sanitizeInternalProxyHeaders(request.headers);
       proxy.web(request, response, { target: serviceRoute.target });
       return;
     }
     if (url.pathname.startsWith('/notificaciones')) {
       request.url = request.url?.replace(/^\/notificaciones/, '/api');
+      sanitizeInternalProxyHeaders(request.headers);
       proxy.web(request, response, { target: notificationTarget() });
       return;
     }

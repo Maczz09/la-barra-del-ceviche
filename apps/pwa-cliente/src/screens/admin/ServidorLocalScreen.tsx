@@ -89,7 +89,7 @@ export function ServidorLocalScreen() {
               <a className="btn btn-ghost" href={status.url} target="_blank" rel="noreferrer"><Icons.Eye s={16} /> Abrir</a>
             </div>
             <div className="server-meta">
-              <span>IP alternativa {status.ipUrl}</span><span>ID {status.serverId}</span><span>Activo {formatUptime(status.uptimeSeconds)}</span><span>Puerto {status.port}</span>
+              <span>IP del servidor {status.primaryAddress?.address ?? 'no disponible'}</span><span>ID {status.serverId}</span><span>Activo {formatUptime(status.uptimeSeconds)}</span><span>Puerto {status.port}</span>
             </div>
           </div>
           <div className="server-qr"><canvas ref={qrRef} /><small>QR de acceso a RestoApp</small></div>
@@ -97,7 +97,7 @@ export function ServidorLocalScreen() {
 
         <div className="banner warn module-feedback">
           <Icons.Alert s={17} />
-          <span>El QR usa el nombre fijo <strong>la-barra-del-ceviche.local</strong>. Como respaldo, reserva la IP <strong>{status.primaryAddress?.address ?? 'de esta laptop'}</strong> para la MAC <strong>{status.primaryAddress?.mac ?? 'de esta laptop'}</strong> en el router.</span>
+          <span>El QR usa la IP <strong>{status.primaryAddress?.address ?? 'de esta laptop'}</strong>. Para conservar siempre el mismo QR, reserva esa IP para la MAC <strong>{status.primaryAddress?.mac ?? 'de esta laptop'}</strong> en el router.</span>
         </div>
 
         <div className="server-grid">

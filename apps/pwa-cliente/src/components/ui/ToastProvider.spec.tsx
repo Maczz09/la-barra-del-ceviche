@@ -26,6 +26,7 @@ describe('ToastProvider', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('throws if useToast is used outside provider', () => {
@@ -63,5 +64,17 @@ describe('ToastProvider', () => {
 
     expect(screen.queryByText('Title1')).not.toBeInTheDocument();
     expect(screen.queryByText('TitleErr')).not.toBeInTheDocument();
+  });
+
+  it('funciona por HTTP LAN aunque crypto.randomUUID no exista', () => {
+    vi.stubGlobal('crypto', { getRandomValues: vi.fn() });
+    render(
+      <ToastProvider>
+        <TestComponent />
+      </ToastProvider>
+    );
+
+    expect(() => fireEvent.click(screen.getByText('Ok Toast'))).not.toThrow();
+    expect(screen.getByText('Title1')).toBeInTheDocument();
   });
 });

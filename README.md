@@ -31,7 +31,7 @@ El perfil de escritorio Tauri ya está implementado: empaqueta los 11 microservi
 |---------|-----------|
 | `apps/servicio-*` | 11 microservicios NestJS + sus suites e2e (`*-e2e`) |
 | `apps/pwa-cliente` | Frontend PWA (React 19, Vite, React Query, React Router v7) |
-| `apps/runtime-local` | Supervisor portable, gateway LAN, mDNS, onboarding, respaldos y cola de impresión |
+| `apps/runtime-local` | Supervisor portable, gateway LAN por IP, onboarding, respaldos y cola de impresión |
 | `apps/escritorio` | Aplicación e instalador Tauri 2 para Windows |
 | `libs/contracts` | Contratos compartidos: comandos/queries por dominio, routing keys, envelope de eventos |
 | `libs/shared-auth` | Guard JWT + estrategia Passport + validación CSRF (double-submit) |
@@ -91,7 +91,7 @@ npm exec nx run-many -- --target=e2e --all --parallel=1   # contra stack Docker/
 
 ## Aplicación de escritorio y servidor local
 
-El perfil `tauri-local` mantiene los 11 microservicios como procesos separados, pero los opera como una sola aplicación. La laptop sirve la PWA por el puerto fijo `3210`; meseros, cocina y comensales acceden con `http://la-barra-del-ceviche.local:3210` o con la dirección IP mostrada en el módulo **Servidor local**.
+El perfil `tauri-local` mantiene los 11 microservicios como procesos separados, pero los opera como una sola aplicación. La laptop sirve la PWA por el puerto fijo `3210`; meseros, cocina y comensales acceden con la URL IP mostrada en **Servidor local**, por ejemplo `http://192.168.100.5:3210`. Para conservar un QR único, se debe reservar esa IP para la MAC de la laptop en el router.
 
 ```sh
 npm run desktop:prepare    # compila y reúne el runtime portable

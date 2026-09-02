@@ -38,12 +38,11 @@ model Empresa {
   id                 String   @id @default(uuid())
   slot               Int      @unique
   ruc                String   @unique
-  // Sede (servicio-identidad) a la que emite esta empresa — 1 a 1: dos
-  // empresas no pueden compartir sede, ni tener ambas null empresas la
-  // misma... salvo que ninguna tenga sede asignada (Postgres no choca dos
-  // NULL contra un índice único). Nullable porque las empresas creadas
-  // antes de este campo no tienen una retroactiva.
-  sedeId             String?  @unique
+  // Sede (servicio-identidad) a la que emite esta empresa. Una sede puede
+  // trabajar con hasta dos RUC; el límite se valida en AppService porque
+  // PostgreSQL no permite expresar cómodamente "máximo dos filas" con un
+  // índice. Nullable para conservar empresas históricas sin asignación.
+  sedeId             String?
   razonSocial        String
   nombreComercial    String?
   direccion          String?
@@ -84,6 +83,7 @@ model Empresa {
 
   comprobantes Comprobante[]
 
+  @@index([sedeId])
   @@map("empresas")
 }
 

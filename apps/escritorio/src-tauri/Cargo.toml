@@ -1,6 +1,6 @@
 [package]
 name = "la-barra-del-ceviche"
-version = "1.0.3"
+version = "1.0.5"
 description = "Aplicación de escritorio y servidor local de La Barra del Ceviche"
 authors = ["Max Alessandro García López"]
 edition = "2021"
