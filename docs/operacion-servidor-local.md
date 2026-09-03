@@ -19,6 +19,10 @@ No se requiere Docker, Node.js, PostgreSQL ni NATS instalados en la laptop.
 
 Para que la IP no cambie, entra al router y crea una reserva DHCP para la dirección MAC indicada por la aplicación. Después prueba el mismo QR apagando y encendiendo tanto el router como la laptop.
 
+## Seleccionar platos para un pedido
+
+En **Nuevo pedido → A la carta**, primero aparecen tarjetas grandes de categorías. Toca, por ejemplo, **Ceviches** para ver únicamente sus platos y precios. Usa **Volver a categorías** para elegir Arroces, Chicharrones u otra categoría; la comanda, cantidades y notas se conservan. La búsqueda funciona dentro de la categoría abierta y se limpia al volver. Los abarrotes aparecen separados y **Menú del día** mantiene su acceso directo.
+
 ## Cocina e impresión automática
 
 1. Instala la impresora térmica en Windows y verifica una página de prueba.

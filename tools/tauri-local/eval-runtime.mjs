@@ -67,7 +67,10 @@ check('pago combinado usa endpoint propio y una sola transacción DB', cajaContr
 check('pago combinado conserva cada método en la cascada de operaciones', cajaService.includes('Pago combinado ${indice + 1}/${pagos.length}') && cajaService.includes('await prisma.movimientoCaja.create'));
 check('facturación permite dos RUC enlazados a una sede', !facturacionSchema.includes('sedeId             String?  @unique') && facturacionSchema.includes('@@index([sedeId])') && facturacionMigration.includes('DROP INDEX IF EXISTS "empresas_sedeId_key"'));
 check('facturador apunta a SUNAT producción', facturacionEnv.includes('e-factura.sunat.gob.pe') && !facturacionEnv.includes('e-beta.sunat.gob.pe'));
-check('carta completa agrupa platos bajo el título de su categoría', comandero.includes('groupCatalogProducts') && comandero.includes('cmd-category-section'));
+check('comandero comienza con tarjetas grandes de categorías', comandero.includes('cmd-category-tile') && comandero.includes('Elige una categoría') && comandero.includes("| null>(null)") && !comandero.includes('>Todos</button>'));
+check('comandero permite volver sin reiniciar la comanda', comandero.includes('Volver a categorías') && comandero.includes('volverACategorias') && comandero.includes('const cmd = useComanda('));
+check('comandero separa categorías por ID y conserva sus precios', comandero.includes('p.categoriaId') && comandero.includes('cat?.id || undefined') && comandero.includes('cmd-category-section') && comandero.includes('fmt(p.precio)'));
+check('comandero no oculta carga y errores con caché de otras categorías', comandero.includes('cat === null ? catalogo.length : productosFiltrados.length') && comandero.includes('productosLength: productosVisiblesLength'));
 check('respaldos usan una URL compatible con pg_dump', backupSource.includes('postgresCliConnectionString') && postgresSource.includes('postgresCliConnectionString'));
 check('gateway fuerza el cierre de conexiones persistentes', gateway.includes('closeAllConnections()') && gateway.includes('closeIdleConnections()'));
 check('NATS no puede bloquear indefinidamente el apagado', kitchenSubscriberSource.includes('closeNatsConnection') && kitchenSubscriberSource.includes('Promise.race'));

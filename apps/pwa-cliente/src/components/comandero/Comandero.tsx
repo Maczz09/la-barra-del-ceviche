@@ -4,7 +4,7 @@
 // La lógica del carrito/contexto y el envío viven en useComanda + domain/comanda
 // (T-22); aquí queda el cableado de queries y la presentación.
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Icons, type IconName } from '../ui/icons';
 import { useToast } from '../ui/ToastProvider';
 import { fmt } from '../../utils/format';
@@ -52,7 +52,12 @@ export function Comandero({
   const cmdRef = useRef<HTMLDialogElement>(null);
   useFocusTrap(cmdRef, { active: true, onClose });
   const [vista, setVista] = useState<'CARTA' | 'MENU_DIA'>('CARTA');
-  const [cat, setCat] = useState<string>('TODAS');
+  const [cat, setCat] = useState<Pick<CatalogGroup, 'id' | 'nombre'> | null>(null);
+  const volverRef = useRef<HTMLButtonElement>(null);
+  const categoriaOrigenRef = useRef<HTMLButtonElement>(null);
+  const ultimaCategoriaId = useRef<string | null>(null);
+  const focoPendiente = useRef(false);
+  const catalogoGuardado = useRef<ProductoCatalogo[]>([]);
   const [q, setQ] = useState('');
   const [activeTab, setActiveTab] = useState<'catalog' | 'cart'>('catalog');
   const search = q.trim();
@@ -64,10 +69,17 @@ export function Comandero({
     nextCursor,
     fetchMore,
     error: errorInv,
-  } = useInventarioQuery(undefined, { limit: 500, search: search || undefined });
+  } = useInventarioQuery(cat?.id || undefined, { limit: 500, search: vista === 'CARTA' ? search || undefined : undefined });
   const { menu: menuDelDia, loading: loadingMenu } = useMenuDiarioQuery();
   const { mesas } = useMesasQuery();
   const { crear } = usePedidosQuery(mesaId);
+
+  useEffect(() => {
+    if (cat === null && !search && !loadingInv && !errorInv) catalogoGuardado.current = productos;
+  }, [cat, search, loadingInv, errorInv, productos]);
+  // Consultar una categoría no debe perder la carta ya cargada si el
+  // servicio cae. El filtro por ID y búsqueda se aplica también al respaldo.
+  const catalogo = productos.length === 0 && (loadingInv || errorInv) ? catalogoGuardado.current : productos;
 
   const mesaLock = !!mesaId; // mesa ya definida desde el plano
   const mesasFisicas = useMemo(
@@ -80,34 +92,41 @@ export function Comandero({
     mesas, mesasFisicas, crear, toast, onCreated, onClose,
   });
 
-  // Categorías de área INVENTARIO (Agua Mineral, Cerveza, Gaseosas…) se
-  // sembraban mezcladas alfabéticamente entre las de Cocina/Barra en los
-  // chips de "Carta" — sin separación visual, un mesero no las distinguía
-  // de un plato de cocina. Se agrupan aparte, bajo "Abarrotes".
-  const categoriasCarta = useMemo(() => {
-    const nombres = new Set(categorias.filter((c) => c.area !== 'INVENTARIO').map((c) => c.nombre));
-    productos.filter((p) => p.stockActual == null && p.categoriaNombre).forEach((p) => nombres.add(p.categoriaNombre!));
-    return [...nombres].sort((a, b) => a.localeCompare(b, 'es'));
-  }, [categorias, productos]);
-  const categoriasAbarrotes = useMemo(() => {
-    const nombres = new Set(categorias.filter((c) => c.area === 'INVENTARIO').map((c) => c.nombre));
-    productos.filter((p) => p.stockActual != null && p.categoriaNombre).forEach((p) => nombres.add(p.categoriaNombre!));
-    return [...nombres].sort((a, b) => a.localeCompare(b, 'es'));
-  }, [categorias, productos]);
-
-  const productosFiltrados = useMemo(
-    () => productos.filter((p) => {
-      const okCat = cat === 'TODAS' || p.categoriaNombre === cat;
-      const okQ = !q || p.nombre.toLowerCase().includes(q.toLowerCase());
-      return okCat && okQ && p.disponible;
-    }),
-    [productos, cat, q],
-  );
+  // Solo cambia el catálogo; useComanda conserva líneas, notas y contexto.
+  const abrirCategoria = (grupo: CatalogGroup) => {
+    ultimaCategoriaId.current = grupo.id;
+    focoPendiente.current = true;
+    setQ('');
+    setCat({ id: grupo.id, nombre: grupo.nombre });
+  };
+  const volverACategorias = () => {
+    focoPendiente.current = true;
+    setQ('');
+    setCat(null);
+  };
+  useEffect(() => {
+    const destino = cat ? volverRef.current : categoriaOrigenRef.current;
+    if (focoPendiente.current && destino) {
+      destino.focus();
+      focoPendiente.current = false;
+    }
+  }, [cat, loadingInv]);
 
   const gruposCarta = useMemo(
-    () => groupCatalogProducts(productosFiltrados, [...categoriasCarta, ...categoriasAbarrotes]),
-    [productosFiltrados, categoriasCarta, categoriasAbarrotes],
+    () => groupCatalogProducts(catalogo, categorias, Boolean(nextCursor)),
+    [catalogo, categorias, nextCursor],
   );
+
+  const productosFiltrados = useMemo(
+    () => catalogo.filter((p) => {
+      const okCat = cat === null || (p.categoriaId || '') === cat.id;
+      const okQ = !search || p.nombre.toLocaleLowerCase('es').includes(search.toLocaleLowerCase('es'));
+      return okCat && okQ && p.disponible;
+    }),
+    [catalogo, cat, search],
+  );
+  // El respaldo de otras categorías no cuenta como datos de la vista actual.
+  const productosVisiblesLength = cat === null ? catalogo.length : productosFiltrados.length;
 
   // T-20: menú del día separado de la carta — solo platos activos hoy.
   const productosMenuDelDia = useMemo(
@@ -177,47 +196,43 @@ export function Comandero({
           {/* Catálogo */}
           <div className={`cmd-catalog ${activeTab === 'catalog' ? 'active' : 'hidden-mobile'}`}>
             <div className="row" style={{ gap: 6, padding: '0 0 10px' }}>
-              <button className={`chip ${vista === 'CARTA' ? 'on' : ''}`} onClick={() => setVista('CARTA')}>A la carta</button>
-              <button className={`chip ${vista === 'MENU_DIA' ? 'on' : ''}`} onClick={() => setVista('MENU_DIA')}>
+              <button className={`chip ${vista === 'CARTA' ? 'on' : ''}`} onClick={() => { setVista('CARTA'); volverACategorias(); }}>A la carta</button>
+              <button className={`chip ${vista === 'MENU_DIA' ? 'on' : ''}`} onClick={() => { setVista('MENU_DIA'); setQ(''); }}>
                 Menú del día{menuDelDia.length > 0 && ` (${menuDelDia.filter((m) => m.disponible).length})`}
               </button>
             </div>
-            <div className="cmd-filters">
-              {vista === 'CARTA' && (
-                <div className="cmd-cats">
-                  <button className={`chip ${cat === 'TODAS' ? 'on' : ''}`} onClick={() => setCat('TODAS')}>Todos</button>
-                  {categoriasCarta.map((nombre) => (
-                    <button key={nombre} className={`chip ${cat === nombre ? 'on' : ''}`} onClick={() => setCat(nombre)}>{nombre}</button>
-                  ))}
-                  {categoriasAbarrotes.length > 0 && (
-                    <>
-                      <span className="cmd-cats-sep" aria-hidden="true">Abarrotes</span>
-                      {categoriasAbarrotes.map((nombre) => (
-                        <button key={nombre} className={`chip ${cat === nombre ? 'on' : ''}`} onClick={() => setCat(nombre)}>{nombre}</button>
-                      ))}
-                    </>
-                  )}
-                </div>
-              )}
-              <div className="input cmd-search"><Icons.Search s={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar plato…" /></div>
-            </div>
-            {vista === 'CARTA' && errorInv && productos.length > 0 && (
+            {(vista === 'MENU_DIA' || cat !== null) && (
+              <div className="cmd-filters">
+                {vista === 'CARTA' && (
+                  <button type="button" className="btn btn-ghost cmd-back-categories" ref={volverRef} onClick={volverACategorias}>
+                    <Icons.ArrowDown s={18} style={{ transform: 'rotate(90deg)' }} /> Volver a categorías
+                  </button>
+                )}
+                <div className="input cmd-search"><Icons.Search s={15} /><input aria-label="Buscar plato" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar plato…" /></div>
+              </div>
+            )}
+            {vista === 'CARTA' && errorInv && productosVisiblesLength > 0 && (
               <div className="banner err module-feedback" role="alert">
                 <Icons.Alert s={17} />
                 <span>No se pudo actualizar el catálogo. Mostrando los últimos productos guardados.</span>
               </div>
             )}
             {vista === 'CARTA' ? (
-              <div className="cmd-grid">
-                {ComanderoEmptyGrid({ loadingInv, errorInv, productosLength: productos.length, productosFiltradosLength: productosFiltrados.length, nextCursor, loadingMoreInv, fetchMore }) ?? (
+              <div className={`cmd-grid ${cat === null ? 'cmd-category-picker' : ''}`} key={cat?.id ?? 'categorias'}>
+                {cat === null && <div className="cmd-category-intro"><h3>Elige una categoría</h3><p>Toca un recuadro para ver sus platos.</p></div>}
+                {ComanderoEmptyGrid({ loadingInv, errorInv, productosLength: productosVisiblesLength, productosFiltradosLength: cat === null ? gruposCarta.length : productosFiltrados.length, nextCursor, loadingMoreInv, fetchMore }) ?? (
                   <>
-                    <ComanderoCatalogGroups grupos={gruposCarta} cmd={cmd} />
+                    {cat === null ? (
+                      <ComanderoCategoryTiles grupos={gruposCarta} onSelect={abrirCategoria} ultimaCategoriaId={ultimaCategoriaId.current} origenRef={categoriaOrigenRef} parcial={Boolean(nextCursor)} />
+                    ) : (
+                      <ComanderoCatalogGroups grupos={[{ ...cat, productos: productosFiltrados }]} cmd={cmd} />
+                    )}
                     <ComanderoCargarMas nextCursor={nextCursor} loadingMoreInv={loadingMoreInv} fetchMore={fetchMore} />
                   </>
                 )}
               </div>
             ) : (
-              <div className="cmd-grid">
+              <div className="cmd-grid" key="menu-del-dia">
                 {loadingMenu && menuDelDia.length === 0 && (
                   <div className="cmd-empty" style={{ gridColumn: '1 / -1' }}><b>Cargando menú del día…</b></div>
                 )}
@@ -261,26 +276,75 @@ function ComanderoCanales({ cmd }: Readonly<{ cmd: ComandaCtrl }>) {
   );
 }
 
-export function groupCatalogProducts<T extends { categoriaNombre?: string | null }>(productos: T[], categoryOrder: string[]) {
-  const groups = new Map<string, T[]>();
-  for (const producto of productos) {
-    const name = producto.categoriaNombre?.trim() || 'Sin categoría';
-    const current = groups.get(name) ?? [];
-    current.push(producto);
-    groups.set(name, current);
-  }
-  const order = new Map(categoryOrder.map((name, index) => [name, index]));
-  return [...groups.entries()]
-    .map(([nombre, items]) => ({ nombre, productos: items }))
-    .sort((a, b) => (order.get(a.nombre) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.nombre) ?? Number.MAX_SAFE_INTEGER)
-      || a.nombre.localeCompare(b.nombre, 'es'));
+type CategoriaCatalogo = ReturnType<typeof useInventarioQuery>['categorias'][number];
+interface CatalogGroup {
+  id: string;
+  nombre: string;
+  area: CategoriaCatalogo['area'];
+  productos: ProductoCatalogo[];
 }
 
-function ComanderoCatalogGroups({ grupos, cmd }: Readonly<{ grupos: Array<{ nombre: string; productos: ProductoCatalogo[] }>, cmd: ComandaCtrl }>) {
+export function groupCatalogProducts(productos: ProductoCatalogo[], categorias: CategoriaCatalogo[], incluirSinCargar = false): CatalogGroup[] {
+  const metadata = new Map(categorias.map((categoria) => [categoria.id, categoria]));
+  const groups = new Map<string, CatalogGroup>();
+  // Una categoría todavía sin productos cargados sigue accesible si hay
+  // páginas pendientes. Al abrirla se consulta por su ID al backend.
+  if (incluirSinCargar) {
+    for (const categoria of categorias) groups.set(categoria.id, { ...categoria, productos: [] });
+  }
+  for (const producto of productos) {
+    if (!producto.disponible) continue;
+    const id = producto.categoriaId || '';
+    const categoria = metadata.get(id);
+    const group: CatalogGroup = groups.get(id) ?? {
+      id,
+      nombre: categoria?.nombre ?? (producto.categoriaNombre?.trim() || 'Sin categoría'),
+      area: categoria?.area ?? (producto.stockActual == null ? 'COCINA' : 'INVENTARIO'),
+      productos: [],
+    };
+    group.productos.push(producto);
+    groups.set(id, group);
+  }
+  return [...groups.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
+
+function ComanderoCategoryTiles({ grupos, onSelect, ultimaCategoriaId, origenRef, parcial }: Readonly<{
+  grupos: CatalogGroup[];
+  onSelect: (grupo: CatalogGroup) => void;
+  ultimaCategoriaId: string | null;
+  origenRef: RefObject<HTMLButtonElement | null>;
+  parcial: boolean;
+}>) {
+  return [false, true].map((abarrotes) => {
+    const items = grupos.filter((grupo) => (grupo.area === 'INVENTARIO') === abarrotes);
+    if (items.length === 0) return null;
+    return (
+      <section className="cmd-category-tile-section" key={String(abarrotes)} aria-label={abarrotes ? 'Categorías de abarrotes' : 'Categorías de platos'}>
+        {abarrotes && <h3>Abarrotes</h3>}
+        <div className="cmd-category-tiles">
+          {items.map((grupo) => {
+            const Ic = grupo.area === 'INVENTARIO' ? Icons.Bag : grupo.area === 'BARRA' ? Icons.Drink : Icons.Chef;
+            const cantidad = grupo.productos.length;
+            return (
+              <button type="button" className="cmd-category-tile" key={grupo.id} aria-label={`Abrir categoría ${grupo.nombre}`} ref={grupo.id === ultimaCategoriaId ? origenRef : undefined} onClick={() => onSelect(grupo)}>
+                <span className="cmd-category-tile-icon"><Ic s={32} /></span>
+                <span className="cmd-category-tile-name">{grupo.nombre}</span>
+                <span className="cmd-category-tile-count">{cantidad > 0 ? `${cantidad}${parcial ? '+' : ''} ${abarrotes ? 'productos' : 'platos'} disponibles` : 'Ver platos'}</span>
+                <span className="cmd-category-tile-action">Ver {abarrotes ? 'productos' : 'platos'} <Icons.ArrowDown s={16} style={{ transform: 'rotate(-90deg)' }} /></span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+    );
+  });
+}
+
+function ComanderoCatalogGroups({ grupos, cmd }: Readonly<{ grupos: Array<{ id: string; nombre: string; productos: ProductoCatalogo[] }>, cmd: ComandaCtrl }>) {
   return grupos.map((grupo) => (
-    <section className="cmd-category-section" key={grupo.nombre} aria-labelledby={`cmd-category-${grupo.nombre}`}>
+    <section className="cmd-category-section" key={grupo.id} aria-labelledby={`cmd-category-${encodeURIComponent(grupo.id)}`}>
       <div className="cmd-category-heading">
-        <h3 id={`cmd-category-${grupo.nombre}`}>{grupo.nombre}</h3>
+        <h3 id={`cmd-category-${encodeURIComponent(grupo.id)}`}>{grupo.nombre}</h3>
         <span>{grupo.productos.length} {grupo.productos.length === 1 ? 'plato' : 'platos'}</span>
       </div>
       <div className="cmd-category-grid">
@@ -313,7 +377,7 @@ function ComanderoCatalogGrid({ productos, cmd, showCategory = true }: Readonly<
 function ComanderoCargarMas({ nextCursor, loadingMoreInv, fetchMore }: Readonly<{ nextCursor: NextCursor, loadingMoreInv: boolean, fetchMore: FetchMore }>) {
   if (!nextCursor) return null;
   return (
-    <button className="dish-card" disabled={loadingMoreInv} onClick={() => { void fetchMore(); }}>
+    <button className="dish-card cmd-load-more" disabled={loadingMoreInv} onClick={() => { void fetchMore(); }}>
       <div className="dish-cat">Catálogo</div>
       <div className="dish-name">{loadingMoreInv ? 'Cargando...' : 'Cargar más productos'}</div>
       <div className="dish-foot">
