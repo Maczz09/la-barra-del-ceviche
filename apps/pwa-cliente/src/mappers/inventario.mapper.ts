@@ -1,6 +1,7 @@
 // mappers/inventario.mapper.ts - ProductoDto -> ProductoVM
 
 import type { CategoriaDto, MenuDiarioItemDto, MenuDiarioItemVM, MermaDto, MermaOrigen, MermaVM, ProductoDto, ProductoVM } from '../types/inventario.types';
+import { nombreProductoConTamano } from '../utils/tamanos';
 
 const ORIGEN_LABEL: Record<MermaOrigen, string> = {
   DESCARTE_MANUAL_INVENTARIO: 'Descarte manual',
@@ -31,6 +32,8 @@ export function mapProducto(dto: ProductoDto, categorias: CategoriaDto[] = []): 
     categoriaId: dto.categoriaId,
     categoriaNombre: categoria?.nombre ?? null,
     nombre: dto.nombre,
+    tamanoId: dto.tamanoId ?? dto.tamano?.id ?? null,
+    tamano: dto.tamano ?? null,
     descripcion: dto.descripcion ?? null,
     precio: Number(dto.precio),
     precioLabel: formatMoney(Number(dto.precio)),
@@ -64,7 +67,7 @@ export function mapMerma(dto: MermaDto): MermaVM {
   return {
     id: dto.id,
     productoId: dto.productoId,
-    productoNombre: dto.producto?.nombre ?? 'Producto',
+    productoNombre: dto.producto ? nombreProductoConTamano(dto.producto) : 'Producto',
     cantidad: dto.cantidad,
     motivo: dto.motivo,
     observacion: dto.observacion ?? null,

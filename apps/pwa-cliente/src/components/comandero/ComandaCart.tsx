@@ -4,6 +4,7 @@
 
 import { Icons } from '../ui/icons';
 import { fmt } from '../../utils/format';
+import { nombreProductoConTamano } from '../../utils/tamanos';
 import { NOTAS_RAPIDAS } from '../../data/notas-cocina.const';
 import { appendNotaRapida } from '../../domain/comanda';
 import type { useComanda } from '../../hooks/useComanda';
@@ -40,7 +41,7 @@ export function ComandaCart({ cmd, modoAgregar }: Readonly<ComandaCartProps>) {
           <div className="cmd-line" key={l.producto.id}>
             <div className="cmd-line-top">
               <div className="cmd-line-main">
-                <div className="cmd-line-name">{l.producto.nombre}</div>
+                <div className="cmd-line-name">{nombreProductoConTamano(l.producto)}</div>
                 <div className="muted" style={{ fontSize: 11.5, marginTop: 1 }}>{fmt(l.producto.precio)} c/u</div>
               </div>
               <span className="cmd-line-price mono">{fmt(l.producto.precio * l.cantidad)}</span>

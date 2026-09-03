@@ -18,10 +18,12 @@ export interface UseInventarioOptions {
   conStock?: boolean;
   limit?: number;
   search?: string;
+  tamanoId?: string;
+  ordenPorTamano?: boolean;
 }
 
 export function useInventarioQuery(categoriaId?: string, options: UseInventarioOptions = {}) {
-  const { conStock, limit = 50, search } = options;
+  const { conStock, limit = 50, search, tamanoId, ordenPorTamano } = options;
   const categoriasQuery = useQuery({
     queryKey: INVENTARIO_CATEGORIAS_KEY,
     queryFn: async () => {
@@ -33,7 +35,7 @@ export function useInventarioQuery(categoriaId?: string, options: UseInventarioO
   });
 
   const productosQuery = useInfiniteQuery({
-    queryKey: [...INVENTARIO_PRODUCTOS_KEY, categoriaId, conStock, limit, search].filter((part) => part !== undefined && part !== ''),
+    queryKey: [...INVENTARIO_PRODUCTOS_KEY, { categoriaId, conStock, limit, search, tamanoId, ordenPorTamano }],
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
       const response = await inventarioApi.getProductosPage({
@@ -42,6 +44,8 @@ export function useInventarioQuery(categoriaId?: string, options: UseInventarioO
         search,
         cursor: pageParam,
         limit,
+        ...(tamanoId ? { tamanoId } : {}),
+        ...(ordenPorTamano != null ? { ordenPorTamano } : {}),
       });
       return {
         productos: response.data,

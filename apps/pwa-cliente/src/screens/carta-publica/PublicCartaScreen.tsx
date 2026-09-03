@@ -66,6 +66,7 @@ interface Datos {
 type Vista = 'portada' | 'categorias' | 'detalle';
 
 const EXIT_MS = 280;
+const SIN_TAMANO = '__sin_tamano__';
 
 export function PublicCartaScreen() {
   const { sedeId } = useParams<{ sedeId: string }>();
@@ -73,6 +74,7 @@ export function PublicCartaScreen() {
   const [error, setError] = useState<string | null>(null);
   const [vista, setVista] = useState<Vista>('portada');
   const [categoriaActivaId, setCategoriaActivaId] = useState<string | null>(null);
+  const [tamanoActivoId, setTamanoActivoId] = useState<string | null>(null);
   const [direccionNav, setDireccionNav] = useState<'next' | 'prev'>('next');
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -101,11 +103,15 @@ export function PublicCartaScreen() {
   // parchear un solo producto en memoria).
   useCartaSocket(sedeId, () => void cargar());
 
+  const platosDisponibles = useMemo(() => agruparPorTamano(
+    (datos?.productos ?? []).filter((p) => p.disponible && (p.stockActual == null || p.stockActual > 0)),
+  ), [datos]);
+
   const categoriasConItems = useMemo(() => {
     if (!datos) return [];
-    const idsConProductos = new Set(datos.productos.map((p) => p.categoriaId));
+    const idsConProductos = new Set(platosDisponibles.map((p) => p.categoriaId));
     return datos.categorias.filter((c) => idsConProductos.has(c.id));
-  }, [datos]);
+  }, [datos, platosDisponibles]);
 
   // Categorías de área INVENTARIO (agua, cerveza, gaseosas…) se muestran
   // agrupadas aparte bajo "Abarrotes" — de cara al cliente es un nombre más
@@ -113,13 +119,30 @@ export function PublicCartaScreen() {
   const categoriasCarta = useMemo(() => categoriasConItems.filter((c) => c.area !== 'INVENTARIO'), [categoriasConItems]);
   const categoriasAbarrotes = useMemo(() => categoriasConItems.filter((c) => c.area === 'INVENTARIO'), [categoriasConItems]);
 
-  const categoriaActiva = categoriasConItems.find((c) => c.id === categoriaActivaId);
+  const categoriaActiva = datos?.categorias.find((c) => c.id === categoriaActivaId);
 
-  const platosDeCategoriaActiva = useMemo(() => {
-    if (!datos || !categoriaActivaId) return [];
-    const productosDeCategoria = datos.productos.filter((p) => p.categoriaId === categoriaActivaId);
-    return agruparPorTamano(productosDeCategoria);
-  }, [datos, categoriaActivaId]);
+  const platosDeCategoriaActiva = useMemo(() => platosDisponibles.filter((p) => p.categoriaId === categoriaActivaId), [platosDisponibles, categoriaActivaId]);
+  const tamanosDisponibles = useMemo(() => {
+    const tamanos = new Map<string, { id: string; nombre: string; orden: number }>();
+    for (const plato of platosDeCategoriaActiva) {
+      for (const variante of plato.variantes ?? []) {
+        tamanos.set(variante.tamanoId, { id: variante.tamanoId, nombre: variante.nombre, orden: variante.orden });
+      }
+    }
+    return [...tamanos.values()].sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre, 'es'));
+  }, [platosDeCategoriaActiva]);
+  const haySinTamano = platosDeCategoriaActiva.some((p) => p.precioUnico != null);
+  const filtroTamano = tamanoActivoId === SIN_TAMANO && haySinTamano
+    ? SIN_TAMANO
+    : tamanosDisponibles.some((t) => t.id === tamanoActivoId) ? tamanoActivoId : null;
+  const platosVisibles = useMemo(() => {
+    if (!filtroTamano) return platosDeCategoriaActiva;
+    if (filtroTamano === SIN_TAMANO) return platosDeCategoriaActiva.filter((p) => p.precioUnico != null);
+    return platosDeCategoriaActiva.flatMap((plato) => {
+      const variantes = plato.variantes?.filter((v) => v.tamanoId === filtroTamano);
+      return variantes?.length ? [{ ...plato, variantes }] : [];
+    });
+  }, [platosDeCategoriaActiva, filtroTamano]);
 
   // ─── Animaciones de entrada por vista ──────────────────────────────
   const { contextSafe } = useGSAP(
@@ -166,6 +189,7 @@ export function PublicCartaScreen() {
   });
 
   const abrirCategoria = contextSafe((id: string) => {
+    setTamanoActivoId(null);
     if (reducedMotion()) { setCategoriaActivaId(id); setVista('detalle'); return; }
     gsap.to('.cp-cat-grid', {
       opacity: 0,
@@ -176,6 +200,7 @@ export function PublicCartaScreen() {
   });
 
   const volverACategorias = contextSafe(() => {
+    setTamanoActivoId(null);
     if (reducedMotion()) { setVista('categorias'); return; }
     gsap.to('.cp-detalle-panel', { opacity: 0, duration: EXIT_MS / 1000, ease: 'power1.in', onComplete: () => setVista('categorias') });
   });
@@ -187,6 +212,7 @@ export function PublicCartaScreen() {
       ? (idx + 1) % categoriasConItems.length
       : (idx - 1 + categoriasConItems.length) % categoriasConItems.length;
     const siguienteId = categoriasConItems[siguienteIdx].id;
+    setTamanoActivoId(null);
     setDireccionNav(dir);
     if (reducedMotion()) { setCategoriaActivaId(siguienteId); return; }
     gsap.to('.cp-detalle-panel', {
@@ -241,7 +267,7 @@ export function PublicCartaScreen() {
           <div className="cp-cat-grid">
             {categoriasCarta.map((cat) => {
               const Ic = iconoDeCategoria(cat.area);
-              const cantidad = datos.productos.filter((p) => p.categoriaId === cat.id).length;
+              const cantidad = platosDisponibles.filter((p) => p.categoriaId === cat.id).length;
               return (
                 <button key={cat.id} type="button" className="cp-cat-card" onClick={() => abrirCategoria(cat.id)}>
                   <Ic s={26} />
@@ -255,7 +281,7 @@ export function PublicCartaScreen() {
                 <div className="cp-cat-section-h">Abarrotes</div>
                 {categoriasAbarrotes.map((cat) => {
                   const Ic = iconoDeCategoria(cat.area);
-                  const cantidad = datos.productos.filter((p) => p.categoriaId === cat.id).length;
+                  const cantidad = platosDisponibles.filter((p) => p.categoriaId === cat.id).length;
                   return (
                     <button key={cat.id} type="button" className="cp-cat-card" onClick={() => abrirCategoria(cat.id)}>
                       <Ic s={26} />
@@ -292,9 +318,20 @@ export function PublicCartaScreen() {
             <h2 className="cp-categoria-titulo">{categoriaActiva.nombre}</h2>
             {categoriaActiva.descripcion && <p className="cp-categoria-desc">{categoriaActiva.descripcion}</p>}
 
+            {tamanosDisponibles.length > 0 && (
+              <div className="cp-tamano-filtros" role="group" aria-label="Filtrar por tamaño">
+                <button type="button" aria-pressed={filtroTamano === null} onClick={() => setTamanoActivoId(null)}>Todos los tamaños</button>
+                {tamanosDisponibles.map((tamano) => (
+                  <button key={tamano.id} type="button" aria-pressed={filtroTamano === tamano.id} onClick={() => setTamanoActivoId(tamano.id)}>{tamano.nombre}</button>
+                ))}
+                {haySinTamano && <button type="button" aria-pressed={filtroTamano === SIN_TAMANO} onClick={() => setTamanoActivoId(SIN_TAMANO)}>Sin tamaño</button>}
+              </div>
+            )}
+
             <div className="cp-detalle-panel" key={categoriaActivaId}>
-              {platosDeCategoriaActiva.map((plato) => (
-                <div className="cp-plato" key={plato.key}>
+              {platosVisibles.length === 0 && <p className="cp-vacio">No hay platos disponibles en esta categoría.</p>}
+              {platosVisibles.map((plato) => (
+                <article className="cp-plato" key={plato.key} aria-label={plato.nombre}>
                   <div className="cp-plato-cabecera">
                     <span className="cp-plato-nombre">{plato.nombre}</span>
                     {plato.precioUnico != null && (
@@ -302,29 +339,18 @@ export function PublicCartaScreen() {
                     )}
                   </div>
                   {plato.descripcion && <p className="cp-plato-desc">{plato.descripcion}</p>}
-                  {plato.precios && (
-                    <div className="cp-tabla-tallas">
-                      {plato.precios.personal != null && (
-                        <div className="cp-talla">
-                          <div className="cp-talla-label">Personal</div>
-                          <div className="cp-talla-precio">{fmt(plato.precios.personal)}</div>
+                  {plato.variantes && (
+                    <div className="cp-tabla-tallas" role="list" aria-label={`Tamaños de ${plato.nombre}`}>
+                      {plato.variantes.map((variante) => (
+                        <div className="cp-talla" role="listitem" key={variante.productoId}>
+                          <div className="cp-talla-label">{variante.nombre}</div>
+                          <div className="cp-talla-precio">{fmt(variante.precio)}</div>
+                          {variante.descripcion && variante.descripcion !== plato.descripcion && <p className="cp-talla-desc">{variante.descripcion}</p>}
                         </div>
-                      )}
-                      {plato.precios.mediana != null && (
-                        <div className="cp-talla">
-                          <div className="cp-talla-label">Mediana</div>
-                          <div className="cp-talla-precio">{fmt(plato.precios.mediana)}</div>
-                        </div>
-                      )}
-                      {plato.precios.familiar != null && (
-                        <div className="cp-talla">
-                          <div className="cp-talla-label">Familiar</div>
-                          <div className="cp-talla-precio">{fmt(plato.precios.familiar)}</div>
-                        </div>
-                      )}
+                      ))}
                     </div>
                   )}
-                </div>
+                </article>
               ))}
             </div>
           </main>

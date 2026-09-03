@@ -12,9 +12,14 @@ import { MiniStat } from '../../components/ui/Stat';
 import { useToast } from '../../components/ui/ToastProvider';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useInventarioQuery } from '../../hooks/queries/useInventarioQuery';
+import { useTamanosPlatoQuery } from '../../hooks/queries/useTamanosPlatoQuery';
 import { useAuthStore } from '../../store/auth.store';
-import type { CategoriaDto, ProductoVM } from '../../types/inventario.types';
+import type { CategoriaDto, ProductoVM, TamanoPlatoDto } from '../../types/inventario.types';
+import { coincideTamano, compararProductosPorTamano, nombreProductoConTamano, tamanosDeProductos } from '../../utils/tamanos';
 import { MenuDiarioPanel } from './MenuDiarioPanel';
+import { TamanoSelect } from './TamanoSelect';
+import { TamanosPlatoDrawer } from './TamanosPlatoDrawer';
+import './tamanos-carta.css';
 
 export function CartaScreen() {
   const { toast } = useToast();
@@ -23,6 +28,7 @@ export function CartaScreen() {
   const rol = useAuthStore((s) => s.user?.rol);
   // COCINA solo puede marcar 86 (agotado/disponible), no crear ni editar platos.
   const soloDisponibilidad = rol === 'COCINA';
+  const tamanosQuery = useTamanosPlatoQuery();
   const {
     categorias: todasLasCategorias,
     productos,
@@ -33,7 +39,7 @@ export function CartaScreen() {
     actualizarDisponibilidad,
   // La carta se muestra completa de una vez (tabs de categoría con conteos
   // en cliente), no paginada: limit alto para cubrir el menú real (~183 platos).
-  } = useInventarioQuery(undefined, { conStock: false, limit: 500 });
+  } = useInventarioQuery(undefined, { conStock: false, limit: 500, ordenPorTamano: true });
 
   // Categorías de Inventario (área INVENTARIO) no son de Carta — se
   // gestionan y muestran aparte, en el módulo Inventario.
@@ -45,6 +51,23 @@ export function CartaScreen() {
   const [q, setQ] = useState('');
   const [edit, setEdit] = useState<ProductoVM | null>(null);
   const [nuevo, setNuevo] = useState(false);
+  const [gestionarTamanos, setGestionarTamanos] = useState(false);
+  const [tamanoFiltro, setTamanoFiltro] = useState('TODOS');
+  const [ordenPlatos, setOrdenPlatos] = useState<'TAMANO' | 'NOMBRE'>('TAMANO');
+
+  // Reflejar cambios de nombre/orden de tamaño sin esperar a recargar productos.
+  const productosConTamanos = useMemo(() => {
+    const porId = new Map(tamanosQuery.tamanos.map((t) => [t.id, t]));
+    return productos.map((p) => {
+      const tamanoId = p.tamanoId ?? p.tamano?.id;
+      return { ...p, tamano: tamanoId ? porId.get(tamanoId) ?? p.tamano : p.tamano };
+    });
+  }, [productos, tamanosQuery.tamanos]);
+  const tamanosVisibles = useMemo(() => {
+    const porId = new Map(tamanosDeProductos(productosConTamanos).map((t) => [t.id, t]));
+    for (const tamano of tamanosQuery.tamanos) porId.set(tamano.id, tamano);
+    return [...porId.values()].sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre, 'es'));
+  }, [productosConTamanos, tamanosQuery.tamanos]);
 
   // Subcategorías se muestran como "Padre › Hijo" para no confundirse con
   // categorías principales del mismo nombre corto en la lista plana.
@@ -70,17 +93,19 @@ export function CartaScreen() {
   // Productos que matchean área + búsqueda, sin filtrar aún por categoría
   // puntual — es lo que cuenta el tab "Todas" dentro de la estación elegida.
   const enAreaYBusqueda = useMemo(
-    () => productos.filter((p) => {
+    () => productosConTamanos.filter((p) => {
       const okArea = areaFiltro === 'TODAS' || areaPorCategoria.get(p.categoriaId) === areaFiltro;
-      const okQ = !q || p.nombre.toLowerCase().includes(q.toLowerCase());
-      return okArea && okQ;
+      const okQ = !q || nombreProductoConTamano(p).toLowerCase().includes(q.toLowerCase());
+      const okTamano = coincideTamano(p, tamanoFiltro === 'TODOS' ? '' : tamanoFiltro);
+      return okArea && okQ && okTamano;
     }),
-    [productos, areaFiltro, areaPorCategoria, q],
+    [productosConTamanos, areaFiltro, areaPorCategoria, q, tamanoFiltro],
   );
 
   const filtrados = useMemo(
-    () => enAreaYBusqueda.filter((p) => cat === 'TODAS' || p.categoriaId === cat),
-    [enAreaYBusqueda, cat],
+    () => enAreaYBusqueda.filter((p) => cat === 'TODAS' || p.categoriaId === cat)
+      .sort(ordenPlatos === 'TAMANO' ? compararProductosPorTamano : (a, b) => a.nombre.localeCompare(b.nombre, 'es') || compararProductosPorTamano(a, b)),
+    [enAreaYBusqueda, cat, ordenPlatos],
   );
 
   const kpis = useMemo(() => {
@@ -104,6 +129,7 @@ export function CartaScreen() {
           nombre: datos.nombre,
           descripcion: datos.descripcion.trim() === '' ? null : datos.descripcion,
           categoriaId: datos.categoriaId,
+          tamanoId: datos.tamanoId,
           precio: datos.precio,
           disponible: datos.disponible,
         });
@@ -113,6 +139,7 @@ export function CartaScreen() {
           nombre: datos.nombre,
           descripcion: datos.descripcion.trim() === '' ? undefined : datos.descripcion,
           categoriaId: datos.categoriaId,
+          tamanoId: datos.tamanoId,
           precio: datos.precio,
           disponible: datos.disponible,
           // Sin stockActual → producto de carta (sin control de stock)
@@ -137,6 +164,11 @@ export function CartaScreen() {
         </div>
         <span className="spacer" />
         {!soloDisponibilidad && (
+          <button className="btn btn-ghost" onClick={() => setGestionarTamanos(true)}>
+            <Icons.Layers s={16} /> Tamaños
+          </button>
+        )}
+        {!soloDisponibilidad && (
           <button className="btn btn-ghost" onClick={() => navigate('/app/categorias')}>
             <Icons.Layers s={16} /> Gestionar categorías
           </button>
@@ -154,7 +186,7 @@ export function CartaScreen() {
       </div>
 
       {modo === 'MENU_DIA' ? (
-        <MenuDiarioPanel productos={productos} categorias={categorias} />
+        <MenuDiarioPanel productos={productosConTamanos} categorias={categorias} tamanos={tamanosQuery.tamanos} tamanosLoading={tamanosQuery.loading} tamanosError={tamanosQuery.error} />
       ) : (
       <>
       <div className="grid-stats" style={{ marginBottom: 16 }}>
@@ -189,7 +221,7 @@ export function CartaScreen() {
           <button className={`canal-tab ${cat === 'TODAS' ? 'on' : ''}`} onClick={() => setCat('TODAS')}>Todas <span className="ct-count">{enAreaYBusqueda.length}</span></button>
         {categoriasVisibles.map((c) => (
           <button key={c.id} className={`canal-tab ${cat === c.id ? 'on' : ''}`} onClick={() => setCat(c.id)}>
-            {nombrePorCategoria.get(c.id)} <span className="ct-count">{productos.filter((p) => p.categoriaId === c.id).length}</span>
+            {nombrePorCategoria.get(c.id)} <span className="ct-count">{enAreaYBusqueda.filter((p) => p.categoriaId === c.id).length}</span>
           </button>
         ))}
         </div>
@@ -198,6 +230,16 @@ export function CartaScreen() {
           <Icons.Search s={15} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar plato…" />
         </div>
+      </div>
+
+      <div className="carta-filtros-tamano">
+        <div className="field"><label htmlFor="carta-filtro-tamano">Filtrar por tamaño</label><div className="input"><select id="carta-filtro-tamano" value={tamanoFiltro} onChange={(e) => setTamanoFiltro(e.target.value)}>
+          <option value="TODOS">Todos los tamaños</option><option value="SIN_TAMANO">Sin tamaño</option>
+          {tamanosVisibles.map((t) => <option key={t.id} value={t.id}>{t.nombre}{!t.activo ? ' (inactivo)' : ''}</option>)}
+        </select></div></div>
+        <div className="field"><label htmlFor="carta-orden-platos">Ordenar platos</label><div className="input"><select id="carta-orden-platos" value={ordenPlatos} onChange={(e) => setOrdenPlatos(e.target.value as 'TAMANO' | 'NOMBRE')}>
+          <option value="TAMANO">Por tamaño</option><option value="NOMBRE">Por nombre</option>
+        </select></div></div>
       </div>
 
       <div className="table-wrap" style={{ flex: 1, overflowY: 'auto' }}>
@@ -222,7 +264,7 @@ export function CartaScreen() {
                 style={{ cursor: soloDisponibilidad ? 'default' : 'pointer', opacity: p.disponible ? 1 : 0.55 }}
                 onClick={() => { if (!soloDisponibilidad) setEdit(p); }}
               >
-                <td><strong>{p.nombre}</strong>{p.descripcion && <div className="muted" style={{ fontSize: 12 }}>{p.descripcion}</div>}</td>
+                <td><strong>{p.nombre}</strong><div><span className={`carta-tamano-etiqueta ${p.tamano ? '' : 'sin-tamano'}`}>{p.tamano?.nombre ?? 'Sin tamaño'}</span></div>{p.descripcion && <div className="muted" style={{ fontSize: 12 }}>{p.descripcion}</div>}</td>
                 <td className="col-mobile-hidden"><span className="pill-soft">{nombrePorCategoria.get(p.categoriaId) ?? p.categoriaNombre ?? '—'}</span></td>
                 <td style={{ textAlign: 'right' }}><strong className="mono">{p.precioLabel}</strong></td>
                 <td onClick={(e) => e.stopPropagation()}>
@@ -241,13 +283,18 @@ export function CartaScreen() {
         <CartaDrawer
           prod={edit}
           categorias={categorias}
+          tamanos={tamanosQuery.tamanos}
+          tamanosLoading={tamanosQuery.loading}
+          tamanosError={tamanosQuery.error}
           saving={saving}
+          online={online}
           onClose={() => { setEdit(null); setNuevo(false); }}
           onSave={guardar}
         />
       )}
       </>
       )}
+      {gestionarTamanos && !soloDisponibilidad && <TamanosPlatoDrawer query={tamanosQuery} online={online} onClose={() => setGestionarTamanos(false)} />}
     </div>
   );
 }
@@ -256,6 +303,7 @@ interface CartaFormData {
   nombre: string;
   descripcion: string;
   categoriaId: string;
+  tamanoId: string | null;
   precio: number;
   disponible: boolean;
 }
@@ -263,23 +311,28 @@ interface CartaFormData {
 interface CartaDrawerProps {
   prod: ProductoVM | null;
   categorias: CategoriaDto[];
+  tamanos: TamanoPlatoDto[];
+  tamanosLoading: boolean;
+  tamanosError: string | null;
   saving: boolean;
+  online: boolean;
   onClose: () => void;
   onSave: (datos: CartaFormData, prod: ProductoVM | null) => void;
 }
 
-function CartaDrawer({ prod, categorias, saving, onClose, onSave }: Readonly<CartaDrawerProps>) {
+function CartaDrawer({ prod, categorias, tamanos, tamanosLoading, tamanosError, saving, online, onClose, onSave }: Readonly<CartaDrawerProps>) {
   const isNew = !prod;
   const [n, setN] = useState(prod ? prod.nombre : '');
   const [desc, setDesc] = useState(prod?.descripcion ?? '');
   const [catId, setCatId] = useState<string>(prod ? prod.categoriaId : (categorias[0]?.id ?? ''));
   const [precio, setPrecio] = useState<string>(prod ? String(prod.precio) : '');
   const [disp, setDisp] = useState(prod ? prod.disponible : true);
+  const [tamanoId, setTamanoId] = useState(prod?.tamanoId ?? prod?.tamano?.id ?? '');
 
   const p = Number(precio || 0);
-  const valido = n.trim() !== '' && p > 0 && catId !== '';
+  const valido = n.trim() !== '' && Number.isFinite(p) && p > 0 && catId !== '';
 
-  const guardar = () => onSave({ nombre: n.trim(), descripcion: desc.trim(), categoriaId: catId, precio: p, disponible: disp }, prod);
+  const guardar = () => onSave({ nombre: n.trim(), descripcion: desc.trim(), categoriaId: catId, tamanoId: tamanoId || null, precio: p, disponible: disp }, prod);
 
   return (
     <div className="drawer-wrap">
@@ -312,6 +365,7 @@ function CartaDrawer({ prod, categorias, saving, onClose, onSave }: Readonly<Car
               </select>
             </div>
           </div>
+          <TamanoSelect id="carta-tamano" tamanos={tamanos} value={tamanoId} onChange={setTamanoId} actual={prod?.tamano} loading={tamanosLoading} error={tamanosError} />
           <div className="field" style={{ marginBottom: 14 }}>
             <label htmlFor="carta-precio">Precio de venta</label>
             <div className="input"><span className="muted">S/</span><input id="carta-precio" value={precio} onChange={(e) => setPrecio(e.target.value.replace(/[^\d.]/g, ''))} inputMode="decimal" /></div>
@@ -325,7 +379,7 @@ function CartaDrawer({ prod, categorias, saving, onClose, onSave }: Readonly<Car
         <div className="modal-foot" style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           <span className="spacer" />
-          <button className="btn btn-primary" disabled={!valido || saving} onClick={guardar}>
+          <button className="btn btn-primary" disabled={!valido || saving || !online || tamanosLoading} onClick={guardar}>
             <Icons.Check s={15} /> {isNew ? 'Crear plato' : 'Guardar cambios'}
           </button>
         </div>

@@ -9,6 +9,8 @@ import { Icons, type IconName } from '../ui/icons';
 import { useToast } from '../ui/ToastProvider';
 import { fmt } from '../../utils/format';
 import { useInventarioQuery } from '../../hooks/queries/useInventarioQuery';
+import { useTamanosPlatoQuery } from '../../hooks/queries/useTamanosPlatoQuery';
+import { compararProductosPorTamano, coincideTamano, nombreProductoConTamano, SIN_TAMANO, tamanosDeProductos } from '../../utils/tamanos';
 import { useMenuDiarioQuery } from '../../hooks/queries/useMenuDiarioQuery';
 import { useMesasQuery } from '../../hooks/queries/useMesasQuery';
 import { usePedidosQuery } from '../../hooks/queries/usePedidosQuery';
@@ -59,6 +61,7 @@ export function Comandero({
   const focoPendiente = useRef(false);
   const catalogoGuardado = useRef<ProductoCatalogo[]>([]);
   const [q, setQ] = useState('');
+  const [tamanoId, setTamanoId] = useState('');
   const [activeTab, setActiveTab] = useState<'catalog' | 'cart'>('catalog');
   const search = q.trim();
   const {
@@ -69,7 +72,12 @@ export function Comandero({
     nextCursor,
     fetchMore,
     error: errorInv,
-  } = useInventarioQuery(cat?.id || undefined, { limit: 500, search: vista === 'CARTA' ? search || undefined : undefined });
+  } = useInventarioQuery(cat?.id || undefined, {
+    limit: 500, ordenPorTamano: true,
+    search: vista === 'CARTA' ? search || undefined : undefined,
+    tamanoId: vista === 'CARTA' && cat !== null ? tamanoId || undefined : undefined,
+  });
+  const { tamanos } = useTamanosPlatoQuery();
   const { menu: menuDelDia, loading: loadingMenu } = useMenuDiarioQuery();
   const { mesas } = useMesasQuery();
   const { crear } = usePedidosQuery(mesaId);
@@ -97,11 +105,13 @@ export function Comandero({
     ultimaCategoriaId.current = grupo.id;
     focoPendiente.current = true;
     setQ('');
+    setTamanoId('');
     setCat({ id: grupo.id, nombre: grupo.nombre });
   };
   const volverACategorias = () => {
     focoPendiente.current = true;
     setQ('');
+    setTamanoId('');
     setCat(null);
   };
   useEffect(() => {
@@ -120,10 +130,10 @@ export function Comandero({
   const productosFiltrados = useMemo(
     () => catalogo.filter((p) => {
       const okCat = cat === null || (p.categoriaId || '') === cat.id;
-      const okQ = !search || p.nombre.toLocaleLowerCase('es').includes(search.toLocaleLowerCase('es'));
-      return okCat && okQ && p.disponible;
-    }),
-    [catalogo, cat, search],
+      const okQ = !search || nombreProductoConTamano(p).toLocaleLowerCase('es').includes(search.toLocaleLowerCase('es'));
+      return okCat && okQ && p.disponible && coincideTamano(p, tamanoId);
+    }).sort(compararProductosPorTamano),
+    [catalogo, cat, search, tamanoId],
   );
   // El respaldo de otras categorías no cuenta como datos de la vista actual.
   const productosVisiblesLength = cat === null ? catalogo.length : productosFiltrados.length;
@@ -131,10 +141,14 @@ export function Comandero({
   // T-20: menú del día separado de la carta — solo platos activos hoy.
   const productosMenuDelDia = useMemo(
     () => menuDelDia
-      .filter((m) => m.disponible && (!q || m.producto.nombre.toLowerCase().includes(q.toLowerCase())))
-      .map((m) => m.producto),
-    [menuDelDia, q],
+      .filter((m) => m.disponible && coincideTamano(m.producto, tamanoId) && (!search || nombreProductoConTamano(m.producto).toLowerCase().includes(search.toLowerCase())))
+      .map((m) => m.producto).sort(compararProductosPorTamano),
+    [menuDelDia, search, tamanoId],
   );
+  const tamanosFiltro = useMemo(() => tamanosDeProductos([
+    ...tamanos.map((tamano) => ({ tamano })), ...catalogoGuardado.current, ...catalogo,
+    ...menuDelDia.map((m) => m.producto),
+  ]), [tamanos, catalogo, menuDelDia]);
 
   let titulo = 'Nuevo pedido';
   if (modoAgregar) titulo = `Agregar a Mesa ${mesaNumero ?? ''}`.trim();
@@ -197,7 +211,7 @@ export function Comandero({
           <div className={`cmd-catalog ${activeTab === 'catalog' ? 'active' : 'hidden-mobile'}`}>
             <div className="row" style={{ gap: 6, padding: '0 0 10px' }}>
               <button className={`chip ${vista === 'CARTA' ? 'on' : ''}`} onClick={() => { setVista('CARTA'); volverACategorias(); }}>A la carta</button>
-              <button className={`chip ${vista === 'MENU_DIA' ? 'on' : ''}`} onClick={() => { setVista('MENU_DIA'); setQ(''); }}>
+              <button className={`chip ${vista === 'MENU_DIA' ? 'on' : ''}`} onClick={() => { setVista('MENU_DIA'); setQ(''); setTamanoId(''); }}>
                 Menú del día{menuDelDia.length > 0 && ` (${menuDelDia.filter((m) => m.disponible).length})`}
               </button>
             </div>
@@ -210,6 +224,15 @@ export function Comandero({
                 )}
                 <div className="input cmd-search"><Icons.Search s={15} /><input aria-label="Buscar plato" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar plato…" /></div>
               </div>
+            )}
+            {(vista === 'MENU_DIA' || cat !== null) && (
+              <label className="cmd-size-filter">Tamaño
+                <select className="input" aria-label="Filtrar platos por tamaño" value={tamanoId} onChange={(e) => setTamanoId(e.target.value)}>
+                  <option value="">Todos los tamaños</option>
+                  {tamanosFiltro.map((tamano) => <option key={tamano.id} value={tamano.id}>{tamano.nombre}</option>)}
+                  <option value={SIN_TAMANO}>Sin tamaño</option>
+                </select>
+              </label>
             )}
             {vista === 'CARTA' && errorInv && productosVisiblesLength > 0 && (
               <div className="banner err module-feedback" role="alert">
@@ -239,7 +262,7 @@ export function Comandero({
                 {!loadingMenu && productosMenuDelDia.length === 0 && (
                   <div className="cmd-empty" style={{ gridColumn: '1 / -1' }}><Icons.Search s={26} /><b>Sin platos en el menú de hoy</b><p>Actívalos desde Carta / Menú.</p></div>
                 )}
-                <ComanderoCatalogGrid productos={productosMenuDelDia} cmd={cmd} />
+                <ComanderoSizeGroups productos={productosMenuDelDia} cmd={cmd} />
               </div>
             )}
           </div>
@@ -347,10 +370,25 @@ function ComanderoCatalogGroups({ grupos, cmd }: Readonly<{ grupos: Array<{ id: 
         <h3 id={`cmd-category-${encodeURIComponent(grupo.id)}`}>{grupo.nombre}</h3>
         <span>{grupo.productos.length} {grupo.productos.length === 1 ? 'plato' : 'platos'}</span>
       </div>
-      <div className="cmd-category-grid">
-        <ComanderoCatalogGrid productos={grupo.productos} cmd={cmd} showCategory={false} />
-      </div>
+      <ComanderoSizeGroups productos={grupo.productos} cmd={cmd} showCategory={false} />
     </section>
+  ));
+}
+
+function ComanderoSizeGroups({ productos, cmd, showCategory = true }: Readonly<{ productos: ProductoCatalogo[]; cmd: ComandaCtrl; showCategory?: boolean }>) {
+  const grupos = new Map<string, { nombre: string; productos: ProductoCatalogo[] }>();
+  for (const producto of [...productos].sort(compararProductosPorTamano)) {
+    const id = producto.tamano?.id ?? SIN_TAMANO;
+    const grupo = grupos.get(id) ?? { nombre: producto.tamano?.nombre ?? 'Sin tamaño', productos: [] };
+    grupo.productos.push(producto);
+    grupos.set(id, grupo);
+  }
+  const mostrarTitulos = productos.some((p) => p.tamano);
+  return [...grupos.entries()].map(([id, grupo]) => (
+    <div className="cmd-size-group" key={id}>
+      {mostrarTitulos && <h4 className="cmd-size-heading">{grupo.nombre}</h4>}
+      <div className="cmd-category-grid"><ComanderoCatalogGrid productos={grupo.productos} cmd={cmd} showCategory={showCategory} /></div>
+    </div>
   ));
 }
 
@@ -364,6 +402,7 @@ function ComanderoCatalogGrid({ productos, cmd, showCategory = true }: Readonly<
             {enCarrito > 0 && <span className="dish-badge">{enCarrito}</span>}
             {showCategory && <div className="dish-cat">{p.categoriaNombre ?? '—'}</div>}
             <div className="dish-name">{p.nombre}</div>
+            {p.tamano && <span className="dish-size">{p.tamano.nombre}</span>}
             <div className="dish-foot">
               <span className="dish-price mono">{fmt(p.precio)}</span>
             </div>

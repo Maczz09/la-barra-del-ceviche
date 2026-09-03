@@ -35,9 +35,21 @@ export function useCartaSocket(sedeId: string | undefined, onCambio: () => void)
       reconnectionDelayMax: 10000,
     });
 
-    socket.on('disponibilidad:cambiada', () => onCambioRef.current());
+    // Cambiar un tamaño puede emitir un evento por cada plato relacionado.
+    // Recargar una sola vez al terminar la ráfaga evita saturar a cada comensal.
+    let recargaPendiente: ReturnType<typeof setTimeout> | undefined;
+    const programarRecarga = () => {
+      clearTimeout(recargaPendiente);
+      recargaPendiente = setTimeout(() => {
+        recargaPendiente = undefined;
+        onCambioRef.current();
+      }, 200);
+    };
+    socket.on('disponibilidad:cambiada', programarRecarga);
 
     return () => {
+      clearTimeout(recargaPendiente);
+      socket.off('disponibilidad:cambiada', programarRecarga);
       socket.disconnect();
     };
   }, [sedeId]);

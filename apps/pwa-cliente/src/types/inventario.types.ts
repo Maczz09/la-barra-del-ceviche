@@ -2,6 +2,9 @@
 
 import type {
   CategoriaDto as ContractCategoriaDto,
+  TamanoPlatoDto as ContractTamanoPlatoDto,
+  CrearTamanoPlatoCommand,
+  ActualizarTamanoPlatoCommand,
   CrearCategoriaCommand,
   ActualizarCategoriaCommand,
   CrearProductoCommand,
@@ -21,6 +24,9 @@ import type {
 } from '@org/contracts';
 
 export type CategoriaDto = ContractCategoriaDto;
+export type TamanoPlatoDto = ContractTamanoPlatoDto;
+export type CrearTamanoPlatoPayload = CrearTamanoPlatoCommand;
+export type ActualizarTamanoPlatoPayload = ActualizarTamanoPlatoCommand;
 export type CrearCategoriaPayload = CrearCategoriaCommand;
 export type ActualizarCategoriaPayload = ActualizarCategoriaCommand;
 export type ProductoDto = ContractProductoDto;
@@ -32,6 +38,8 @@ export interface ProductoVM {
   categoriaId: string;
   categoriaNombre: string | null;
   nombre: string;
+  tamanoId?: string | null;
+  tamano?: TamanoPlatoDto | null;
   descripcion: string | null;
   precio: number;
   precioLabel: string;

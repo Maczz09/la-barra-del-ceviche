@@ -7,6 +7,7 @@ import type { CategoriaDto, ProductoVM } from '../../types/inventario.types';
 
 const mocks = vi.hoisted(() => ({ inventario: vi.fn(), menu: vi.fn(), crear: vi.fn(), fetchMore: vi.fn() }));
 vi.mock('../../hooks/queries/useInventarioQuery', () => ({ useInventarioQuery: mocks.inventario }));
+vi.mock('../../hooks/queries/useTamanosPlatoQuery', () => ({ useTamanosPlatoQuery: () => ({ tamanos: [] }) }));
 vi.mock('../../hooks/queries/useMenuDiarioQuery', () => ({ useMenuDiarioQuery: mocks.menu }));
 vi.mock('../../hooks/queries/useMesasQuery', () => ({ useMesasQuery: () => ({ mesas: [] }) }));
 vi.mock('../../hooks/queries/usePedidosQuery', () => ({ usePedidosQuery: () => ({ crear: mocks.crear }) }));
@@ -46,6 +47,33 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('Comandero: navegación por categorías', () => {
+  it('agrupa y filtra por tamaño ordenado, conservando porciones distintas en la comanda', () => {
+    const personal = { id: 't-personal', nombre: 'Personal', orden: 10, activo: true };
+    const familiar = { id: 't-familiar', nombre: 'Familiar', orden: 40, activo: true };
+    const personalProducto = { ...ceviche, id: 'cp', tamanoId: personal.id, tamano: personal };
+    const familiarProducto = { ...ceviche, id: 'cf', precio: 45, tamanoId: familiar.id, tamano: familiar };
+    mocks.inventario.mockReturnValue({ ...inventario(), productos: [familiarProducto, personalProducto, arroz] });
+    renderComandero();
+    abrir('Ceviches');
+    expect(screen.getAllByRole('heading', { level: 4 }).map((heading) => heading.textContent)).toEqual(['Personal', 'Familiar']);
+    const filtro = screen.getByRole('combobox', { name: 'Filtrar platos por tamaño' });
+    fireEvent.change(filtro, { target: { value: personal.id } });
+    expect(screen.queryByRole('button', { name: /Ceviche de pescado Familiar/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Ceviche de pescado Personal S\/ 25.00/ }));
+    fireEvent.change(filtro, { target: { value: familiar.id } });
+    fireEvent.click(screen.getByRole('button', { name: /Ceviche de pescado Familiar S\/ 45.00/ }));
+    const carrito = within(screen.getByRole('complementary'));
+    expect(carrito.getByText('Ceviche de pescado · Personal')).toBeInTheDocument();
+    expect(carrito.getByText('Ceviche de pescado · Familiar')).toBeInTheDocument();
+    expect(carrito.getAllByText('S/ 70.00')).toHaveLength(2);
+    expect(mocks.inventario).toHaveBeenLastCalledWith('ceviches', expect.objectContaining({ tamanoId: familiar.id, ordenPorTamano: true }));
+    volver();
+    abrir('Arroces');
+    expect(screen.getByRole('combobox', { name: 'Filtrar platos por tamaño' })).toHaveValue('');
+    expect(carrito.getByText('Ceviche de pescado · Personal')).toBeInTheDocument();
+    expect(mocks.crear).not.toHaveBeenCalled();
+  });
+
   it('empieza con tarjetas de categorías, no con todos los platos', () => {
     renderComandero();
     expect(screen.getByRole('heading', { name: 'Elige una categoría' })).toBeInTheDocument();

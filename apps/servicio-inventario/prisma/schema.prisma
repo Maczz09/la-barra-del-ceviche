@@ -43,10 +43,27 @@ model Categoria {
   @@map("categorias")
 }
 
+model TamanoPlato {
+  id        String     @id @default(uuid())
+  sedeId    String
+  nombre    String
+  orden     Int        @default(0)
+  activo    Boolean    @default(true)
+  productos Producto[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([sedeId, nombre])
+  @@index([sedeId, orden])
+  @@map("tamanos_plato")
+}
+
 model Producto {
   id          String       @id @default(uuid())
   categoriaId String
   categoria   Categoria    @relation(fields: [categoriaId], references: [id])
+  tamanoId    String?
+  tamano      TamanoPlato?  @relation(fields: [tamanoId], references: [id], onDelete: Restrict)
   sedeId      String
   nombre      String
   descripcion String?
@@ -59,6 +76,7 @@ model Producto {
   updatedAt   DateTime     @updatedAt
 
   @@index([categoriaId])
+  @@index([tamanoId])
   @@index([sedeId])
   @@map("productos")
 }

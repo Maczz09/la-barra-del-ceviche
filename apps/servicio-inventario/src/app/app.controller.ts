@@ -16,6 +16,8 @@ import {
   ActualizarMermaCommand,
   EliminarMermaCommand,
   ListarMermasQuery,
+  CrearTamanoPlatoCommand,
+  ActualizarTamanoPlatoCommand,
 } from '@org/contracts';
 
 // Lectura del catálogo: la usan inventario/carta (admin, sistema, gerencia) y
@@ -68,6 +70,29 @@ export class AppController {
 
   // --- PRODUCTOS ---
 
+  @Get('tamanos-plato')
+  listarTamanosPlato(@UsuarioActual('sedeId') usuarioSedeId: string | null, @Query('sedeId') sedeId?: string) {
+    return this.appService.listarTamanosPlato(usuarioSedeId, sedeId);
+  }
+
+  @Roles('ADMIN', 'SISTEMA', 'GERENCIA')
+  @Post('tamanos-plato')
+  crearTamanoPlato(@Body() body: CrearTamanoPlatoCommand, @UsuarioActual('sedeId') usuarioSedeId: string | null, @Query('sedeId') sedeId?: string) {
+    return this.appService.crearTamanoPlato(body, usuarioSedeId, sedeId);
+  }
+
+  @Roles('ADMIN', 'SISTEMA', 'GERENCIA')
+  @Patch('tamanos-plato/:id')
+  actualizarTamanoPlato(@Param('id') id: string, @Body() body: ActualizarTamanoPlatoCommand, @UsuarioActual('sedeId') usuarioSedeId: string | null, @Query('sedeId') sedeId?: string) {
+    return this.appService.actualizarTamanoPlato(id, body, usuarioSedeId, sedeId);
+  }
+
+  @Roles('ADMIN', 'SISTEMA', 'GERENCIA')
+  @Delete('tamanos-plato/:id')
+  eliminarTamanoPlato(@Param('id') id: string, @UsuarioActual('sedeId') usuarioSedeId: string | null, @Query('sedeId') sedeId?: string) {
+    return this.appService.eliminarTamanoPlato(id, usuarioSedeId, sedeId);
+  }
+
   @Get('productos')
   listarProductos(
     @Query() query: ListarProductosQuery,
@@ -84,14 +109,14 @@ export class AppController {
   }
 
   @Get('productos/:id')
-  obtenerProducto(@Param('id') id: string) {
-    return this.appService.obtenerProducto(id);
+  obtenerProducto(@Param('id') id: string, @UsuarioActual('sedeId') usuarioSedeId: string | null, @Query('sedeId') sedeId?: string) {
+    return this.appService.obtenerProducto(id, usuarioSedeId, sedeId);
   }
 
   // Consulta por lote: la invoca servicio-pedidos con token SISTEMA (cold-start).
   @Post('productos/lote')
-  obtenerProductosLote(@Body() body: ObtenerProductosLoteCommand) {
-    return this.appService.obtenerProductosLote(body.ids);
+  obtenerProductosLote(@Body() body: ObtenerProductosLoteCommand, @UsuarioActual('sedeId') usuarioSedeId: string | null, @Query('sedeId') sedeId?: string) {
+    return this.appService.obtenerProductosLote(body.ids, usuarioSedeId, sedeId);
   }
 
   @Roles('ADMIN', 'SISTEMA', 'GERENCIA')
@@ -106,14 +131,14 @@ export class AppController {
 
   @Roles('ADMIN', 'SISTEMA', 'GERENCIA')
   @Patch('productos/:id/stock')
-  actualizarStock(@Param('id') id: string, @Body('stock') stock: number) {
-    return this.appService.actualizarStock(id, stock);
+  actualizarStock(@Param('id') id: string, @Body('stock') stock: number, @UsuarioActual('sedeId') usuarioSedeId: string | null, @Query('sedeId') sedeId?: string) {
+    return this.appService.actualizarStock(id, stock, usuarioSedeId, sedeId);
   }
 
   @Roles('ADMIN', 'SISTEMA', 'GERENCIA')
   @Patch('productos/:id')
-  actualizarProducto(@Param('id') id: string, @Body() body: ActualizarProductoCommand) {
-    return this.appService.actualizarProducto(id, body);
+  actualizarProducto(@Param('id') id: string, @Body() body: ActualizarProductoCommand, @UsuarioActual('sedeId') usuarioSedeId: string | null, @Query('sedeId') sedeId?: string) {
+    return this.appService.actualizarProducto(id, body, usuarioSedeId, sedeId);
   }
 
   // Acotado a solo el flag `disponible` (a diferencia de PATCH productos/:id,
@@ -121,8 +146,8 @@ export class AppController {
   // 86 (agotado) sin poder editar el resto del plato.
   @Roles('ADMIN', 'SISTEMA', 'GERENCIA', 'COCINA')
   @Patch('productos/:id/disponibilidad')
-  actualizarDisponibilidadProducto(@Param('id') id: string, @Body() body: ActualizarDisponibilidadCommand) {
-    return this.appService.actualizarProducto(id, { disponible: body.disponible });
+  actualizarDisponibilidadProducto(@Param('id') id: string, @Body() body: ActualizarDisponibilidadCommand, @UsuarioActual('sedeId') usuarioSedeId: string | null, @Query('sedeId') sedeId?: string) {
+    return this.appService.actualizarProducto(id, { disponible: body.disponible }, usuarioSedeId, sedeId);
   }
 
   // --- MENÚ DEL DÍA ---

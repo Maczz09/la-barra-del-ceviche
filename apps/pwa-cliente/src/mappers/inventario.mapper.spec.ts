@@ -18,6 +18,13 @@ function dto(overrides: Record<string, unknown> = {}): Record<string, unknown> {
 }
 
 describe('mapProducto', () => {
+  it('conserva tamaño explícito y nombre base para las vistas de carta', () => {
+    const tamano = { id: 't1', nombre: 'Personal', orden: 10, activo: true };
+    const vm = mapProducto(dto({ nombre: 'Ceviche', tamanoId: 't1', tamano }));
+    expect(vm.nombre).toBe('Ceviche');
+    expect(vm.tamanoId).toBe('t1');
+    expect(vm.tamano).toEqual(tamano);
+  });
   it('mapea los campos básicos', () => {
     const vm = mapProducto(dto());
     expect(vm.id).toBe('prod-1');

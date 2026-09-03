@@ -11,7 +11,10 @@ import { useToast } from '../../components/ui/ToastProvider';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useMenuDiarioQuery } from '../../hooks/queries/useMenuDiarioQuery';
 import { useAuthStore } from '../../store/auth.store';
-import type { CategoriaDto, ProductoVM } from '../../types/inventario.types';
+import type { CategoriaDto, ProductoVM, TamanoPlatoDto } from '../../types/inventario.types';
+import { coincideTamano, compararProductosPorTamano, nombreProductoConTamano, tamanosDeProductos } from '../../utils/tamanos';
+import { TamanoSelect } from './TamanoSelect';
+import './tamanos-carta.css';
 
 function hoyLabel(): string {
   return new Date().toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -20,9 +23,12 @@ function hoyLabel(): string {
 interface Props {
   productos: ProductoVM[];
   categorias: CategoriaDto[];
+  tamanos?: TamanoPlatoDto[];
+  tamanosLoading?: boolean;
+  tamanosError?: string | null;
 }
 
-export function MenuDiarioPanel({ productos, categorias }: Readonly<Props>) {
+export function MenuDiarioPanel({ productos, categorias, tamanos = [], tamanosLoading = false, tamanosError = null }: Readonly<Props>) {
   const { toast } = useToast();
   const online = useOnlineStatus();
   const rol = useAuthStore((s) => s.user?.rol);
@@ -30,8 +36,12 @@ export function MenuDiarioPanel({ productos, categorias }: Readonly<Props>) {
   const soloDisponibilidad = rol === 'COCINA';
   const { menu, loading, saving, agregarAlMenu, actualizarDisponibilidad, quitarDelMenu } = useMenuDiarioQuery();
   const [agregando, setAgregando] = useState(false);
+  const [tamanoFiltro, setTamanoFiltro] = useState('TODOS');
 
   const idsEnMenu = useMemo(() => new Set(menu.map((m) => m.producto.id)), [menu]);
+  const tamanosDelMenu = useMemo(() => tamanosDeProductos(menu.map((m) => m.producto)), [menu]);
+  const menuVisible = useMemo(() => menu.filter((m) => coincideTamano(m.producto, tamanoFiltro === 'TODOS' ? '' : tamanoFiltro))
+    .sort((a, b) => compararProductosPorTamano(a.producto, b.producto)), [menu, tamanoFiltro]);
 
   const toggle = async (id: string, disponible: boolean) => {
     if (!online) return;
@@ -65,6 +75,11 @@ export function MenuDiarioPanel({ productos, categorias }: Readonly<Props>) {
         )}
       </div>
 
+      <div className="carta-filtros-tamano"><div className="field"><label htmlFor="menu-filtro-tamano">Filtrar por tamaño</label><div className="input"><select id="menu-filtro-tamano" value={tamanoFiltro} onChange={(e) => setTamanoFiltro(e.target.value)}>
+        <option value="TODOS">Todos los tamaños</option><option value="SIN_TAMANO">Sin tamaño</option>
+        {tamanosDelMenu.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+      </select></div></div></div>
+
       <div className="table-wrap" style={{ flex: 1, overflowY: 'auto' }}>
         <table className="dt">
           <thead>
@@ -81,9 +96,10 @@ export function MenuDiarioPanel({ productos, categorias }: Readonly<Props>) {
             {!loading && menu.length === 0 && (
               <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24 }} className="muted">Aún no hay platos en el menú de hoy. Agrega uno con "Agregar al menú".</td></tr>
             )}
-            {menu.map((m) => (
+            {!loading && menu.length > 0 && menuVisible.length === 0 && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 24 }}>No hay platos de este tamaño en el menú de hoy.</td></tr>}
+            {menuVisible.map((m) => (
               <tr key={m.id} style={{ opacity: m.disponible ? 1 : 0.55 }}>
-                <td><strong>{m.producto.nombre}</strong></td>
+                <td><strong>{m.producto.nombre}</strong><div><span className={`carta-tamano-etiqueta ${m.producto.tamano ? '' : 'sin-tamano'}`}>{m.producto.tamano?.nombre ?? 'Sin tamaño'}</span></div></td>
                 <td className="col-mobile-hidden"><span className="pill-soft">{m.producto.categoriaNombre ?? '—'}</span></td>
                 <td style={{ textAlign: 'right' }}><strong className="mono">{m.producto.precioLabel}</strong></td>
                 <td>
@@ -104,8 +120,11 @@ export function MenuDiarioPanel({ productos, categorias }: Readonly<Props>) {
         <AgregarAlMenuDrawer
           productos={productos}
           categorias={categorias}
+          tamanos={tamanos}
+          tamanosLoading={tamanosLoading}
+          tamanosError={tamanosError}
           idsEnMenu={idsEnMenu}
-          saving={saving}
+          saving={saving || !online}
           onClose={() => setAgregando(false)}
           onAgregarExistente={async (productoId) => {
             try {
@@ -133,12 +152,16 @@ export function MenuDiarioPanel({ productos, categorias }: Readonly<Props>) {
 interface NuevoPlatoData {
   nombre: string;
   categoriaId: string;
+  tamanoId: string | null;
   precio: number;
 }
 
 interface AgregarAlMenuDrawerProps {
   productos: ProductoVM[];
   categorias: CategoriaDto[];
+  tamanos: TamanoPlatoDto[];
+  tamanosLoading: boolean;
+  tamanosError: string | null;
   idsEnMenu: Set<string>;
   saving: boolean;
   onClose: () => void;
@@ -146,20 +169,25 @@ interface AgregarAlMenuDrawerProps {
   onCrearNuevo: (datos: NuevoPlatoData) => void;
 }
 
-function AgregarAlMenuDrawer({ productos, categorias, idsEnMenu, saving, onClose, onAgregarExistente, onCrearNuevo }: Readonly<AgregarAlMenuDrawerProps>) {
+function AgregarAlMenuDrawer({ productos, categorias, tamanos, tamanosLoading, tamanosError, idsEnMenu, saving, onClose, onAgregarExistente, onCrearNuevo }: Readonly<AgregarAlMenuDrawerProps>) {
   const [modo, setModo] = useState<'existente' | 'nuevo'>('existente');
   const [q, setQ] = useState('');
   const [nombre, setNombre] = useState('');
   const [categoriaId, setCategoriaId] = useState(categorias[0]?.id ?? '');
   const [precio, setPrecio] = useState('');
+  const [tamanoId, setTamanoId] = useState('');
+  const [tamanoFiltro, setTamanoFiltro] = useState('TODOS');
+  const tamanosDisponibles = useMemo(() => tamanosDeProductos(productos), [productos]);
 
   const disponibles = useMemo(
-    () => productos.filter((p) => !q || p.nombre.toLowerCase().includes(q.toLowerCase())),
-    [productos, q],
+    () => productos.filter((p) => (!q || nombreProductoConTamano(p).toLowerCase().includes(q.toLowerCase()))
+      && coincideTamano(p, tamanoFiltro === 'TODOS' ? '' : tamanoFiltro))
+      .sort(compararProductosPorTamano),
+    [productos, q, tamanoFiltro],
   );
 
   const p = Number(precio || 0);
-  const validoNuevo = nombre.trim() !== '' && p > 0 && categoriaId !== '';
+  const validoNuevo = nombre.trim() !== '' && Number.isFinite(p) && p > 0 && categoriaId !== '';
 
   return (
     <div className="drawer-wrap">
@@ -182,6 +210,10 @@ function AgregarAlMenuDrawer({ productos, categorias, idsEnMenu, saving, onClose
                 <Icons.Search s={15} />
                 <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar plato…" autoFocus />
               </div>
+              <div className="field" style={{ marginBottom: 12 }}><label htmlFor="menu-agregar-filtro-tamano">Tamaño a agregar</label><div className="input"><select id="menu-agregar-filtro-tamano" value={tamanoFiltro} onChange={(e) => setTamanoFiltro(e.target.value)}>
+                <option value="TODOS">Todos los tamaños</option><option value="SIN_TAMANO">Sin tamaño</option>
+                {tamanosDisponibles.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+              </select></div></div>
               <div style={{ display: 'grid', gap: 6 }}>
                 {disponibles.length === 0 && <div className="muted" style={{ padding: 12, fontSize: 13 }}>Sin resultados.</div>}
                 {disponibles.map((prod) => {
@@ -196,6 +228,7 @@ function AgregarAlMenuDrawer({ productos, categorias, idsEnMenu, saving, onClose
                     >
                       <span style={{ flex: 1 }}>
                         <strong>{prod.nombre}</strong>
+                        <div><span className={`carta-tamano-etiqueta ${prod.tamano ? '' : 'sin-tamano'}`}>{prod.tamano?.nombre ?? 'Sin tamaño'}</span></div>
                         <div className="muted" style={{ fontSize: 12 }}>{prod.categoriaNombre ?? '—'}</div>
                       </span>
                       <span className="mono">{prod.precioLabel}</span>
@@ -219,14 +252,15 @@ function AgregarAlMenuDrawer({ productos, categorias, idsEnMenu, saving, onClose
                   </select>
                 </div>
               </div>
+              <TamanoSelect id="menu-tamano" tamanos={tamanos} value={tamanoId} onChange={setTamanoId} loading={tamanosLoading} error={tamanosError} />
               <div className="field" style={{ marginBottom: 14 }}>
                 <label htmlFor="menu-precio">Precio de venta</label>
                 <div className="input"><span className="muted">S/</span><input id="menu-precio" value={precio} onChange={(e) => setPrecio(e.target.value.replace(/[^\d.]/g, ''))} inputMode="decimal" /></div>
               </div>
               <button
                 className="btn btn-primary btn-block"
-                disabled={!validoNuevo || saving}
-                onClick={() => onCrearNuevo({ nombre: nombre.trim(), categoriaId, precio: p })}
+                disabled={!validoNuevo || saving || tamanosLoading}
+                onClick={() => onCrearNuevo({ nombre: nombre.trim(), categoriaId, tamanoId: tamanoId || null, precio: p })}
               >
                 <Icons.Check s={15} /> Crear y agregar al menú
               </button>

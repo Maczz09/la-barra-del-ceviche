@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { defaultSizes, products as seedProducts } from './seed-la-barra.mjs';
 
 const root = resolve(import.meta.dirname, '..', '..');
 const runtime = join(root, 'apps', 'escritorio', 'src-tauri', 'resources', 'runtime');
@@ -36,6 +37,11 @@ const facturacionSchema = read('apps', 'servicio-facturacion', 'prisma', 'schema
 const facturacionMigration = read('apps', 'servicio-facturacion', 'prisma', 'migrations', '20260831233000_dos_ruc_por_sede', 'migration.sql');
 const facturacionEnv = read('apps', 'servicio-facturacion', '.env.example');
 const comandero = read('apps', 'pwa-cliente', 'src', 'components', 'comandero', 'Comandero.tsx');
+const inventarioSchema = read('apps', 'servicio-inventario', 'prisma', 'schema.prisma');
+const inventarioController = read('apps', 'servicio-inventario', 'src', 'app', 'app.controller.ts');
+const inventarioContract = read('libs', 'contracts', 'src', 'domains', 'inventario.ts');
+const carta = read('apps', 'pwa-cliente', 'src', 'screens', 'carta', 'CartaScreen.tsx');
+const menuDiario = read('apps', 'pwa-cliente', 'src', 'screens', 'carta', 'MenuDiarioPanel.tsx');
 const tauri = JSON.parse(read('apps', 'escritorio', 'src-tauri', 'tauri.conf.json'));
 
 check('manifiesto identifica La Barra del Ceviche', manifest.app === 'La Barra del Ceviche');
@@ -71,6 +77,33 @@ check('comandero comienza con tarjetas grandes de categorías', comandero.includ
 check('comandero permite volver sin reiniciar la comanda', comandero.includes('Volver a categorías') && comandero.includes('volverACategorias') && comandero.includes('const cmd = useComanda('));
 check('comandero separa categorías por ID y conserva sus precios', comandero.includes('p.categoriaId') && comandero.includes('cat?.id || undefined') && comandero.includes('cmd-category-section') && comandero.includes('fmt(p.precio)'));
 check('comandero no oculta carga y errores con caché de otras categorías', comandero.includes('cat === null ? catalogo.length : productosFiltrados.length') && comandero.includes('productosLength: productosVisiblesLength'));
+// Smoke checks de integración. El comportamiento se evalúa en las suites
+// indicadas abajo y la SQL real se ejecuta únicamente en PostgreSQL aislado.
+check('inventario modela tamaños por sede y relación opcional', /model\s+TamanoPlato\s*\{[^}]*sedeId\s+String/s.test(inventarioSchema) && /tamanoId\s+String\?/.test(inventarioSchema) && /tamano\s+TamanoPlato\?/.test(inventarioSchema));
+check('contrato aditivo incluye filtro y orden por tamaño', /CATALOGO_SCHEMA_VERSION\s*=\s*2\b/.test(inventarioContract) && /tamanoId\?:\s*string/.test(inventarioContract) && /ordenPorTamano\?:\s*boolean/.test(inventarioContract));
+for (const [method, route] of [['Get', 'tamanos-plato'], ['Post', 'tamanos-plato'], ['Patch', 'tamanos-plato/:id'], ['Delete', 'tamanos-plato/:id']]) {
+  check(`tamaños: ruta ${method.toUpperCase()} ${route}`, new RegExp(`@${method}\\(\\s*['"]${route}['"]\\s*\\)`).test(inventarioController));
+}
+check('API de tamaños usa la sede activa del cliente', apiClientSource.includes('/inventario/tamanos-plato'));
+check('Carta y menú del día incorporan selector de tamaño', /<TamanosPlatoDrawer\b/.test(carta) && /<TamanoSelect\b/.test(carta) && /<TamanoSelect\b/.test(menuDiario));
+check('comandero comparte grupos de tamaño entre carta y menú del día', (comandero.match(/<ComanderoSizeGroups\b/g) ?? []).length >= 2);
+check('seed usa nombres base, presentaciones conocidas y precios válidos', seedProducts.length > 0 && seedProducts.every((product) => Number.isFinite(product.price) && product.price > 0 && (product.size === null || defaultSizes.some((size) => size.nombre === product.size)) && !/[·()]\s*(Personal|Mediana|Mediano|Grande|Familiar)/i.test(product.name)));
+check('seed conserva una identidad distinta por categoría, plato y tamaño', new Set(seedProducts.map((product) => JSON.stringify([product.category, product.name, product.size]))).size === seedProducts.length);
+for (const relativePath of [
+  'apps/servicio-inventario/prisma/migrations/20260902120000_tamanos_plato/migration.sql',
+  'apps/servicio-inventario/prisma/eval-tamanos.mjs',
+  'apps/servicio-inventario/src/app/tamanos-plato.spec.ts',
+  'libs/contracts/src/tamanos-plato.spec.ts',
+  'apps/pwa-cliente/src/screens/carta/TamanosPlatoDrawer.test.tsx',
+  'apps/pwa-cliente/src/components/comandero/Comandero.spec.tsx',
+  'apps/pwa-cliente/src/screens/carta-publica/agruparPorTamano.eval.test.ts',
+  'apps/pwa-cliente/src/screens/carta-publica/useCartaSocket.spec.ts',
+  'apps/servicio-pedidos/src/app/http-clients.breaker.spec.ts',
+  'tools/tauri-local/seed-la-barra.test.mjs',
+  'docs/tamanos-platos.md',
+]) {
+  check(`tamaños: evidencia presente ${relativePath}`, existsSync(join(root, relativePath)));
+}
 check('respaldos usan una URL compatible con pg_dump', backupSource.includes('postgresCliConnectionString') && postgresSource.includes('postgresCliConnectionString'));
 check('gateway fuerza el cierre de conexiones persistentes', gateway.includes('closeAllConnections()') && gateway.includes('closeIdleConnections()'));
 check('NATS no puede bloquear indefinidamente el apagado', kitchenSubscriberSource.includes('closeNatsConnection') && kitchenSubscriberSource.includes('Promise.race'));

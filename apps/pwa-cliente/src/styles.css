@@ -1345,6 +1345,11 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .cmd-category-tile-count { color: var(--muted); font-size: 12px; line-height: 1.35; }
 .cmd-category-tile-action { display: flex; align-items: center; gap: 7px; margin-top: auto; padding-top: 8px; color: var(--accent-text); font-size: 12px; font-weight: 800; }
 .cmd-back-categories { min-height: 44px; flex: 1; justify-content: flex-start; }
+.cmd-size-filter { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-size: 13px; font-weight: 700; }
+.cmd-size-filter select { flex: 1; min-width: 0; max-width: 280px; }
+.cmd-size-group { display: grid; gap: 10px; grid-column: 1 / -1; min-width: 0; }
+.cmd-size-heading { margin: 4px 0 0; padding: 8px 12px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-text); font-size: 15px; }
+.dish-size { display: inline-flex; align-self: flex-start; padding: 4px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent-text); font-size: 12px; font-weight: 700; }
 .cmd-category-section { grid-column: 1 / -1; display: grid; gap: 10px; min-width: 0; }
 .cmd-category-section + .cmd-category-section { margin-top: 10px; padding-top: 18px; border-top: 1px solid var(--border); }
 .cmd-category-heading { display: flex; align-items: baseline; gap: 10px; position: sticky; top: -2px; z-index: 2; padding: 7px 3px; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(8px); }

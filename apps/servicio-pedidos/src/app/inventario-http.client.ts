@@ -12,6 +12,7 @@ import axios from 'axios';
 export interface ProductoRemotoLote {
   id: string;
   nombre: string;
+  tamano?: { nombre: string } | null;
   precio: number;
   stockActual: number | null;
   categoria?: { nombre: string; area?: string } | null;
@@ -65,7 +66,13 @@ export class InventarioHttpClient {
         httpsAgent: this.bulkhead.httpsAgent,
       },
     );
-    return Array.isArray(data) ? data : ((data as { productos?: ProductoRemotoLote[] }).productos ?? []);
+    const productos = Array.isArray(data) ? data : ((data as { productos?: ProductoRemotoLote[] }).productos ?? []);
+    // La carta almacena nombre base + tamaño por separado. Pedidos conserva
+    // una etiqueta completa como snapshot para cocina, caja y comprobantes.
+    return productos.map((producto) => ({
+      ...producto,
+      nombre: producto.tamano ? `${producto.nombre} · ${producto.tamano.nombre}` : producto.nombre,
+    }));
   }
 
   async obtenerProductosLote(ids: string[]): Promise<ProductoRemotoLote[]> {

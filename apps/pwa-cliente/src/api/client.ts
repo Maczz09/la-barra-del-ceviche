@@ -45,6 +45,7 @@ const SEDE_SELECCIONADA_KEY = 'restoapp.sede_seleccionada';
 const SEDE_SCOPED_PATH_PREFIXES = [
   '/mesas',
   '/inventario/categorias',
+  '/inventario/tamanos-plato',
   '/inventario/productos',
   '/inventario/menu-diario',
   '/inventario/mermas',

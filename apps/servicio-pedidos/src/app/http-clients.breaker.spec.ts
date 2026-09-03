@@ -23,6 +23,18 @@ function limpiarBreakers() {
 }
 
 describe('Clientes HTTP de pedidos — circuit breaker (P-55)', () => {
+  it('inventario: conserva tamaño en los nombres de la proyección de pedidos', async () => {
+    const client = new InventarioHttpClient(tokenService);
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { productos: [
+      { id: 'p1', nombre: 'Ceviche', precio: 25, tamano: { nombre: 'Personal' } },
+      { id: 'p2', nombre: 'Ceviche', precio: 45, tamano: { nombre: 'Familiar' } },
+      { id: 'p3', nombre: 'Cancha', precio: 2, tamano: null },
+    ] } });
+    const productos = await client.obtenerProductosLote(['p1', 'p2', 'p3']);
+    expect(productos.map((p) => p.nombre)).toEqual(['Ceviche · Personal', 'Ceviche · Familiar', 'Cancha']);
+    expect(productos.map((p) => p.precio)).toEqual([25, 45, 2]);
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     limpiarBreakers();

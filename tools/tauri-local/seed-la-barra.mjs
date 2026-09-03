@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
 const { Client } = pg;
@@ -19,19 +20,23 @@ const categoryDescriptions = {
   Guarniciones: 'Porciones adicionales.',
 };
 
-const products = [];
+export const products = [];
+export const defaultSizes = [
+  { nombre: 'Personal', orden: 10 }, { nombre: 'Mediano', orden: 20 },
+  { nombre: 'Grande', orden: 30 }, { nombre: 'Familiar', orden: 40 },
+];
 
-function add(category, name, price, description = categoryDescriptions[category]) {
-  products.push({ category, name, price, description });
+function add(category, name, price, description = categoryDescriptions[category], size = null) {
+  products.push({ category, name, price, description, size });
 }
 
 function variants(category, baseName, prices, description, labels) {
   const resolvedLabels = labels ?? (
-    prices.length === 4 ? ['Personal', 'Mediana', 'Grande', 'Familiar']
-      : prices.length === 3 ? ['Personal', 'Mediana', 'Grande']
+    prices.length === 4 ? ['Personal', 'Mediano', 'Grande', 'Familiar']
+      : prices.length === 3 ? ['Personal', 'Mediano', 'Grande']
         : prices.length === 2 ? ['Personal', 'Grande'] : ['Porción']
   );
-  prices.forEach((price, index) => add(category, `${baseName} · ${resolvedLabels[index]}`, price, description));
+  prices.forEach((price, index) => add(category, baseName, price, description, resolvedLabels[index]));
 }
 
 variants('Especialidades', 'Mixto tumbesino', [10, 12], 'Arroz, tollito, ceviche y chanfainita.');
@@ -107,10 +112,11 @@ async function upsertCategory(client, sedeId, name) {
   return result.rows[0].id;
 }
 
-async function upsertProduct(client, sedeId, categoryId, product) {
+async function upsertProduct(client, sedeId, categoryId, product, tamanoId) {
   const existing = await client.query(
-    `SELECT id FROM "productos" WHERE "sedeId" = $1 AND nombre = $2 ORDER BY "createdAt" LIMIT 1`,
-    [sedeId, product.name],
+    `SELECT id FROM "productos" WHERE "sedeId" = $1 AND nombre = $2 AND "categoriaId" = $3
+     AND "tamanoId" IS NOT DISTINCT FROM $4 ORDER BY "createdAt" LIMIT 1`,
+    [sedeId, product.name, categoryId, tamanoId],
   );
   const now = new Date();
   if (existing.rows[0]) {
@@ -122,9 +128,9 @@ async function upsertProduct(client, sedeId, categoryId, product) {
     return 'updated';
   }
   await client.query(
-    `INSERT INTO "productos" (id, "categoriaId", "sedeId", nombre, descripcion, precio, disponible, "stockActual", "createdAt", "updatedAt")
-     VALUES ($1, $2, $3, $4, $5, $6, true, NULL, $7, $7)`,
-    [randomUUID(), categoryId, sedeId, product.name, product.description, product.price, now],
+    `INSERT INTO "productos" (id, "categoriaId", "sedeId", nombre, descripcion, precio, disponible, "stockActual", "createdAt", "updatedAt", "tamanoId")
+     VALUES ($1, $2, $3, $4, $5, $6, true, NULL, $7, $7, $8)`,
+    [randomUUID(), categoryId, sedeId, product.name, product.description, product.price, now, tamanoId],
   );
   return 'created';
 }
@@ -171,10 +177,18 @@ async function main() {
       await seedTables(tables, sede.id);
       const categories = new Map();
       for (const name of Object.keys(categoryDescriptions)) categories.set(name, await upsertCategory(inventory, sede.id, name));
+      const sizes = new Map();
+      for (const size of defaultSizes) {
+        const found = await inventory.query('SELECT id FROM tamanos_plato WHERE "sedeId" = $1 AND lower(nombre) = lower($2)', [sede.id, size.nombre]);
+        if (found.rows[0]) { sizes.set(size.nombre, found.rows[0].id); continue; }
+        const id = randomUUID();
+        await inventory.query('INSERT INTO tamanos_plato (id, "sedeId", nombre, orden, activo, "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,true,NOW(),NOW())', [id, sede.id, size.nombre, size.orden]);
+        sizes.set(size.nombre, id);
+      }
       let created = 0;
       let updated = 0;
       for (const product of products) {
-        const result = await upsertProduct(inventory, sede.id, categories.get(product.category), product);
+        const result = await upsertProduct(inventory, sede.id, categories.get(product.category), product, sizes.get(product.size) ?? null);
         if (result === 'created') created += 1;
         else updated += 1;
       }
@@ -189,4 +203,4 @@ async function main() {
   }
 }
 
-await main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) await main();

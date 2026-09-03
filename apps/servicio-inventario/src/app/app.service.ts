@@ -28,6 +28,9 @@ import {
   PedidoItemAnuladoConMermaPayload,
   StockRestauradoPayload,
   CartaPublicaResponse,
+  TamanoPlatoDto,
+  CrearTamanoPlatoCommand,
+  ActualizarTamanoPlatoCommand,
 } from '@org/contracts';
 import { Prisma, CategoriaArea, MermaOrigen } from '../generated/prisma';
 
@@ -223,6 +226,97 @@ export class AppService {
     return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
   }
 
+  // --- TAMAÑOS DE PLATO ---
+
+  async listarTamanosPlato(usuarioSedeId?: string | null, sedeIdSolicitado?: string): Promise<{ tamanos: TamanoPlatoDto[] }> {
+    const sedeId = resolveSedeId(usuarioSedeId, sedeIdSolicitado);
+    return { tamanos: await this.prisma.tamanoPlato.findMany({ where: { sedeId }, orderBy: [{ orden: 'asc' }, { nombre: 'asc' }, { id: 'asc' }] }) };
+  }
+
+  private nombreTamano(nombre: string): string {
+    const limpio = nombre.trim();
+    if (!limpio || limpio.length > 60) throw new BadRequestException('El nombre del tamaño debe tener entre 1 y 60 caracteres.');
+    return limpio;
+  }
+
+  private async assertNombreTamanoDisponible(prisma: Prisma.TransactionClient, sedeId: string, nombre: string, excludeId?: string): Promise<void> {
+    const existente = await prisma.tamanoPlato.findFirst({ where: { sedeId, nombre: { equals: nombre, mode: 'insensitive' }, ...(excludeId ? { id: { not: excludeId } } : {}) } });
+    if (existente) throw new ConflictException(`Ya existe un tamaño llamado "${existente.nombre}".`);
+  }
+
+  async crearTamanoPlato(command: CrearTamanoPlatoCommand, usuarioSedeId?: string | null, sedeIdSolicitado?: string): Promise<{ tamano: TamanoPlatoDto; message: string }> {
+    const sedeId = resolveSedeId(usuarioSedeId, sedeIdSolicitado);
+    const nombre = this.nombreTamano(command.nombre);
+    await this.assertNombreTamanoDisponible(this.prisma, sedeId, nombre);
+    try {
+      const tamano = await this.prisma.tamanoPlato.create({ data: { sedeId, nombre, orden: command.orden ?? 0, activo: command.activo ?? true } });
+      return { tamano, message: 'Tamaño creado' };
+    } catch (error) {
+      if (this.isUniqueConstraintViolation(error)) throw new ConflictException(`Ya existe un tamaño llamado "${nombre}".`);
+      throw error;
+    }
+  }
+
+  async actualizarTamanoPlato(id: string, command: ActualizarTamanoPlatoCommand, usuarioSedeId?: string | null, sedeIdSolicitado?: string): Promise<{ tamano: TamanoPlatoDto; message: string }> {
+    const sedeId = resolveSedeId(usuarioSedeId, sedeIdSolicitado);
+    try {
+      const tamano = await this.prisma.$transaction(async (prisma) => {
+        await prisma.$executeRaw`SELECT "id" FROM "tamanos_plato" WHERE "id" = ${id} FOR UPDATE`;
+        const existente = await prisma.tamanoPlato.findUnique({ where: { id } });
+        if (!existente || existente.sedeId !== sedeId) throw new NotFoundException('Tamaño no encontrado');
+        const nombre = command.nombre === undefined ? existente.nombre : this.nombreTamano(command.nombre);
+        await this.assertNombreTamanoDisponible(prisma, sedeId, nombre, id);
+        const actualizado = await prisma.tamanoPlato.update({ where: { id }, data: { nombre, ...(command.orden === undefined ? {} : { orden: command.orden }), ...(command.activo === undefined ? {} : { activo: command.activo }) } });
+        // Renombrar/reordenar debe invalidar también las cartas conectadas.
+        const productos = await prisma.producto.findMany({ where: { sedeId, tamanoId: id }, include: { categoria: true, tamano: true } });
+        for (const producto of productos) {
+          await prisma.outboxEvent.create({ data: { routingKey: RoutingKeys.ProductoActualizado, payload: JSON.stringify({ id: producto.id, sedeId, nombre: this.nombreProductoEvento({ ...producto, tamano: actualizado }), precio: Number(producto.precio), stockActual: producto.stockActual, categoriaNombre: producto.categoria?.nombre, categoriaArea: producto.categoria?.area, disponible: producto.disponible } satisfies ProductoActualizadoPayload), status: 'PENDING' } });
+        }
+        return actualizado;
+      });
+      return { tamano, message: 'Tamaño actualizado' };
+    } catch (error) {
+      if (this.isUniqueConstraintViolation(error)) throw new ConflictException('Ya existe un tamaño con ese nombre.');
+      throw error;
+    }
+  }
+
+  async eliminarTamanoPlato(id: string, usuarioSedeId?: string | null, sedeIdSolicitado?: string): Promise<{ message: string }> {
+    const sedeId = resolveSedeId(usuarioSedeId, sedeIdSolicitado);
+    try {
+      await this.prisma.$transaction(async (prisma) => {
+        await prisma.$executeRaw`SELECT "id" FROM "tamanos_plato" WHERE "id" = ${id} FOR UPDATE`;
+        const tamano = await prisma.tamanoPlato.findUnique({ where: { id }, include: { _count: { select: { productos: true } } } });
+        if (!tamano || tamano.sedeId !== sedeId) throw new NotFoundException('Tamaño no encontrado');
+        if (tamano._count.productos > 0) throw new ConflictException('El tamaño tiene platos asociados. Desactívalo o reasigna los platos antes de eliminarlo.');
+        await prisma.tamanoPlato.delete({ where: { id } });
+      });
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2003') throw new ConflictException('El tamaño tiene platos asociados. Desactívalo o reasigna los platos antes de eliminarlo.');
+      throw error;
+    }
+    return { message: 'Tamaño eliminado' };
+  }
+
+  private async assertTamanoAsignable(prisma: Prisma.TransactionClient, tamanoId: string | null | undefined, sedeId: string, tamanoActualId?: string | null): Promise<void> {
+    if (tamanoId == null) return;
+    // Comparte el bloqueo con editar/eliminar: no se asigna un tamaño que otra
+    // operación acaba de desactivar; la FK cierra la carrera de eliminación.
+    await prisma.$executeRaw`SELECT "id" FROM "tamanos_plato" WHERE "id" = ${tamanoId} FOR SHARE`;
+    const tamano = await prisma.tamanoPlato.findUnique({ where: { id: tamanoId } });
+    if (!tamano || tamano.sedeId !== sedeId) throw new NotFoundException('Tamaño no encontrado');
+    if (!tamano.activo && tamanoId !== tamanoActualId) throw new BadRequestException('El tamaño está inactivo. Actívalo antes de asignarlo a un plato.');
+  }
+
+  private nombreProductoEvento(producto: { nombre: string; tamano?: { nombre: string } | null }): string {
+    return producto.tamano ? `${producto.nombre} · ${producto.tamano.nombre}` : producto.nombre;
+  }
+
+  private assertSedeProducto(sedeProducto: string, usuarioSedeId?: string | null, sedeIdSolicitado?: string): void {
+    const sede = usuarioSedeId || sedeIdSolicitado;
+    if (sede && sedeProducto !== sede) throw new NotFoundException('Producto no encontrado');
+  }
+
   // --- PRODUCTOS ---
 
   async listarProductos(query: ListarProductosQuery = {}, usuarioSedeId?: string | null, sedeIdSolicitado?: string): Promise<ProductoListResponse> {
@@ -233,6 +327,7 @@ export class AppService {
     const where: Prisma.ProductoWhereInput = {
       sedeId,
       ...(query.categoriaId ? { categoriaId: query.categoriaId } : {}),
+      ...(query.tamanoId ? { tamanoId: query.tamanoId === 'SIN_TAMANO' ? null : query.tamanoId } : {}),
       ...(disponible == null ? {} : { disponible }),
       ...(conStock === true ? { stockActual: { not: null } } : {}),
       ...(conStock === false ? { stockActual: null } : {}),
@@ -244,16 +339,17 @@ export class AppService {
             OR: [
               { nombre: { contains: query.search, mode: 'insensitive' } },
               { descripcion: { contains: query.search, mode: 'insensitive' } },
+              { tamano: { nombre: { contains: query.search, mode: 'insensitive' } } },
             ],
           }
         : {}),
     };
     const productos = await this.prisma.producto.findMany({
       where,
-      include: { categoria: true },
+      include: { categoria: true, tamano: true },
       take: limit + 1,
       ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
-      orderBy: [{ nombre: 'asc' }, { id: 'asc' }],
+      orderBy: query.ordenPorTamano ? [{ categoria: { nombre: 'asc' } }, { tamano: { orden: 'asc' } }, { nombre: 'asc' }, { id: 'asc' }] : [{ nombre: 'asc' }, { id: 'asc' }],
     });
 
     const hasMore = productos.length > limit;
@@ -284,6 +380,8 @@ export class AppService {
       id: producto['id'] as string,
       categoriaId: producto['categoriaId'] as string,
       categoria: (producto['categoria'] ?? undefined) as CategoriaDto | undefined,
+      tamanoId: (producto['tamanoId'] ?? null) as string | null,
+      tamano: (producto['tamano'] ?? null) as TamanoPlatoDto | null,
       nombre: producto['nombre'] as string,
       descripcion: (producto['descripcion'] ?? null) as string | null,
       precio: Number(producto['precio']),
@@ -314,8 +412,8 @@ export class AppService {
             { stockActual: { gt: 0 }, categoria: { area: CategoriaArea.INVENTARIO } },
           ],
         },
-        include: { categoria: true },
-        orderBy: { nombre: 'asc' },
+        include: { categoria: true, tamano: true },
+        orderBy: [{ categoria: { nombre: 'asc' } }, { tamano: { orden: 'asc' } }, { nombre: 'asc' }, { id: 'asc' }],
       }),
     ]);
 
@@ -325,19 +423,20 @@ export class AppService {
     };
   }
 
-  async obtenerProducto(id: string): Promise<ProductoDto> {
+  async obtenerProducto(id: string, usuarioSedeId?: string | null, sedeIdSolicitado?: string): Promise<ProductoDto> {
     const producto = await this.prisma.producto.findUnique({
       where: { id },
-      include: { categoria: true }
+      include: { categoria: true, tamano: true }
     });
     if (!producto) throw new NotFoundException('Producto no encontrado');
+    this.assertSedeProducto(producto.sedeId, usuarioSedeId, sedeIdSolicitado);
     return this.toProductoDto(producto);
   }
 
-  async obtenerProductosLote(ids: string[]): Promise<{ productos: ProductoDto[] }> {
+  async obtenerProductosLote(ids: string[], usuarioSedeId?: string | null, sedeIdSolicitado?: string): Promise<{ productos: ProductoDto[] }> {
     const productos = await this.prisma.producto.findMany({
-      where: { id: { in: ids } },
-      include: { categoria: true },
+      where: { id: { in: ids }, ...((usuarioSedeId || sedeIdSolicitado) ? { sedeId: usuarioSedeId || sedeIdSolicitado } : {}) },
+      include: { categoria: true, tamano: true },
     });
     return { productos: productos.map((producto) => this.toProductoDto(producto)) };
   }
@@ -351,21 +450,24 @@ export class AppService {
     this.assertStockCoincideConAreaCategoria(command.stockActual ?? null, categoria.area);
 
     const producto = await this.prisma.$transaction(async (prisma) => {
+      await this.assertTamanoAsignable(prisma, command.tamanoId, sedeId);
       const p = await prisma.producto.create({
         data: {
           categoriaId: command.categoriaId,
+          tamanoId: command.tamanoId ?? null,
           sedeId,
           nombre: command.nombre,
           descripcion: command.descripcion,
           precio: command.precio,
           disponible: command.disponible ?? true,
           stockActual: command.stockActual ?? null,
-        }
+        },
+        include: { categoria: true, tamano: true },
       });
 
       const payload: ProductoCreadoPayload = {
         id: p.id,
-        nombre: p.nombre,
+        nombre: this.nombreProductoEvento(p),
         precio: p.precio.toNumber(),
         stockActual: p.stockActual,
         categoriaNombre: categoria.nombre,
@@ -387,7 +489,7 @@ export class AppService {
     return { message: 'Producto creado exitosamente', producto: this.toProductoDto({ ...producto, categoria }) };
   }
 
-  async actualizarProducto(id: string, command: ActualizarProductoCommand): Promise<{ message: string; producto: ProductoDto }> {
+  async actualizarProducto(id: string, command: ActualizarProductoCommand, usuarioSedeId?: string | null, sedeIdSolicitado?: string): Promise<{ message: string; producto: ProductoDto }> {
     let categoriaDestino: { id: string; sedeId: string; area: CategoriaArea } | null = null;
     if (command.categoriaId) {
       categoriaDestino = await this.prisma.categoria.findUnique({ where: { id: command.categoriaId } });
@@ -397,8 +499,10 @@ export class AppService {
     }
 
     const actualizado = await this.prisma.$transaction(async (prisma) => {
-      const existente = await prisma.producto.findUnique({ where: { id }, include: { categoria: true } });
+      const existente = await prisma.producto.findUnique({ where: { id }, include: { categoria: true, tamano: true } });
       if (!existente) throw new NotFoundException('Producto no encontrado');
+      this.assertSedeProducto(existente.sedeId, usuarioSedeId, sedeIdSolicitado);
+      if (command.tamanoId !== undefined) await this.assertTamanoAsignable(prisma, command.tamanoId, existente.sedeId, existente.tamanoId);
       if (categoriaDestino && categoriaDestino.sedeId !== existente.sedeId) {
         throw new NotFoundException(`Categoría con ID ${command.categoriaId} no encontrada`);
       }
@@ -410,18 +514,19 @@ export class AppService {
         where: { id },
         data: {
           ...(command.categoriaId == null ? {} : { categoriaId: command.categoriaId }),
+          ...(command.tamanoId === undefined ? {} : { tamanoId: command.tamanoId }),
           ...(command.nombre == null ? {} : { nombre: command.nombre }),
           ...(command.descripcion === undefined ? {} : { descripcion: command.descripcion }),
           ...(command.precio == null ? {} : { precio: command.precio }),
           ...(command.disponible == null ? {} : { disponible: command.disponible }),
         },
-        include: { categoria: true },
+        include: { categoria: true, tamano: true },
       });
 
       const payload: ProductoActualizadoPayload = {
         id: p.id,
         sedeId: p.sedeId,
-        nombre: p.nombre,
+        nombre: this.nombreProductoEvento(p),
         precio: p.precio.toNumber(),
         stockActual: p.stockActual,
         categoriaNombre: p.categoria?.nombre,
@@ -443,13 +548,14 @@ export class AppService {
     return { message: 'Producto actualizado', producto: this.toProductoDto(actualizado) };
   }
 
-  async actualizarStock(id: string, cantidad: number): Promise<{ message: string; producto: ProductoDto }> {
+  async actualizarStock(id: string, cantidad: number, usuarioSedeId?: string | null, sedeIdSolicitado?: string): Promise<{ message: string; producto: ProductoDto }> {
     const actualizado = await this.prisma.$transaction(async (prisma) => {
       // classid 1234 compartido entre servicios A PROPOSITO: cada servicio tiene su propia BD (database-per-service), el espacio de locks no se cruza.
       await prisma.$executeRaw`SELECT pg_advisory_xact_lock(1234, ('x' || substr(md5(${id}), 1, 8))::bit(32)::int)`;
 
-      const producto = await prisma.producto.findUnique({ where: { id }, include: { categoria: true } });
+      const producto = await prisma.producto.findUnique({ where: { id }, include: { categoria: true, tamano: true } });
       if (!producto) throw new NotFoundException('Producto no encontrado');
+      this.assertSedeProducto(producto.sedeId, usuarioSedeId, sedeIdSolicitado);
 
       const stockBase = producto.stockActual ?? 0;
       const nuevoStock = Math.max(0, stockBase + cantidad);
@@ -460,13 +566,14 @@ export class AppService {
         data: {
           stockActual: nuevoStock,
           disponible: disponibleFinal,
-        }
+        },
+        include: { categoria: true, tamano: true },
       });
 
       const payload: ProductoActualizadoPayload = {
         id: p.id,
         sedeId: p.sedeId,
-        nombre: p.nombre,
+        nombre: this.nombreProductoEvento({ ...p, tamano: producto.tamano }),
         precio: p.precio.toNumber(),
         stockActual: p.stockActual,
         categoriaNombre: producto.categoria?.nombre,
@@ -487,7 +594,7 @@ export class AppService {
       return p;
     });
 
-    return { message: 'Stock actualizado', producto: this.toProductoDto({ ...actualizado, categoria: undefined }) };
+    return { message: 'Stock actualizado', producto: this.toProductoDto(actualizado) };
   }
 
   async reducirStockAutomatico(id: string, cantidad: number): Promise<void> {
@@ -502,7 +609,7 @@ export class AppService {
   ): Promise<void> {
     if (cantidad <= 0) throw new BadRequestException('Cantidad debe ser mayor a 0');
     await prisma.$executeRaw`SELECT pg_advisory_xact_lock(1234, ('x' || substr(md5(${id}), 1, 8))::bit(32)::int)`;
-    const producto = await prisma.producto.findUnique({ where: { id }, include: { categoria: true } });
+    const producto = await prisma.producto.findUnique({ where: { id }, include: { categoria: true, tamano: true } });
 
     if (!producto) {
       this.logger.warn({
@@ -571,7 +678,7 @@ export class AppService {
         payload: JSON.stringify({
           id: producto.id,
           sedeId: producto.sedeId,
-          nombre: producto.nombre,
+          nombre: this.nombreProductoEvento(producto),
           precio: producto.precio.toNumber(),
           stockActual: productoFinal?.stockActual,
           categoriaNombre: producto.categoria?.nombre,
@@ -618,7 +725,7 @@ export class AppService {
     const sedeId = resolveSedeId(usuarioSedeId, sedeIdSolicitado);
     const items = await this.prisma.menuDiario.findMany({
       where: { fecha: new Date(fecha ?? this.hoyISO()), producto: { sedeId } },
-      include: { producto: { include: { categoria: true } } },
+      include: { producto: { include: { categoria: true, tamano: true } } },
       orderBy: { createdAt: 'asc' },
     });
     return { menu: items.map((item) => this.toMenuDiarioItemDto(item)) };
@@ -649,7 +756,7 @@ export class AppService {
       where: { fecha_productoId: { fecha, productoId: productoId as string } },
       create: { fecha, productoId: productoId as string, disponible: true },
       update: { disponible: true },
-      include: { producto: { include: { categoria: true } } },
+      include: { producto: { include: { categoria: true, tamano: true } } },
     });
 
     this.logger.log({
@@ -668,7 +775,7 @@ export class AppService {
     const item = await this.prisma.menuDiario.update({
       where: { id },
       data: { disponible: command.disponible },
-      include: { producto: { include: { categoria: true } } },
+      include: { producto: { include: { categoria: true, tamano: true } } },
     });
 
     return { message: command.disponible ? 'Plato activado en el menú' : 'Plato desactivado del menú', item: this.toMenuDiarioItemDto(item) };
@@ -729,7 +836,7 @@ export class AppService {
       // classid 1234 compartido entre servicios A PROPOSITO: cada servicio tiene su propia BD (database-per-service), el espacio de locks no se cruza.
       await prisma.$executeRaw`SELECT pg_advisory_xact_lock(1234, ('x' || substr(md5(${command.productoId}), 1, 8))::bit(32)::int)`;
 
-      const producto = await prisma.producto.findUnique({ where: { id: command.productoId }, include: { categoria: true } });
+      const producto = await prisma.producto.findUnique({ where: { id: command.productoId }, include: { categoria: true, tamano: true } });
       if (!producto || producto.sedeId !== sedeId) throw new NotFoundException('Producto no encontrado');
       // La merma MANUAL (botón en Inventario) es solo para productos con
       // stock — para platos de Carta/Menú ya preparados, la merma nace
@@ -748,6 +855,7 @@ export class AppService {
           stockActual: nuevoStock,
           disponible: nuevoStock === 0 ? false : producto.disponible,
         },
+        include: { categoria: true, tamano: true },
       });
 
       const costoUnitario = command.costoUnitario ?? producto.precio.toNumber();
@@ -770,7 +878,7 @@ export class AppService {
           payload: JSON.stringify({
             id: productoActualizado.id,
             sedeId,
-            nombre: productoActualizado.nombre,
+            nombre: this.nombreProductoEvento({ ...productoActualizado, tamano: producto.tamano }),
             precio: productoActualizado.precio.toNumber(),
             stockActual: productoActualizado.stockActual,
             categoriaNombre: producto.categoria?.nombre,
@@ -814,7 +922,7 @@ export class AppService {
           ? { cuentaCorrelativo: { contains: query.search, mode: 'insensitive' } }
           : {}),
       },
-      include: { producto: { include: { categoria: true } } },
+      include: { producto: { include: { categoria: true, tamano: true } } },
       orderBy: { createdAt: 'desc' },
       take: this.normalizeLimit(query.limit),
     });
@@ -835,7 +943,7 @@ export class AppService {
   ): Promise<{ message: string; merma: MermaDto }> {
     const sedeId = resolveSedeId(usuarioSedeId, sedeIdSolicitado);
     const merma = await this.prisma.$transaction(async (prisma) => {
-      const existente = await prisma.merma.findUnique({ where: { id }, include: { producto: { include: { categoria: true } } } });
+      const existente = await prisma.merma.findUnique({ where: { id }, include: { producto: { include: { categoria: true, tamano: true } } } });
       if (!existente || existente.producto.sedeId !== sedeId) throw new NotFoundException('Merma no encontrada');
 
       let productoFinal = existente.producto;
@@ -852,7 +960,7 @@ export class AppService {
         productoFinal = await prisma.producto.update({
           where: { id: existente.productoId },
           data: { stockActual: nuevoStock, disponible: nuevoStock === 0 ? false : producto.disponible },
-          include: { categoria: true },
+          include: { categoria: true, tamano: true },
         });
 
         await prisma.outboxEvent.create({
@@ -861,7 +969,7 @@ export class AppService {
             payload: JSON.stringify({
               id: productoFinal.id,
               sedeId,
-              nombre: productoFinal.nombre,
+              nombre: this.nombreProductoEvento(productoFinal),
               precio: productoFinal.precio.toNumber(),
               stockActual: productoFinal.stockActual,
               categoriaNombre: productoFinal.categoria?.nombre,
@@ -912,7 +1020,7 @@ export class AppService {
     }
     const sedeId = resolveSedeId(usuarioSedeId, sedeIdSolicitado);
     await this.prisma.$transaction(async (prisma) => {
-      const existente = await prisma.merma.findUnique({ where: { id }, include: { producto: { include: { categoria: true } } } });
+      const existente = await prisma.merma.findUnique({ where: { id }, include: { producto: { include: { categoria: true, tamano: true } } } });
       if (!existente || existente.producto.sedeId !== sedeId) throw new NotFoundException('Merma no encontrada');
 
       if (existente.producto.stockActual !== null) {
@@ -922,7 +1030,7 @@ export class AppService {
         const productoActualizado = await prisma.producto.update({
           where: { id: existente.productoId },
           data: { stockActual: nuevoStock, disponible: true },
-          include: { categoria: true },
+          include: { categoria: true, tamano: true },
         });
 
         await prisma.outboxEvent.create({
@@ -931,7 +1039,7 @@ export class AppService {
             payload: JSON.stringify({
               id: productoActualizado.id,
               sedeId,
-              nombre: productoActualizado.nombre,
+              nombre: this.nombreProductoEvento(productoActualizado),
               precio: productoActualizado.precio.toNumber(),
               stockActual: productoActualizado.stockActual,
               categoriaNombre: productoActualizado.categoria?.nombre,
@@ -978,7 +1086,7 @@ export class AppService {
       await this.prisma.$transaction(async (prisma) => {
         await prisma.idempotencyKey.create({ data: { key: idempotencyKey } });
 
-        const producto = await prisma.producto.findUnique({ where: { id: payload.productoId }, include: { categoria: true } });
+        const producto = await prisma.producto.findUnique({ where: { id: payload.productoId }, include: { categoria: true, tamano: true } });
         if (!producto) {
           this.logger.warn({
             operation: 'procesarItemAnuladoConMerma',
@@ -1054,7 +1162,7 @@ export class AppService {
         await prisma.idempotencyKey.create({ data: { key: idempotencyKey } });
         await prisma.$executeRaw`SELECT pg_advisory_xact_lock(1234, ('x' || substr(md5(${payload.productoId}), 1, 8))::bit(32)::int)`;
 
-        const producto = await prisma.producto.findUnique({ where: { id: payload.productoId }, include: { categoria: true } });
+        const producto = await prisma.producto.findUnique({ where: { id: payload.productoId }, include: { categoria: true, tamano: true } });
         if (!producto || producto.stockActual === null) {
           this.logger.warn({
             operation: 'procesarStockRestaurado',
@@ -1077,7 +1185,7 @@ export class AppService {
             payload: JSON.stringify({
               id: productoActualizado.id,
               sedeId: producto.sedeId,
-              nombre: productoActualizado.nombre,
+              nombre: this.nombreProductoEvento({ ...productoActualizado, tamano: producto.tamano }),
               precio: productoActualizado.precio.toNumber(),
               stockActual: productoActualizado.stockActual,
               categoriaNombre: producto.categoria?.nombre,
@@ -1201,7 +1309,7 @@ export class AppService {
 
     await prisma.$executeRaw`SELECT pg_advisory_xact_lock(1234, ('x' || substr(md5(${linea.productoId}), 1, 8))::bit(32)::int)`;
 
-    const producto = await prisma.producto.findUnique({ where: { id: linea.productoId }, include: { categoria: true } });
+    const producto = await prisma.producto.findUnique({ where: { id: linea.productoId }, include: { categoria: true, tamano: true } });
     if (!producto || producto.sedeId !== sedeId || producto.stockActual == null) {
       this.logger.warn({
         operation: 'procesarCompraRecibida',
@@ -1226,7 +1334,7 @@ export class AppService {
     const evento: ProductoActualizadoPayload = {
       id: actualizado.id,
       sedeId,
-      nombre: actualizado.nombre,
+      nombre: this.nombreProductoEvento({ ...actualizado, tamano: producto.tamano }),
       precio: actualizado.precio.toNumber(),
       stockActual: actualizado.stockActual,
       categoriaNombre: producto.categoria?.nombre,

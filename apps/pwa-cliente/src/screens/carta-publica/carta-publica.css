@@ -289,12 +289,15 @@
 
 .cp-plato-cabecera {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
 }
 
 .cp-plato-nombre {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-family: 'Playfair Display', 'Georgia', serif;
   font-size: 17px;
   font-weight: 700;
@@ -317,21 +320,23 @@
 .cp-tabla-tallas {
   margin-top: 10px;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
   gap: 8px;
   font-family: system-ui, sans-serif;
 }
 
 .cp-talla {
+  min-width: 0;
   text-align: center;
-  padding: 8px 4px;
+  padding: 12px 8px;
   border: 1px solid var(--cp-borde);
   border-radius: 6px;
   background: var(--cp-bg-elevada);
 }
 
 .cp-talla-label {
-  font-size: 11px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--cp-texto-tenue);
@@ -339,8 +344,52 @@
 
 .cp-talla-precio {
   font-weight: 700;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   color: var(--cp-acento-fuerte);
   margin-top: 2px;
+}
+
+.cp-talla-desc {
+  color: var(--cp-texto-tenue);
+  font-size: 12px;
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.cp-tamano-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 20px 0 4px;
+  font-family: system-ui, sans-serif;
+}
+
+.cp-tamano-filtros button {
+  min-height: 44px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--cp-borde);
+  background: var(--cp-bg-elevada);
+  color: var(--cp-texto);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cp-tamano-filtros button[aria-pressed='true'] {
+  background: var(--cp-acento);
+  border-color: var(--cp-acento);
+  color: #1a1410;
+  font-weight: 700;
+}
+
+.carta-publica button:focus-visible {
+  outline: 2px solid var(--cp-acento-fuerte);
+  outline-offset: 3px;
 }
 
 .cp-vacio,

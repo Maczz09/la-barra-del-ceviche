@@ -122,8 +122,34 @@ describe('MenuDiarioPanel', () => {
 
     await waitFor(() =>
       expect(agregarAlMenu).toHaveBeenCalledWith({
-        producto: { nombre: 'Especial del día', categoriaId: 'cat-1', precio: 25 },
+        producto: { nombre: 'Especial del día', categoriaId: 'cat-1', tamanoId: null, precio: 25 },
       }),
     );
+  });
+
+  it('crea un plato del menú con tamaño separado del nombre', async () => {
+    render(<MenuDiarioPanel productos={[]} categorias={categorias} tamanos={[{ id: 'personal', nombre: 'Personal', orden: 10, activo: true }]} />);
+    fireEvent.click(screen.getByRole('button', { name: /Agregar al menú/i }));
+    fireEvent.click(screen.getByText('Plato nuevo'));
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Ceviche' } });
+    fireEvent.change(screen.getByLabelText('Tamaño del plato'), { target: { value: 'personal' } });
+    fireEvent.change(screen.getByLabelText('Precio de venta'), { target: { value: '20' } });
+    fireEvent.click(screen.getByRole('button', { name: /Crear y agregar al menú/i }));
+    await waitFor(() => expect(agregarAlMenu).toHaveBeenCalledWith({ producto: { nombre: 'Ceviche', categoriaId: 'cat-1', tamanoId: 'personal', precio: 20 } }));
+  });
+
+  it('ordena y filtra tamaños en el menú y en el selector de platos existentes', () => {
+    const personal = productoVM({ id: 'personal', nombre: 'Ceviche', tamanoId: 't1', tamano: { id: 't1', nombre: 'Personal', orden: 10, activo: true } });
+    const familiar = productoVM({ id: 'familiar', nombre: 'Arroz', tamanoId: 't2', tamano: { id: 't2', nombre: 'Familiar', orden: 30, activo: true } });
+    const base = vi.mocked(useMenuDiarioQuery)();
+    vi.mocked(useMenuDiarioQuery).mockReturnValue({ ...base, menu: [{ id: 'm2', disponible: true, producto: familiar }, { id: 'm1', disponible: true, producto: personal }] });
+    render(<MenuDiarioPanel productos={[familiar, personal]} categorias={categorias} />);
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('Ceviche');
+    fireEvent.change(screen.getByLabelText('Filtrar por tamaño'), { target: { value: 't2' } });
+    expect(screen.queryByText('Ceviche')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Agregar al menú/i }));
+    fireEvent.change(screen.getByLabelText('Tamaño a agregar'), { target: { value: 't1' } });
+    expect(screen.getByText('Ceviche')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ceviche Personal/ })).toBeDisabled();
   });
 });

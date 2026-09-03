@@ -26,6 +26,9 @@ import type {
   MermaDto,
   MermaResponse,
   MermasResponse,
+  TamanoPlatoDto,
+  CrearTamanoPlatoPayload,
+  ActualizarTamanoPlatoPayload,
 } from '../types/inventario.types';
 
 export async function getCategorias(): Promise<CategoriaDto[]> {
@@ -47,9 +50,30 @@ export async function eliminarCategoria(id: string): Promise<void> {
   await client.delete(`/inventario/categorias/${id}`);
 }
 
+export async function getTamanosPlato(): Promise<TamanoPlatoDto[]> {
+  const response = await client.get<{ tamanos: TamanoPlatoDto[] }>('/inventario/tamanos-plato');
+  return unwrapArray<TamanoPlatoDto>(response, 'tamanos');
+}
+
+export async function crearTamanoPlato(payload: CrearTamanoPlatoPayload): Promise<TamanoPlatoDto> {
+  const response = await client.post<{ tamano: TamanoPlatoDto }>('/inventario/tamanos-plato', payload);
+  return unwrapEntity<TamanoPlatoDto>(response, 'tamano');
+}
+
+export async function actualizarTamanoPlato(id: string, payload: ActualizarTamanoPlatoPayload): Promise<TamanoPlatoDto> {
+  const response = await client.patch<{ tamano: TamanoPlatoDto }>(`/inventario/tamanos-plato/${encodeURIComponent(id)}`, payload);
+  return unwrapEntity<TamanoPlatoDto>(response, 'tamano');
+}
+
+export async function eliminarTamanoPlato(id: string): Promise<void> {
+  await client.delete(`/inventario/tamanos-plato/${encodeURIComponent(id)}`);
+}
+
 function buildProductosQuery(query: ProductoListQuery = {}): string {
   const params = new URLSearchParams();
   if (query.categoriaId) params.set('categoriaId', query.categoriaId);
+  if (query.tamanoId) params.set('tamanoId', query.tamanoId);
+  if (query.ordenPorTamano != null) params.set('ordenPorTamano', String(query.ordenPorTamano));
   if (query.disponible != null) params.set('disponible', String(query.disponible));
   if (query.conStock != null) params.set('conStock', String(query.conStock));
   if (query.search) params.set('search', query.search);

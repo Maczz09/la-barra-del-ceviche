@@ -1,13 +1,41 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockGet = vi.fn();
+const mockPost = vi.fn();
+const mockPatch = vi.fn();
+const mockDelete = vi.fn();
 vi.mock('./client', () => ({
   client: {
     get: (...args: unknown[]) => mockGet(...args),
+    post: (...args: unknown[]) => mockPost(...args),
+    patch: (...args: unknown[]) => mockPatch(...args),
+    delete: (...args: unknown[]) => mockDelete(...args),
   },
 }));
 
-import { getTodosLosProductos } from './inventario.api';
+import { getTodosLosProductos, getProductosPage, getTamanosPlato, crearTamanoPlato, actualizarTamanoPlato, eliminarTamanoPlato } from './inventario.api';
+
+describe('API de tamaños', () => {
+  beforeEach(() => vi.clearAllMocks());
+  const tamano = { id: 't1', nombre: 'Personal', orden: 10, activo: true };
+  it('consulta, crea, edita y elimina tamaños por su endpoint', async () => {
+    mockGet.mockResolvedValue({ tamanos: [tamano] });
+    mockPost.mockResolvedValue({ tamano });
+    mockPatch.mockResolvedValue({ tamano: { ...tamano, orden: 2 } });
+    expect(await getTamanosPlato()).toEqual([tamano]);
+    expect(await crearTamanoPlato({ nombre: 'Personal', orden: 10 })).toEqual(tamano);
+    expect(await actualizarTamanoPlato('t1', { orden: 2 })).toEqual({ ...tamano, orden: 2 });
+    await eliminarTamanoPlato('t1');
+    expect(mockPost).toHaveBeenCalledWith('/inventario/tamanos-plato', { nombre: 'Personal', orden: 10 });
+    expect(mockPatch).toHaveBeenCalledWith('/inventario/tamanos-plato/t1', { orden: 2 });
+    expect(mockDelete).toHaveBeenCalledWith('/inventario/tamanos-plato/t1');
+  });
+  it('envía tamaño y orden al servidor antes de paginar', async () => {
+    mockGet.mockResolvedValue({ data: [], nextCursor: null });
+    await getProductosPage({ tamanoId: 'SIN_TAMANO', ordenPorTamano: true });
+    expect(mockGet).toHaveBeenCalledWith('/inventario/productos?tamanoId=SIN_TAMANO&ordenPorTamano=true');
+  });
+});
 
 describe('getTodosLosProductos (T-49)', () => {
   beforeEach(() => {

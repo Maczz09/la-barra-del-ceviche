@@ -1,40 +1,52 @@
-// screens/carta-publica/agruparPorTamano.ts — agrupa productos con variantes
-// de tamaño ("Arroz con Conchas (Personal)", "(Mediana)", "(Familiar)") en
-// una sola fila con 3 precios, para mostrarlos como tabla igual que la carta
-// impresa. Es una convención de NOMBRE, no un campo de BD (no existe un
-// campo de variante en Producto). Los cargadores de carta deben conservar
-// esta forma si quieren que la carta pública agrupe los precios por tamaño.
-
 import type { ProductoDto } from '../../types/inventario.types';
 
-const TALLA_RE = /^(.*)\s\((Personal|Mediana|Familiar)\)$/;
-type Talla = 'personal' | 'mediana' | 'familiar';
+export interface VariantePlato {
+  productoId: string;
+  tamanoId: string;
+  nombre: string;
+  orden: number;
+  precio: number;
+  descripcion: string | null;
+}
 
 export interface PlatoAgrupado {
   key: string;
   nombre: string;
   descripcion: string | null;
   categoriaId: string;
-  /** Sin variantes de tamaño: precio único. */
+  /** Sin tamaño asignado: se conserva cada producto por separado. */
   precioUnico?: number;
-  /** Con variantes: uno o más de los tres tamaños (los 86'd simplemente no aparecen). */
-  precios?: Partial<Record<Talla, number>>;
+  /** Una entrada por producto, incluso si dos comparten tamaño y nombre. */
+  variantes?: VariantePlato[];
 }
 
-function tallaCampo(talla: string): Talla {
-  if (talla === 'Personal') return 'personal';
-  if (talla === 'Mediana') return 'mediana';
-  return 'familiar';
+// Compatibilidad con servidores anteriores durante una actualización.
+// null explícito significa "sin tamaño": nunca se vuelve a inferir del nombre.
+const TAMANO_LEGADO = /^(.*?)\s*(?:·\s*(Personal|Mediano|Mediana|Grande|Familiar)|\((Personal|Mediano|Mediana|Grande|Familiar)\))$/i;
+const ORDEN_LEGADO: Record<string, number> = { personal: 10, mediano: 20, mediana: 20, grande: 30, familiar: 40 };
+
+function presentacion(producto: ProductoDto) {
+  if (producto.tamano) return { nombre: producto.nombre, tamano: producto.tamano };
+  if (producto.tamano !== undefined || producto.tamanoId !== undefined) return null;
+  const match = TAMANO_LEGADO.exec(producto.nombre.trim());
+  if (!match || !match[1]) return null;
+  const nombre = (match[2] || match[3]).toLowerCase();
+  return {
+    nombre: match[1].trim(),
+    tamano: {
+      id: `legado:${nombre}`,
+      nombre: nombre.charAt(0).toUpperCase() + nombre.slice(1),
+      orden: ORDEN_LEGADO[nombre],
+    },
+  };
 }
 
 export function agruparPorTamano(productos: ProductoDto[]): PlatoAgrupado[] {
   const grupos = new Map<string, PlatoAgrupado>();
-  const orden: string[] = [];
-
   for (const producto of productos) {
-    const match = TALLA_RE.exec(producto.nombre.trim());
-
-    if (!match) {
+    if (!producto.disponible) continue;
+    const datos = presentacion(producto);
+    if (!datos) {
       const key = `u:${producto.id}`;
       grupos.set(key, {
         key,
@@ -43,28 +55,33 @@ export function agruparPorTamano(productos: ProductoDto[]): PlatoAgrupado[] {
         categoriaId: producto.categoriaId,
         precioUnico: producto.precio,
       });
-      orden.push(key);
       continue;
     }
 
-    const [, base, talla] = match;
-    // categoriaId en la key: evita fusionar dos platos con el mismo nombre
-    // base filados bajo categorías distintas.
-    const key = `g:${producto.categoriaId}:${base}`;
+    const key = JSON.stringify(['g', producto.categoriaId, datos.nombre]);
     let grupo = grupos.get(key);
     if (!grupo) {
       grupo = {
         key,
-        nombre: base,
+        nombre: datos.nombre,
         descripcion: producto.descripcion ?? null,
         categoriaId: producto.categoriaId,
-        precios: {},
+        variantes: [],
       };
       grupos.set(key, grupo);
-      orden.push(key);
     }
-    grupo.precios![tallaCampo(talla)] = producto.precio;
+    grupo.variantes!.push({
+      productoId: producto.id,
+      tamanoId: datos.tamano.id,
+      nombre: datos.tamano.nombre,
+      orden: datos.tamano.orden,
+      precio: producto.precio,
+      descripcion: producto.descripcion ?? null,
+    });
   }
 
-  return orden.map((key) => grupos.get(key)!);
+  for (const grupo of grupos.values()) {
+    grupo.variantes?.sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre, 'es') || a.productoId.localeCompare(b.productoId));
+  }
+  return [...grupos.values()];
 }

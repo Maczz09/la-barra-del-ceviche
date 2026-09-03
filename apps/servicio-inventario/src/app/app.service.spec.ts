@@ -402,6 +402,7 @@ describe('AppService — Inventario (comprehensive)', () => {
             OR: [
               { nombre: { contains: 'limon', mode: 'insensitive' } },
               { descripcion: { contains: 'limon', mode: 'insensitive' } },
+              { tamano: { nombre: { contains: 'limon', mode: 'insensitive' } } },
             ],
           }),
         }),

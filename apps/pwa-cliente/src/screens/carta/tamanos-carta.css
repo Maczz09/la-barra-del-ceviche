@@ -1,0 +1,17 @@
+.carta-tamanos-drawer { width: min(560px, 100vw); }
+.carta-tamanos-ayuda { font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+.carta-tamanos-lista { display: grid; gap: 10px; list-style: none; padding: 0; margin: 16px 0; }
+.carta-tamano-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; }
+.carta-tamano-datos { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.carta-tamano-datos > span { font-size: 12px; }
+.carta-tamano-acciones { display: flex; flex-wrap: wrap; gap: 5px; }
+.carta-tamanos-form { display: grid; gap: 12px; border-top: 1px solid var(--border); padding-top: 18px; }
+.carta-tamanos-form .field { min-width: 0; }
+.carta-tamanos-form .muted { font-size: 12px; }
+.carta-tamanos-confirmar, .carta-tamanos-feedback { border: 1px solid var(--border); padding: 12px; border-radius: 10px; margin: 12px 0; font-size: 13px; }
+.carta-tamanos-feedback { color: var(--ok); }
+.carta-tamanos-feedback.is-error { color: var(--danger); }
+.carta-filtros-tamano { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 0 0 14px; }
+.carta-filtros-tamano .field { flex: 1 1 180px; max-width: 320px; min-width: 0; }
+.carta-tamano-etiqueta { display: inline-block; margin-top: 5px; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); }
+.carta-tamano-etiqueta.sin-tamano { color: var(--text-muted); background: transparent; padding-left: 0; }

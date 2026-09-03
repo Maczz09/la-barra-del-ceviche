@@ -23,6 +23,12 @@ Para que la IP no cambie, entra al router y crea una reserva DHCP para la direcc
 
 En **Nuevo pedido → A la carta**, primero aparecen tarjetas grandes de categorías. Toca, por ejemplo, **Ceviches** para ver únicamente sus platos y precios. Usa **Volver a categorías** para elegir Arroces, Chicharrones u otra categoría; la comanda, cantidades y notas se conservan. La búsqueda funciona dentro de la categoría abierta y se limpia al volver. Los abarrotes aparecen separados y **Menú del día** mantiene su acceso directo.
 
+## Tamaños de platos
+
+La actualización de tamaños permite administrar Personal, Mediano, Grande, Familiar y presentaciones propias desde **Carta → Tamaños**. Al crear o editar un plato se selecciona su tamaño por separado del nombre. Carta, Menú del día, comanda y carta digital permiten filtrar y ordenar las presentaciones, manteniendo el precio de cada producto. **Sin tamaño** sigue siendo una opción válida.
+
+Consulta [Tamaños de platos](tamanos-platos.md) para el uso, las reglas de eliminación y el procedimiento de migración con respaldo. Esta actualización requiere Inventario, Pedidos, PWA y la migración de base de datos; no se activa copiando solo la interfaz. El documento distingue el código preparado de la instalación real, cuya actualización necesita autorización.
+
 ## Cocina e impresión automática
 
 1. Instala la impresora térmica en Windows y verifica una página de prueba.

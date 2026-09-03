@@ -10,8 +10,10 @@ import {
   IsString,
   IsUUID,
   Max,
+  MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
@@ -128,6 +130,54 @@ export class ActualizarCategoriaCommand {
   area?: CategoriaArea;
 }
 
+/** Versión aditiva del catálogo: tamaño estructurado, independiente del nombre. */
+export const CATALOGO_SCHEMA_VERSION = 2;
+
+export class TamanoPlatoDto {
+  @IsString()
+  id: string;
+  @IsString()
+  nombre: string;
+  @IsInt()
+  @Min(0)
+  orden: number;
+  @IsBoolean()
+  activo: boolean;
+}
+
+export class CrearTamanoPlatoCommand {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(60)
+  @Transform(({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value)
+  nombre: string;
+  @ValidateIf((_, value) => value !== undefined)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  orden?: number;
+  @ValidateIf((_, value) => value !== undefined)
+  @IsBoolean()
+  activo?: boolean;
+}
+
+export class ActualizarTamanoPlatoCommand {
+  @ValidateIf((_, value) => value !== undefined)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(60)
+  @Transform(({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value)
+  nombre?: string;
+  @ValidateIf((_, value) => value !== undefined)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  orden?: number;
+  @ValidateIf((_, value) => value !== undefined)
+  @IsBoolean()
+  activo?: boolean;
+}
+
 export class ProductoDto {
   @IsString()
   id: string;
@@ -137,6 +187,13 @@ export class ProductoDto {
   @ValidateNested()
   @Type(() => CategoriaDto)
   categoria?: CategoriaDto | null;
+  @IsOptional()
+  @IsString()
+  tamanoId?: string | null;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TamanoPlatoDto)
+  tamano?: TamanoPlatoDto | null;
   @IsString()
   nombre: string;
   @IsOptional()
@@ -155,6 +212,17 @@ export class ListarProductosQuery {
   @IsOptional()
   @IsString()
   categoriaId?: string;
+
+  /** ID del tamaño; SIN_TAMANO filtra productos con tamanoId NULL. */
+  @IsOptional()
+  @IsString()
+  tamanoId?: string;
+
+  /** Categoría, orden del tamaño (sin tamaño al final), nombre e ID. */
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === true || value === 'true')
+  ordenPorTamano?: boolean;
 
   @IsOptional()
   @IsBoolean()
@@ -229,6 +297,9 @@ export class CartaPublicaResponse {
 export class CrearProductoCommand {
   @IsString()
   categoriaId: string;
+  @IsOptional()
+  @IsString()
+  tamanoId?: string | null;
   @IsString()
   nombre: string;
   @IsOptional()
@@ -248,6 +319,9 @@ export class ActualizarProductoCommand {
   @IsOptional()
   @IsString()
   categoriaId?: string;
+  @IsOptional()
+  @IsString()
+  tamanoId?: string | null;
   @IsOptional()
   @IsString()
   nombre?: string;

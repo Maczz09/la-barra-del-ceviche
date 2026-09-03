@@ -99,16 +99,16 @@ describe('AppController (Inventario)', () => {
   it('obtenerProducto debe llamar a appService.obtenerProducto', async () => {
     const expected = { id: 'p1', nombre: 'prod' };
     jest.spyOn(appService, 'obtenerProducto').mockResolvedValue(expected as any);
-    expect(await appController.obtenerProducto('p1')).toEqual(expected);
-    expect(appService.obtenerProducto).toHaveBeenCalledWith('p1');
+    expect(await appController.obtenerProducto('p1', 'sede-1', 'otra')).toEqual(expected);
+    expect(appService.obtenerProducto).toHaveBeenCalledWith('p1', 'sede-1', 'otra');
   });
 
   it('obtenerProductosLote debe llamar a appService.obtenerProductosLote', async () => {
     const body: ObtenerProductosLoteCommand = { ids: ['p1'] };
     const expected = [{ id: 'p1', nombre: 'prod' }];
     jest.spyOn(appService, 'obtenerProductosLote').mockResolvedValue(expected as any);
-    expect(await appController.obtenerProductosLote(body)).toEqual(expected);
-    expect(appService.obtenerProductosLote).toHaveBeenCalledWith(body.ids);
+    expect(await appController.obtenerProductosLote(body, 'sede-1', 'otra')).toEqual(expected);
+    expect(appService.obtenerProductosLote).toHaveBeenCalledWith(body.ids, 'sede-1', 'otra');
   });
 
   it('crearProducto debe llamar a appService.crearProducto', async () => {
@@ -122,22 +122,22 @@ describe('AppController (Inventario)', () => {
   it('actualizarStock debe llamar a appService.actualizarStock', async () => {
     const expected = { id: 'p1', stockActual: 20 };
     jest.spyOn(appService, 'actualizarStock').mockResolvedValue(expected as any);
-    expect(await appController.actualizarStock('p1', 20)).toEqual(expected);
-    expect(appService.actualizarStock).toHaveBeenCalledWith('p1', 20);
+    expect(await appController.actualizarStock('p1', 20, 'sede-1', 'otra')).toEqual(expected);
+    expect(appService.actualizarStock).toHaveBeenCalledWith('p1', 20, 'sede-1', 'otra');
   });
 
   it('actualizarProducto debe llamar a appService.actualizarProducto', async () => {
     const command: ActualizarProductoCommand = { precio: 15 };
     const expected = { id: 'p1', precio: 15 };
     jest.spyOn(appService, 'actualizarProducto').mockResolvedValue(expected as any);
-    expect(await appController.actualizarProducto('p1', command)).toEqual(expected);
-    expect(appService.actualizarProducto).toHaveBeenCalledWith('p1', command);
+    expect(await appController.actualizarProducto('p1', command, 'sede-1', 'otra')).toEqual(expected);
+    expect(appService.actualizarProducto).toHaveBeenCalledWith('p1', command, 'sede-1', 'otra');
   });
 
   it('actualizarDisponibilidadProducto debe llamar a appService.actualizarProducto solo con disponible (rol COCINA)', async () => {
     const expected = { id: 'p1', disponible: false };
     jest.spyOn(appService, 'actualizarProducto').mockResolvedValue(expected as any);
-    expect(await appController.actualizarDisponibilidadProducto('p1', { disponible: false })).toEqual(expected);
-    expect(appService.actualizarProducto).toHaveBeenCalledWith('p1', { disponible: false });
+    expect(await appController.actualizarDisponibilidadProducto('p1', { disponible: false }, 'sede-1', 'otra')).toEqual(expected);
+    expect(appService.actualizarProducto).toHaveBeenCalledWith('p1', { disponible: false }, 'sede-1', 'otra');
   });
 });

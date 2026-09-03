@@ -312,6 +312,15 @@ describe('client', () => {
   });
 
   describe('sede scoping (T-23: multi-sede)', () => {
+    it('gestiona tamaños en la sede seleccionada tanto al leer como al editar', async () => {
+      vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({}) } as any);
+      setUsuarioSedeId(null);
+      setSedeSeleccionada('sede-tamanos');
+      await client.get('/inventario/tamanos-plato');
+      expect(lastUrl()).toContain('/inventario/tamanos-plato?sedeId=sede-tamanos');
+      await client.patch('/inventario/tamanos-plato/t1', { orden: 2 });
+      expect(lastUrl()).toContain('/inventario/tamanos-plato/t1?sedeId=sede-tamanos');
+    });
     function lastUrl(): string {
       return vi.mocked(fetch).mock.calls.at(-1)?.[0] as string;
     }
