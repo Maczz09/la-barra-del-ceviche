@@ -9,6 +9,10 @@ out-tsc
 infra/secrets/*
 !infra/secrets/README.md
 
+# Exportes de carta reales (precios/menú de un restaurante concreto) —
+# generados por tools/tauri-local/exportar-carta.mjs, no versionar.
+tools/tauri-local/carta-exportada*.json
+
 # Limpieza de repo (plan 6.4 / T-20)
 logs/
 new-front/
