@@ -9,11 +9,29 @@ export const ETAPAS_SONORAS = ['PENDIENTE', 'EN_PREPARACION', 'LISTO'] as const;
 export type EtapaSonora = (typeof ETAPAS_SONORAS)[number];
 export type TableroSonoro = 'PEDIDOS' | 'COCINA';
 export type SnapshotTablero = Map<string, EtapaSonora>;
+export interface ActualizacionSonoraPedido {
+  id: string;
+  etapa: EtapaSonora;
+}
 
 const ETAPAS_SET = new Set<string>(ETAPAS_SONORAS);
 
 function esEtapaSonora(estado: string): estado is EtapaSonora {
   return ETAPAS_SET.has(estado);
+}
+
+/**
+ * Extrae el estado que viene en `pedido.actualizado` por WebSocket. El socket
+ * se procesa antes del refetch, por lo que permite avisar al mesero sin la
+ * espera de la consulta HTTP posterior.
+ */
+export function actualizacionSonoraDesdeEvento(data: unknown): ActualizacionSonoraPedido | null {
+  if (!data || typeof data !== 'object') return null;
+  const pedido = (data as { pedido?: unknown }).pedido;
+  if (!pedido || typeof pedido !== 'object') return null;
+  const { id, estado } = pedido as { id?: unknown; estado?: unknown };
+  if (typeof id !== 'string' || typeof estado !== 'string' || !esEtapaSonora(estado)) return null;
+  return { id, etapa: estado };
 }
 
 /** Snapshot visible del tablero comercial: un pedido por columna. */

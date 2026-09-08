@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { etapasQueIngresan, snapshotCocina, snapshotPedidos } from './alertasTablero';
+import { actualizacionSonoraDesdeEvento, etapasQueIngresan, snapshotCocina, snapshotPedidos } from './alertasTablero';
 import type { PedidoVM } from '../types/pedido.types';
 
 const pedido = (overrides: Partial<PedidoVM> = {}): PedidoVM => ({
@@ -42,5 +42,12 @@ describe('alertas de tablero', () => {
   it('no genera alerta cuando el snapshot no cambió', () => {
     const actual = snapshotCocina([pedido()]);
     expect(etapasQueIngresan(actual, actual)).toEqual([]);
+  });
+
+  it('extrae una transición recibida por WebSocket y descarta payloads incompletos', () => {
+    expect(actualizacionSonoraDesdeEvento({ pedido: { id: 'p-1', estado: 'EN_PREPARACION' } }))
+      .toEqual({ id: 'p-1', etapa: 'EN_PREPARACION' });
+    expect(actualizacionSonoraDesdeEvento({ pedido: { id: 'p-1', estado: 'ENTREGADO' } })).toBeNull();
+    expect(actualizacionSonoraDesdeEvento({ pedidoId: 'p-1' })).toBeNull();
   });
 });

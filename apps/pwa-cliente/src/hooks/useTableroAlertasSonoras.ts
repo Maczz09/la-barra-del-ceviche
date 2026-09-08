@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  actualizacionSonoraDesdeEvento,
   etapasQueIngresan,
   snapshotTablero,
   type SnapshotTablero,
   type TableroSonoro,
 } from '../domain/alertasTablero';
 import { alertasSonoras, registrarActivacionPorGesto } from '../services/alertasSonoras.service';
+import { onPedidoUpdate } from '../services/socket.service';
 import type { PedidoVM } from '../types/pedido.types';
 
 interface Options {
@@ -38,6 +40,27 @@ export function useTableroAlertasSonoras(pedidos: PedidoVM[], { tablero, listo }
     if (!alertasSonoras.preferidas() || activo) return;
     return registrarActivacionPorGesto(() => setActivo(true));
   }, [activo, activar]);
+
+  // En el tablero del mesero el socket trae el pedido actualizado antes de
+  // que TanStack Query complete el refetch. Sonamos aquí para que EN
+  // PREPARACION/LISTO se oigan al instante en su celular o tablet. Al ajustar
+  // el snapshot evitamos repetir la misma campanita cuando llega ese refetch.
+  useEffect(() => {
+    if (tablero !== 'PEDIDOS') return;
+    return onPedidoUpdate((evento) => {
+      if (evento.pattern !== 'pedido.actualizado' || anteriorRef.current === null) return;
+      const actualizacion = actualizacionSonoraDesdeEvento(evento.data);
+      if (!actualizacion) return;
+
+      const etapaAnterior = anteriorRef.current.get(actualizacion.id);
+      if (etapaAnterior === actualizacion.etapa) return;
+
+      const siguiente = new Map(anteriorRef.current);
+      siguiente.set(actualizacion.id, actualizacion.etapa);
+      anteriorRef.current = siguiente;
+      alertasSonoras.tocar([actualizacion.etapa]);
+    });
+  }, [tablero]);
 
   useEffect(() => {
     if (!listo) return;
