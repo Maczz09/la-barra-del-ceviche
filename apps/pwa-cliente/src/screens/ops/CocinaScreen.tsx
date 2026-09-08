@@ -3,9 +3,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useNow } from '../../hooks/useNow';
 import { usePedidosQuery } from '../../hooks/queries/usePedidosQuery';
+import { useTableroAlertasSonoras } from '../../hooks/useTableroAlertasSonoras';
 import { useToast } from '../../components/ui/ToastProvider';
 import { onPedidoUpdate } from '../../services/socket.service';
 import { Icons } from '../../components/ui/icons';
+import { AlertasSonorasButton } from '../../components/ui/AlertasSonorasButton';
 import { Metric, TicketCard } from '../../components/cocina/TicketCard';
 import type { PedidoVM, PedidoItemVM, EstadoItem } from '../../types/pedido.types';
 import {
@@ -26,9 +28,15 @@ const elapsedMinF = (iso: string, now: number) => (now - new Date(iso).getTime()
 export function CocinaScreen() {
   const online = useOnlineStatus();
   const now = useNow(4000);
-  const { pedidos, loading, error, fetch, avanzarItem } = usePedidosQuery(undefined, { autoLoadAll: true });
+  const { pedidos, nextCursor, loading, loadingMore, error, fetch, avanzarItem } = usePedidosQuery(undefined, { autoLoadAll: true });
   const { toast } = useToast();
   const [fs, setFs] = useState(false);
+  const { sonidoActivo, activarSonido, desactivarSonido } = useTableroAlertasSonoras(pedidos, {
+    tablero: 'COCINA',
+    // El KDS carga todas las páginas antes de guardar la línea base; los
+    // tickets que ya existían al abrir la cocina no deben disparar alarmas.
+    listo: !loading && !loadingMore && !nextCursor,
+  });
 
   // Notificación flotante: un mesero anuló un plato (área COCINA) — el
   // backend solo emite este evento para ítems de cocina, las bebidas de
@@ -175,6 +183,7 @@ export function CocinaScreen() {
         <div className="row kds-fs-head" style={{ marginBottom: 12 }}>
           <h1 style={{ fontSize: 22, margin: 0 }}>Cocina · KDS</h1>
           <span className="spacer" />
+          <AlertasSonorasButton activo={sonidoActivo} onActivar={activarSonido} onDesactivar={desactivarSonido} />
           <button className="btn btn-ghost btn-sm" onClick={() => setFs(false)}><Icons.Minimize s={16} /> Salir</button>
         </div>
         {body}
@@ -190,6 +199,7 @@ export function CocinaScreen() {
           <div className="sub">Tiempo real · tablet de cocina</div>
         </div>
         <span className="spacer" />
+        <AlertasSonorasButton activo={sonidoActivo} onActivar={activarSonido} onDesactivar={desactivarSonido} />
         <button className="btn btn-ghost btn-sm" onClick={() => fetch()} title="Refrescar" aria-label="Refrescar"><Icons.Refresh s={16} /></button>
         <button className="btn btn-ghost btn-sm" onClick={() => setFs(true)} title="Pantalla completa" aria-label="Pantalla completa"><Icons.Maximize s={16} /></button>
       </div>
