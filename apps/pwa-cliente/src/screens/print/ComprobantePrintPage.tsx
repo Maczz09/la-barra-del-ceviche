@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ComprobanteTicket, type ComprobanteTicketProps } from '../../components/facturacion/ComprobanteTicket';
 import { COMPROBANTE_PRINT_KEY } from '../../utils/comprobantePrint';
+import { volverDeImpresion } from '../../utils/printNavigation';
 
 export function ComprobantePrintPage() {
   const [payload, setPayload] = useState<ComprobanteTicketProps | null>(null);
@@ -34,7 +35,7 @@ export function ComprobantePrintPage() {
     if (!payload) return;
     // Pequeño margen para que el logo termine de cargar antes de imprimir.
     const timer = setTimeout(() => globalThis.print(), 300);
-    const cerrar = () => globalThis.close();
+    const cerrar = () => volverDeImpresion();
     globalThis.addEventListener('afterprint', cerrar);
     return () => {
       clearTimeout(timer);

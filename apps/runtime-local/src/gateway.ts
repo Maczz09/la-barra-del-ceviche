@@ -19,6 +19,8 @@ export interface RuntimeAdminApi {
   failPrintJob(id: string, error: string): void;
   retryPrintJob(id: string): void;
   printSummary(): unknown;
+  /** Valida que el token del usuario pueda administrar la cola de Cocina. */
+  authorizeKitchenPrint(authorization?: string): boolean;
   onboardingStatus(): Promise<unknown>;
   createAdmin(input: unknown): Promise<void>;
   requestShutdown(): void;
@@ -141,6 +143,15 @@ export class LocalGateway {
       if (!isLoopbackAddress(request.socket.remoteAddress)) return this.json(response, 403, { message: 'Administración disponible solo en la laptop servidor' });
       return this.handleAdmin(request, response, url);
     }
+    // La cola de Cocina sí puede administrarse desde una tablet, pero nunca
+    // por una petición anónima de la red. La autorización RS256 la valida el
+    // runtime con la misma clave pública que usan los microservicios.
+    if (url.pathname.startsWith('/local-print/')) {
+      if (!this.admin.authorizeKitchenPrint(request.headers.authorization)) {
+        return this.json(response, 401, { message: 'No autorizado para administrar la impresión de cocina' });
+      }
+      return this.handleKitchenPrint(request, response, url);
+    }
 
     const serviceRoute = resolveServiceProxy(url.pathname, url.search);
     if (serviceRoute) {
@@ -191,6 +202,29 @@ export class LocalGateway {
         return this.json(response, 200, { ok: true });
       }
       return this.json(response, 404, { message: 'Acción local desconocida' });
+    } catch (error) {
+      return this.json(response, 400, { message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  /** API limitada para COCINA/ADMIN en tablet: no expone procesos, respaldos ni datos del servidor. */
+  private async handleKitchenPrint(request: IncomingMessage, response: ServerResponse, url: URL): Promise<void> {
+    try {
+      if (url.pathname === '/local-print/status' && request.method === 'GET') {
+        return this.json(response, 200, {
+          printer: this.admin.printerConfig(),
+          printQueue: this.admin.printSummary(),
+        });
+      }
+      if (url.pathname === '/local-print/printer' && request.method === 'PUT') {
+        return this.json(response, 200, this.admin.updatePrinter(await readJson(request)));
+      }
+      const retry = /^\/local-print\/jobs\/([^/]+)\/retry$/.exec(url.pathname);
+      if (retry && request.method === 'POST') {
+        this.admin.retryPrintJob(decodeURIComponent(retry[1]));
+        return this.json(response, 200, { ok: true });
+      }
+      return this.json(response, 404, { message: 'Acción de impresión desconocida' });
     } catch (error) {
       return this.json(response, 400, { message: error instanceof Error ? error.message : String(error) });
     }

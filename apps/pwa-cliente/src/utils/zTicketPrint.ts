@@ -11,11 +11,11 @@
 // auth: todo lo que necesita ya lo tiene quien abre la pestaña.
 
 import type { ZTicketContentProps } from '../components/caja/ZTicketContent';
+import { abrirRutaDeImpresion } from './printNavigation';
 
 export const Z_TICKET_PRINT_KEY = 'restoapp.z_ticket_print_payload';
 export const Z_TICKET_PRINT_ROUTE = '/imprimir/cierre';
 
 export function abrirZTicketParaImprimir(payload: ZTicketContentProps): void {
-  localStorage.setItem(Z_TICKET_PRINT_KEY, JSON.stringify(payload));
-  globalThis.open(Z_TICKET_PRINT_ROUTE, '_blank');
+  abrirRutaDeImpresion(Z_TICKET_PRINT_KEY, payload, Z_TICKET_PRINT_ROUTE);
 }

@@ -1,3 +1,5 @@
+import { getAuthToken, refreshAccessToken } from './client';
+
 export interface LocalAddress {
   address: string;
   interface: string;
@@ -64,6 +66,27 @@ async function localRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
+/** Solicitud a la cola de impresión apta para tablet; exige JWT de Cocina/Admin. */
+async function kitchenPrintRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getAuthToken() ?? await refreshAccessToken();
+  const response = await fetch(path, {
+    ...init,
+    headers: {
+      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
+  });
+  const body = await response.json().catch(() => ({})) as { message?: string } & T;
+  if (!response.ok) throw new Error(body.message ?? `Error de impresión HTTP ${response.status}`);
+  return body;
+}
+
+export interface KitchenPrintStatus {
+  printer: { config: PrinterSettings; available: string[] };
+  printQueue: RuntimeStatus['printQueue'];
+}
+
 export const localRuntimeApi = {
   info: () => localRequest<LocalInfo>('/local-info'),
   status: () => localRequest<RuntimeStatus>('/local-admin/status'),
@@ -74,4 +97,10 @@ export const localRuntimeApi = {
   retryPrint: (id: string) => localRequest<{ ok: true }>(`/local-admin/print/${encodeURIComponent(id)}/retry`, { method: 'POST' }),
   onboarding: () => localRequest<{ complete: boolean }>('/local-admin/onboarding'),
   createAdmin: (input: { nombre: string; email: string; password: string }) => localRequest<{ ok: true }>('/local-admin/onboarding', { method: 'POST', body: JSON.stringify(input) }),
+};
+
+export const kitchenPrintApi = {
+  status: () => kitchenPrintRequest<KitchenPrintStatus>('/local-print/status'),
+  savePrinter: (config: PrinterSettings) => kitchenPrintRequest<KitchenPrintStatus['printer']>('/local-print/printer', { method: 'PUT', body: JSON.stringify(config) }),
+  retry: (id: string) => kitchenPrintRequest<{ ok: true }>(`/local-print/jobs/${encodeURIComponent(id)}/retry`, { method: 'POST' }),
 };

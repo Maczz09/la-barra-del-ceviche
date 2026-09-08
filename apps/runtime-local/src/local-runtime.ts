@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { createConnection, createServer, type Server } from 'node:net';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { verify } from 'jsonwebtoken';
 import { BackupManager } from './backup-manager';
 import { LocalGateway, type RuntimeAdminApi } from './gateway';
 import { KitchenPrintSubscriber } from './kitchen-print-subscriber';
@@ -137,6 +138,17 @@ export class LocalRuntime implements RuntimeAdminApi {
   failPrintJob(id: string, error: string): void { this.queue.fail(id, error); }
   retryPrintJob(id: string): void { this.queue.retry(id); }
   printSummary() { return this.queue.summary(); }
+  authorizeKitchenPrint(authorization?: string): boolean {
+    const token = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (!token) return false;
+    try {
+      const payload = verify(token, this.config.jwtPublicKey, { algorithms: ['RS256'] });
+      const rol = typeof payload === 'object' && payload ? payload['rol'] : undefined;
+      return rol === 'ADMIN' || rol === 'SISTEMA' || rol === 'COCINA';
+    } catch {
+      return false;
+    }
+  }
   async onboardingStatus() { return { complete: await hasAdministrator(this.config) }; }
   async createAdmin(input: unknown): Promise<void> { await createAdministrator(this.config, input as CreateAdminInput); }
   requestShutdown(): void {
