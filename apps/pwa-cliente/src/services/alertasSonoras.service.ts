@@ -104,6 +104,15 @@ function tocarNota(audio: AudioContext, nota: Nota, inicio: number) {
   armonico.stop(end + 0.02);
 }
 
+/** Programa las campanitas aun si el contexto está terminando de reanudarse. */
+function programarTimbre(audio: AudioContext, etapas: readonly EtapaSonora[]) {
+  const unicas = ETAPAS_SONORAS.filter((etapa) => etapas.includes(etapa));
+  unicas.forEach((etapa, indice) => {
+    const inicio = audio.currentTime + 0.025 + indice * 0.6;
+    PATRONES[etapa].forEach((nota) => tocarNota(audio, nota, inicio));
+  });
+}
+
 export const alertasSonoras = {
   preferidas,
 
@@ -128,6 +137,27 @@ export const alertasSonoras = {
     }
   },
 
+  /**
+   * Activación explícita del botón. A diferencia de una reanudación silenciosa,
+   * programa una campana dentro del mismo `click`/`touchend`; iPhone exige
+   * justamente ese primer audio audible para autorizar los avisos posteriores.
+   */
+  async activarYProbar(): Promise<boolean> {
+    const audio = crearContexto();
+    if (!audio) return false;
+    try {
+      const reanudacion = audio.resume();
+      desbloquearAudio(audio);
+      programarTimbre(audio, ['PENDIENTE']);
+      await reanudacion;
+      const activa = audio.state === 'running';
+      if (activa) guardarPreferencia(true);
+      return activa;
+    } catch {
+      return false;
+    }
+  },
+
   async desactivar() {
     guardarPreferencia(false);
     if (context?.state === 'running') await context.suspend();
@@ -135,11 +165,7 @@ export const alertasSonoras = {
 
   tocar(etapas: readonly EtapaSonora[]) {
     if (!preferidas() || context?.state !== 'running') return;
-    const unicas = ETAPAS_SONORAS.filter((etapa) => etapas.includes(etapa));
-    unicas.forEach((etapa, indice) => {
-      const inicio = context!.currentTime + 0.025 + indice * 0.52;
-      PATRONES[etapa].forEach((nota) => tocarNota(context!, nota, inicio));
-    });
+    programarTimbre(context, etapas);
   },
 };
 

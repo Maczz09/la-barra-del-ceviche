@@ -22,11 +22,10 @@ export function useTableroAlertasSonoras(pedidos: PedidoVM[], { tablero, listo }
   const [activo, setActivo] = useState(() => alertasSonoras.activa());
 
   const activar = useCallback(async () => {
-    const habilitado = await alertasSonoras.activar();
+    // Debe invocarse directamente desde el botón: en iPhone (también Chrome,
+    // que usa WebKit) esto programa el primer timbre dentro del gesto humano.
+    const habilitado = await alertasSonoras.activarYProbar();
     setActivo(habilitado);
-    // Al pulsar el control el cocinero recibe una confirmación audible; así
-    // puede validar de inmediato el volumen del teléfono/tablet.
-    if (habilitado) alertasSonoras.tocar(['PENDIENTE']);
   }, []);
 
   const desactivar = useCallback(async () => {
