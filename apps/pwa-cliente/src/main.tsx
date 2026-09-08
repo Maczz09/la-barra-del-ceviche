@@ -13,7 +13,7 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { queryClient, queryPersister, PERSIST_MAX_AGE_MS } from './api/queryClient';
 import { ToastProvider } from './components/ui/ToastProvider';
-import { alertasSonoras } from './services/alertasSonoras.service';
+import { alertasSonoras, registrarActivacionPorGesto } from './services/alertasSonoras.service';
 import { applyThemeColor, isTheme, type Theme } from './utils/theme';
 import './styles.css';
 
@@ -54,9 +54,7 @@ globalThis.addEventListener('auth:expired', () => {
 // navegación) para que una pantalla KDS abierta directamente pueda avisar
 // pedidos nuevos sin obligar al cocinero a tocar una acción adicional.
 if (alertasSonoras.preferidas()) {
-  document.addEventListener('pointerdown', () => {
-    void alertasSonoras.activar();
-  }, { once: true, passive: true });
+  registrarActivacionPorGesto();
 }
 
 // ─── Restaurar sesión e iniciar app ─────────────────────────────

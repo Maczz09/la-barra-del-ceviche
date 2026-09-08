@@ -5,7 +5,7 @@ import {
   type SnapshotTablero,
   type TableroSonoro,
 } from '../domain/alertasTablero';
-import { alertasSonoras } from '../services/alertasSonoras.service';
+import { alertasSonoras, registrarActivacionPorGesto } from '../services/alertasSonoras.service';
 import type { PedidoVM } from '../types/pedido.types';
 
 interface Options {
@@ -20,7 +20,11 @@ export function useTableroAlertasSonoras(pedidos: PedidoVM[], { tablero, listo }
   const [activo, setActivo] = useState(() => alertasSonoras.activa());
 
   const activar = useCallback(async () => {
-    setActivo(await alertasSonoras.activar());
+    const habilitado = await alertasSonoras.activar();
+    setActivo(habilitado);
+    // Al pulsar el control el cocinero recibe una confirmación audible; así
+    // puede validar de inmediato el volumen del teléfono/tablet.
+    if (habilitado) alertasSonoras.tocar(['PENDIENTE']);
   }, []);
 
   const desactivar = useCallback(async () => {
@@ -29,12 +33,10 @@ export function useTableroAlertasSonoras(pedidos: PedidoVM[], { tablero, listo }
   }, []);
 
   // Los navegadores móviles solo permiten AudioContext desde un gesto humano.
-  // El primer toque dentro del tablero lo habilita sin interrumpir su acción.
+  // Se cubren eventos de Safari y Chrome; se reintenta hasta que quede activo.
   useEffect(() => {
     if (!alertasSonoras.preferidas() || activo) return;
-    const habilitarConGesto = () => { void activar(); };
-    window.addEventListener('pointerdown', habilitarConGesto, { once: true, passive: true });
-    return () => window.removeEventListener('pointerdown', habilitarConGesto);
+    return registrarActivacionPorGesto(() => setActivo(true));
   }, [activo, activar]);
 
   useEffect(() => {
