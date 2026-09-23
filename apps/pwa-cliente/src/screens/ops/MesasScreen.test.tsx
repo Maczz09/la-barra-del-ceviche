@@ -53,6 +53,13 @@ describe('MesasScreen', () => {
 
   const renderScreen = () => render(<BrowserRouter><MesasScreen /></BrowserRouter>);
 
+  it('no ofrece crear pedidos a Recepción, porque el backend rechaza esa operación', () => {
+    (useAuthStore as any).mockReturnValue('RECEPCION');
+    renderScreen();
+    expect(screen.queryByRole('button', { name: 'Nuevo pedido' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Unir mesas' })).toBeInTheDocument();
+  });
+
   it('renders loading state', () => {
     (useMesasQuery as any).mockReturnValue({ mesas: [], loading: true, fetch: vi.fn() });
     renderScreen();

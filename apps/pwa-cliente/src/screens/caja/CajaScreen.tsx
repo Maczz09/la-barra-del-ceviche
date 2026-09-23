@@ -172,7 +172,7 @@ export function CajaScreen() {
         <span className="spacer" />
         {!turno && <button className="btn btn-primary" disabled={loading} onClick={() => setModal('apertura')}><Icons.Cash s={16} /> Abrir caja</button>}
         <button className="btn btn-soft" disabled={!turno || loading} onClick={() => setModal('cierre')}><Icons.Lock s={16} /> Cerrar caja</button>
-        <button className="btn btn-primary" disabled={!turno || loading} onClick={() => setCobroPicker(true)}><Icons.Plus s={16} /> Cobrar cuenta</button>
+        <button className="btn btn-primary" data-guide="charge-account" disabled={!turno || loading} onClick={() => setCobroPicker(true)}><Icons.Plus s={16} /> Cobrar cuenta</button>
       </div>
 
       {error && (

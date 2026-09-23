@@ -11,6 +11,7 @@ export function AlertasSonorasButton({ activo, onActivar, onDesactivar }: Readon
   return (
     <button
       type="button"
+      data-guide="sound-alerts"
       className={`btn btn-ghost btn-sm ${activo ? 'on' : ''}`}
       onClick={() => { void (activo ? onDesactivar() : onActivar()); }}
       title={activo ? 'Desactivar alertas sonoras' : 'Activar y probar alertas sonoras'}

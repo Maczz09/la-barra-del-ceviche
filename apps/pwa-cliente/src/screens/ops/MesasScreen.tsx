@@ -47,6 +47,7 @@ export function MesasScreen() {
   const { toast } = useToast();
   const rol = useAuthStore((s) => s.user?.rol);
   const puedeCrearMesa = rol === 'ADMIN' || rol === 'SISTEMA';
+  const puedeGestionarPedidos = rol !== 'RECEPCION';
   const { mesas, loading, saving, loadError, error, success, fetch, crearMesa, unirMesas, separarMesas, clearFeedback } = useMesasQuery();
   const { ubicaciones: ubicacionesCrud } = useUbicacionesQuery();
   const [ubicacion, setUbicacion] = useState('TODAS');
@@ -229,7 +230,7 @@ export function MesasScreen() {
         <button className={`btn btn-sm ${modoUnir ? 'btn-primary' : 'btn-ghost'}`} disabled={!online} onClick={toggleModoUnir}>
           <Icons.Layers s={16} /> {modoUnir ? 'Cancelar unión' : 'Unir mesas'}
         </button>
-        <button className="btn btn-primary" onClick={() => setComandero({ open: true, modoAgregar: false })}><Icons.Plus s={16} /> Nuevo pedido</button>
+        {puedeGestionarPedidos && <button className="btn btn-primary" onClick={() => setComandero({ open: true, modoAgregar: false })}><Icons.Plus s={16} /> Nuevo pedido</button>}
       </div>
 
       {modoUnir && (
@@ -379,6 +380,7 @@ export function MesasScreen() {
           mesa={sel}
           hermanas={hermanasDe(sel)}
           online={online}
+          puedeGestionarPedidos={puedeGestionarPedidos}
           onClose={() => setSel(null)}
           onSeparar={() => void handleSeparar(sel.id)}
           onTomar={() => { const anfitriona = anfitrionaDe(sel); setComandero({ open: true, mesaId: anfitriona.id, mesaNumero: anfitriona.numero, mesaUbicacion: anfitriona.ubicacion, modoAgregar: false }); setSel(null); }}
@@ -405,6 +407,7 @@ interface MesaDrawerProps {
   mesa: MesaVM;
   hermanas: MesaVM[];
   online: boolean;
+  puedeGestionarPedidos: boolean;
   onClose: () => void;
   onSeparar: () => void;
   onTomar: () => void;
@@ -415,6 +418,7 @@ interface MesaDrawerBodyProps {
   mesa: MesaVM;
   hermanas: MesaVM[];
   online: boolean;
+  puedeGestionarPedidos: boolean;
   onSeparar: () => void;
   onAnularItem: (item: PedidoItemVM) => void;
   ocupada: boolean;
@@ -448,7 +452,7 @@ function GrupoUnidoBanner({ hermanas, online, ocupada, onSeparar }: Readonly<{ h
   );
 }
 
-function MesaDrawerBody({ mesa: m, hermanas, online, onSeparar, onAnularItem, ocupada, loading, cuentaActiva, items, atencion, now }: Readonly<MesaDrawerBodyProps>) {
+function MesaDrawerBody({ mesa: m, hermanas, online, puedeGestionarPedidos, onSeparar, onAnularItem, ocupada, loading, cuentaActiva, items, atencion, now }: Readonly<MesaDrawerBodyProps>) {
   const grupoBanner = <GrupoUnidoBanner hermanas={hermanas} online={online} ocupada={ocupada} onSeparar={onSeparar} />;
 
   if (!ocupada) {
@@ -499,7 +503,7 @@ function MesaDrawerBody({ mesa: m, hermanas, online, onSeparar, onAnularItem, oc
                 {anulado && <div className="cmd-line-mods" style={{ marginTop: 2, color: 'var(--danger)' }}><Icons.Alert s={11} /> Anulado</div>}
               </div>
               <span className="mono muted">{fmt(it.subtotal)}</span>
-              {!ITEM_NO_ANULABLE.has(it.estado) && (
+              {puedeGestionarPedidos && !ITEM_NO_ANULABLE.has(it.estado) && (
                 <button
                   className="btn btn-sm"
                   style={{ background: 'var(--danger-soft)', color: 'var(--danger-text)', border: '1px solid var(--danger)', flex: 'none' }}
@@ -526,6 +530,7 @@ function MesaDrawerBody({ mesa: m, hermanas, online, onSeparar, onAnularItem, oc
 interface MesaDrawerFootProps {
   ocupada: boolean;
   estado: MesaVM['estado'];
+  puedeGestionarPedidos: boolean;
   onTomar: () => void;
   onAgregar: () => void;
   onClose: () => void;
@@ -537,7 +542,8 @@ interface MesaDrawerFootProps {
    - "Anular atención": el cliente se retiró sin consumir → acción llamativa
      con color propio, no un icon-btn discreto (fácil de perder de vista).
    - "Agregar a la cuenta": acción frecuente → btn-soft */
-function MesaDrawerFoot({ ocupada, estado, onTomar, onAgregar, onClose, onAnularAtencion }: Readonly<MesaDrawerFootProps>) {
+function MesaDrawerFoot({ ocupada, estado, puedeGestionarPedidos, onTomar, onAgregar, onClose, onAnularAtencion }: Readonly<MesaDrawerFootProps>) {
+  if (!puedeGestionarPedidos) return <button className="btn btn-soft" onClick={onClose}>Cerrar</button>;
   if (ocupada) {
     return (
       <>
@@ -571,7 +577,7 @@ function MesaDrawerFoot({ ocupada, estado, onTomar, onAgregar, onClose, onAnular
   );
 }
 
-function MesaDrawer({ mesa: m, hermanas, online, onClose, onSeparar, onTomar, onAgregar }: Readonly<MesaDrawerProps>) {
+function MesaDrawer({ mesa: m, hermanas, online, puedeGestionarPedidos, onClose, onSeparar, onTomar, onAgregar }: Readonly<MesaDrawerProps>) {
   const { toast } = useToast();
   const ocupada = m.estado === 'OCUPADA';
   const { cuentaActiva, loading } = useCuentasQuery(ocupada ? m.id : undefined);
@@ -650,6 +656,7 @@ function MesaDrawer({ mesa: m, hermanas, online, onClose, onSeparar, onTomar, on
             mesa={m}
             hermanas={hermanas}
             online={online}
+            puedeGestionarPedidos={puedeGestionarPedidos}
             onSeparar={onSeparar}
             onAnularItem={setAnularItemSel}
             ocupada={ocupada}
@@ -664,6 +671,7 @@ function MesaDrawer({ mesa: m, hermanas, online, onClose, onSeparar, onTomar, on
           <MesaDrawerFoot
             ocupada={ocupada}
             estado={m.estado}
+            puedeGestionarPedidos={puedeGestionarPedidos}
             onTomar={onTomar}
             onAgregar={onAgregar}
             onClose={onClose}

@@ -25,6 +25,7 @@
     }
   },
   "dependencies": {
-    "@org/contracts": "^0.0.1"
+    "@org/contracts": "^0.0.1",
+    "driver.js": "^1.8.0"
   }
 }
