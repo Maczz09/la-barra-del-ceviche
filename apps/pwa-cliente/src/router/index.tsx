@@ -30,7 +30,7 @@ const ConfiguracionInicialScreen = lazy(() => import('../screens/admin/Configura
 const TicketPrintPage = lazy(() => import('../screens/print/TicketPrintPage').then(m => ({ default: m.TicketPrintPage })));
 const ComprobantePrintPage = lazy(() => import('../screens/print/ComprobantePrintPage').then(m => ({ default: m.ComprobantePrintPage })));
 const ZTicketPrintPage = lazy(() => import('../screens/print/ZTicketPrintPage').then(m => ({ default: m.ZTicketPrintPage })));
-const PublicCartaScreen = lazy(() => import('../screens/carta-publica/PublicCartaScreen').then(m => ({ default: m.PublicCartaScreen })));
+const BookCartaScreen = lazy(() => import('../screens/carta-publica/BookCartaScreen').then(m => ({ default: m.BookCartaScreen })));
 import { Shell } from '../components/layout/Shell';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 
@@ -119,7 +119,7 @@ export function AppRouter() {
 
         {/* Carta pública/QR (T-XX): sin auth, sin Shell — cualquiera con el
             link o que escanee el QR de Inicio la ve. */}
-        <Route path="/carta/:sedeId" element={<Suspense fallback={null}><PublicCartaScreen /></Suspense>} />
+        <Route path="/carta/:sedeId" element={<Suspense fallback={null}><BookCartaScreen /></Suspense>} />
         <Route path="/configuracion-inicial" element={<Suspense fallback={<ScreenLoading />}><ConfiguracionInicialScreen /></Suspense>} />
 
         {/* Rutas públicas */}

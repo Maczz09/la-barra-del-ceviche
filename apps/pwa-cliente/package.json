@@ -26,6 +26,12 @@
   },
   "dependencies": {
     "@org/contracts": "^0.0.1",
-    "driver.js": "^1.8.0"
+    "driver.js": "^1.8.0",
+    "howler": "^2.2.4",
+    "page-flip": "^2.0.7"
+  },
+  "devDependencies": {
+    "@types/howler": "^2.2.13",
+    "@types/page-flip": "^2.0.4"
   }
 }

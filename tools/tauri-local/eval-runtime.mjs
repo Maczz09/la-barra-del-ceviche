@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defaultSizes, products as seedProducts } from './seed-la-barra.mjs';
 
@@ -24,6 +24,7 @@ const apiClientSource = read('apps', 'pwa-cliente', 'src', 'api', 'client.ts');
 const authApiSource = read('apps', 'pwa-cliente', 'src', 'api', 'auth.api.ts');
 const toastSource = read('apps', 'pwa-cliente', 'src', 'components', 'ui', 'ToastProvider.tsx');
 const routerSource = read('apps', 'pwa-cliente', 'src', 'router', 'index.tsx');
+const bookCssSource = read('apps', 'pwa-cliente', 'src', 'screens', 'carta-publica', 'book-carta.css');
 const backupSource = read('apps', 'runtime-local', 'src', 'backup-manager.ts');
 const postgresSource = read('apps', 'runtime-local', 'src', 'postgres-runtime.ts');
 const supervisorSource = read('apps', 'runtime-local', 'src', 'process-supervisor.ts');
@@ -66,6 +67,9 @@ check('dependencias de ejecución de Prisma están instaladas', existsSync(join(
 check('cliente envía el access token como Bearer', apiClientSource.includes("headers.set('Authorization', `Bearer ${authToken}`)"));
 check('sesión restaurada reconstruye el Bearer antes del perfil', authApiSource.includes('await refreshAccessToken()') && authApiSource.includes("client.get<UserDto>('/identidad/auth/me')"));
 check('PWA funciona en HTTP LAN sin crypto.randomUUID', !toastSource.includes('crypto.randomUUID') && !routerSource.includes('crypto.randomUUID'));
+check('QR público abre la carta libro en escritorio', routerSource.includes("import('../screens/carta-publica/BookCartaScreen')") && routerSource.includes('<BookCartaScreen />'));
+check('carta libro conserva paleta monocromática de La Barra', bookCssSource.includes('--cb-accent: #f5f5f5') && !bookCssSource.includes('--cb-gold'));
+check('carta libro y logo incluidos en el runtime local', readdirSync(join(runtime, 'pwa', 'assets')).some((file) => /^BookCartaScreen-.*\.js$/.test(file)) && existsSync(join(runtime, 'pwa', 'logo.webp')));
 check('firewall permite la subred local aun con perfil público', installerHooks.includes('remoteip=localsubnet profile=any'));
 check('actualización detiene el servidor y la app antes de reemplazar binarios', installerHooks.includes('NSIS_HOOK_PREINSTALL') && installerHooks.includes('/local-admin/shutdown') && installerHooks.includes('la-barra-del-ceviche.exe'));
 check('instalador y runtime no dependen de mDNS', !installerHooks.includes('firewall add rule name=\\"La Barra del Ceviche - RestoApp mDNS') && !runtimeSource.includes('LOCAL_HOSTNAME'));
