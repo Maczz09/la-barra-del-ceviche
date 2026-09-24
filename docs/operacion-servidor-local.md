@@ -9,6 +9,22 @@ Basado en RestoApp del Ingeniero en Sistemas e Informática Max Alessandro Garc�
 3. Completa **Configuración inicial** con el nombre, correo y contraseña del administrador. Este formulario solo está disponible desde la laptop servidor.
 4. En **Administración → Servidor local**, confirma que todos los procesos estén activos.
 
+No existe usuario ni contraseña predeterminados en el instalador. El correo y la contraseña del administrador son los que eliges en **Configuración inicial** (contraseña de al menos 10 caracteres). El seed de carta no crea cuentas. Los usuarios de ejemplo de `scripts/seed-admin.js` y `apps/servicio-identidad/prisma/seed.ts` son solo para desarrollo y no deben ejecutarse en el restaurante.
+
+### Cargar la carta inicial de La Barra
+
+Después de crear el administrador y la sede en la aplicación, deja la app abierta. El instalador incluye `runtime/seed-la-barra.mjs`: 9 categorías, 4 tamaños (Personal, Mediano, Grande y Familiar), 102 presentaciones con sus precios, Piso 1 y cuatro mesas. El seed no modifica productos, tamaños, categorías ni mesas que ya existan; solo agrega los faltantes. No se ejecuta automáticamente para no alterar una carta en uso.
+
+En PowerShell, ajusta la ruta si elegiste otra carpeta de instalación:
+
+```powershell
+$programa = 'D:\La Barra del Ceviche'
+& "$programa\runtime\node\node.exe" "$programa\runtime\seed-la-barra.mjs" --preview
+& "$programa\runtime\node\node.exe" "$programa\runtime\seed-la-barra.mjs" '--sede=Sede Principal'
+```
+
+La segunda línea solo muestra cantidades. La tercera escribe en las bases locales de la laptop. Si hay varias sedes activas, `--sede` es obligatorio; el nombre debe coincidir exactamente. Al terminar, verifica `SEED_LA_BARRA_OK` y comprueba los precios desde **Carta**. No ejecutes el seed sobre datos reales sin confirmar la sede y tener un respaldo. La versión instalada 1.0.5 no contiene este archivo: usa el instalador 1.0.6 o posterior.
+
 No se requiere Docker, Node.js, PostgreSQL ni NATS instalados en la laptop.
 
 ## Acceso desde celulares y cocina

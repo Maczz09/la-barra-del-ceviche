@@ -42,6 +42,10 @@
     "eval": {
       "executor": "nx:run-commands",
       "options": { "command": "node tools/tauri-local/eval-runtime.mjs" }
+    },
+    "seed-test": {
+      "executor": "nx:run-commands",
+      "options": { "command": "node --test tools/tauri-local/seed-la-barra.test.mjs" }
     }
   }
 }

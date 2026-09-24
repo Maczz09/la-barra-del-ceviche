@@ -99,34 +99,29 @@ async function runtimeDataDirectory() {
   return status.dataDirectory;
 }
 
-async function upsertCategory(client, sedeId, name) {
+export async function upsertCategory(client, sedeId, name) {
   const now = new Date();
   const result = await client.query(
     `INSERT INTO "categorias" (id, nombre, "sedeId", descripcion, "parentId", area, "createdAt", "updatedAt")
      VALUES ($1, $2, $3, $4, NULL, $5::"CategoriaArea", $6, $6)
-     ON CONFLICT ("sedeId", nombre) DO UPDATE
-       SET descripcion = EXCLUDED.descripcion, area = EXCLUDED.area, "updatedAt" = EXCLUDED."updatedAt"
+     ON CONFLICT ("sedeId", nombre) DO NOTHING
      RETURNING id`,
     [randomUUID(), name, sedeId, categoryDescriptions[name], 'COCINA', now],
   );
-  return result.rows[0].id;
+  if (result.rows[0]) return result.rows[0].id;
+  const existing = await client.query('SELECT id FROM "categorias" WHERE "sedeId" = $1 AND nombre = $2', [sedeId, name]);
+  if (!existing.rows[0]) throw new Error(`No se pudo recuperar la categoría ${name}`);
+  return existing.rows[0].id;
 }
 
-async function upsertProduct(client, sedeId, categoryId, product, tamanoId) {
+export async function upsertProduct(client, sedeId, categoryId, product, tamanoId) {
   const existing = await client.query(
     `SELECT id FROM "productos" WHERE "sedeId" = $1 AND nombre = $2 AND "categoriaId" = $3
      AND "tamanoId" IS NOT DISTINCT FROM $4 ORDER BY "createdAt" LIMIT 1`,
     [sedeId, product.name, categoryId, tamanoId],
   );
+  if (existing.rows[0]) return 'existing';
   const now = new Date();
-  if (existing.rows[0]) {
-    await client.query(
-      `UPDATE "productos" SET "categoriaId" = $1, descripcion = $2, precio = $3, disponible = true,
-       "stockActual" = NULL, "updatedAt" = $4 WHERE id = $5`,
-      [categoryId, product.description, product.price, now, existing.rows[0].id],
-    );
-    return 'updated';
-  }
   await client.query(
     `INSERT INTO "productos" (id, "categoriaId", "sedeId", nombre, descripcion, precio, disponible, "stockActual", "createdAt", "updatedAt", "tamanoId")
      VALUES ($1, $2, $3, $4, $5, $6, true, NULL, $7, $7, $8)`,
@@ -135,28 +130,35 @@ async function upsertProduct(client, sedeId, categoryId, product, tamanoId) {
   return 'created';
 }
 
-async function seedTables(client, sedeId) {
+export async function seedTables(client, sedeId) {
   const now = new Date();
   const location = await client.query(
     `INSERT INTO "ubicaciones" (id, nombre, "sedeId", "createdAt", "updatedAt")
      VALUES ($1, 'Piso 1', $2, $3, $3)
-     ON CONFLICT ("sedeId", nombre) DO UPDATE SET "updatedAt" = EXCLUDED."updatedAt"
+     ON CONFLICT ("sedeId", nombre) DO NOTHING
      RETURNING id`,
     [randomUUID(), sedeId, now],
   );
-  const locationId = location.rows[0].id;
+  const existingLocation = location.rows[0] ?? (await client.query(
+    'SELECT id FROM "ubicaciones" WHERE "sedeId" = $1 AND nombre = $2', [sedeId, 'Piso 1'],
+  )).rows[0];
+  if (!existingLocation) throw new Error('No se pudo recuperar la ubicación Piso 1');
+  const locationId = existingLocation.id;
   for (let number = 1; number <= 4; number += 1) {
     await client.query(
       `INSERT INTO "mesas" (id, numero, "sedeId", capacidad, "ubicacionId", estado, "cuentaAsociada", "grupoId", "createdAt", "updatedAt")
        VALUES ($1, $2, $3, 4, $4, 'LIBRE', NULL, NULL, $5, $5)
-       ON CONFLICT ("sedeId", numero) DO UPDATE
-         SET capacidad = 4, "ubicacionId" = EXCLUDED."ubicacionId", "updatedAt" = EXCLUDED."updatedAt"`,
+       ON CONFLICT ("sedeId", numero) DO NOTHING`,
       [randomUUID(), number, sedeId, locationId, now],
     );
   }
 }
 
 async function main() {
+  if (process.argv.includes('--preview')) {
+    process.stdout.write(`SEED_LA_BARRA_PREVIEW categorias=${Object.keys(categoryDescriptions).length} tamanos=${defaultSizes.length} productos=${products.length} mesas=4; sin cambios en la base de datos\n`);
+    return;
+  }
   const dataDirectory = await runtimeDataDirectory();
   const config = JSON.parse(readFileSync(join(dataDirectory, 'runtime-config.json'), 'utf8'));
   const identity = new Client({ connectionString: connectionString(config, 'identidad_db') });
@@ -167,9 +169,10 @@ async function main() {
     const requestedSede = process.argv.slice(2).find((value) => value.startsWith('--sede='))?.slice('--sede='.length);
     const sedeResult = requestedSede
       ? await identity.query(`SELECT id, nombre FROM "sedes" WHERE activa = true AND nombre = $1 LIMIT 1`, [requestedSede])
-      : await identity.query(`SELECT id, nombre FROM "sedes" WHERE activa = true ORDER BY "createdAt" LIMIT 1`);
+      : await identity.query(`SELECT id, nombre FROM "sedes" WHERE activa = true ORDER BY "createdAt" LIMIT 2`);
     const sede = sedeResult.rows[0];
     if (!sede) throw new Error(requestedSede ? `No existe la sede activa "${requestedSede}"` : 'No existe ninguna sede activa');
+    if (!requestedSede && sedeResult.rows.length > 1) throw new Error('Hay varias sedes activas. Indica --sede="Nombre de la sede"');
 
     await tables.query('BEGIN');
     await inventory.query('BEGIN');
@@ -179,21 +182,25 @@ async function main() {
       for (const name of Object.keys(categoryDescriptions)) categories.set(name, await upsertCategory(inventory, sede.id, name));
       const sizes = new Map();
       for (const size of defaultSizes) {
-        const found = await inventory.query('SELECT id FROM tamanos_plato WHERE "sedeId" = $1 AND lower(nombre) = lower($2)', [sede.id, size.nombre]);
-        if (found.rows[0]) { sizes.set(size.nombre, found.rows[0].id); continue; }
+        const found = await inventory.query('SELECT id, activo FROM tamanos_plato WHERE "sedeId" = $1 AND lower(nombre) = lower($2)', [sede.id, size.nombre]);
+        if (found.rows[0]) {
+          if (!found.rows[0].activo) throw new Error(`El tamaño ${size.nombre} está inactivo; actívalo antes de sembrar la carta`);
+          sizes.set(size.nombre, found.rows[0].id);
+          continue;
+        }
         const id = randomUUID();
         await inventory.query('INSERT INTO tamanos_plato (id, "sedeId", nombre, orden, activo, "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,true,NOW(),NOW())', [id, sede.id, size.nombre, size.orden]);
         sizes.set(size.nombre, id);
       }
       let created = 0;
-      let updated = 0;
+      let existing = 0;
       for (const product of products) {
         const result = await upsertProduct(inventory, sede.id, categories.get(product.category), product, sizes.get(product.size) ?? null);
         if (result === 'created') created += 1;
-        else updated += 1;
+        else existing += 1;
       }
       await Promise.all([tables.query('COMMIT'), inventory.query('COMMIT')]);
-      process.stdout.write(`SEED_LA_BARRA_OK sede="${sede.nombre}" piso=1 mesas=4 productos=${products.length} creados=${created} actualizados=${updated}\n`);
+      process.stdout.write(`SEED_LA_BARRA_OK sede="${sede.nombre}" piso=1 mesas=4 tamanos=${defaultSizes.length} productos=${products.length} creados=${created} existentes_sin_cambios=${existing}\n`);
     } catch (error) {
       await Promise.allSettled([tables.query('ROLLBACK'), inventory.query('ROLLBACK')]);
       throw error;

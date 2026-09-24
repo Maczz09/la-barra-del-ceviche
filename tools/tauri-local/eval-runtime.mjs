@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defaultSizes, products as seedProducts } from './seed-la-barra.mjs';
@@ -93,6 +94,11 @@ check('Carta y menú del día incorporan selector de tamaño', /<TamanosPlatoDra
 check('comandero comparte grupos de tamaño entre carta y menú del día', (comandero.match(/<ComanderoSizeGroups\b/g) ?? []).length >= 2);
 check('seed usa nombres base, presentaciones conocidas y precios válidos', seedProducts.length > 0 && seedProducts.every((product) => Number.isFinite(product.price) && product.price > 0 && (product.size === null || defaultSizes.some((size) => size.nombre === product.size)) && !/[·()]\s*(Personal|Mediana|Mediano|Grande|Familiar)/i.test(product.name)));
 check('seed conserva una identidad distinta por categoría, plato y tamaño', new Set(seedProducts.map((product) => JSON.stringify([product.category, product.name, product.size]))).size === seedProducts.length);
+check('seed listo dentro del instalador', existsSync(join(runtime, 'seed-la-barra.mjs')));
+check('seed no sobreescribe platos existentes', !read('tools', 'tauri-local', 'seed-la-barra.mjs').includes('UPDATE "productos"'));
+check('seed empaquetado coincide con la fuente', readFileSync(join(runtime, 'seed-la-barra.mjs')).equals(readFileSync(join(root, 'tools', 'tauri-local', 'seed-la-barra.mjs'))));
+const previewSeed = spawnSync(join(runtime, 'node', 'node.exe'), [join(runtime, 'seed-la-barra.mjs'), '--preview'], { encoding: 'utf8', timeout: 10_000 });
+check('seed inicia con el Node incluido y muestra 102 presentaciones sin tocar la base', previewSeed.status === 0 && /productos=102.*sin cambios/.test(previewSeed.stdout));
 for (const relativePath of [
   'apps/servicio-inventario/prisma/migrations/20260902120000_tamanos_plato/migration.sql',
   'apps/servicio-inventario/prisma/eval-tamanos.mjs',
