@@ -9,11 +9,11 @@
 // auth: todo lo que necesita ya lo tiene quien abre la pestaña.
 
 import type { ComprobanteTicketProps } from '../components/facturacion/ComprobanteTicket';
+import { abrirRutaDeImpresion } from './printNavigation';
 
 export const COMPROBANTE_PRINT_KEY = 'restoapp.comprobante_print_payload';
 export const COMPROBANTE_PRINT_ROUTE = '/imprimir/comprobante';
 
 export function abrirComprobanteParaImprimir(payload: ComprobanteTicketProps): void {
-  localStorage.setItem(COMPROBANTE_PRINT_KEY, JSON.stringify(payload));
-  globalThis.open(COMPROBANTE_PRINT_ROUTE, '_blank');
+  abrirRutaDeImpresion(COMPROBANTE_PRINT_KEY, payload, COMPROBANTE_PRINT_ROUTE);
 }

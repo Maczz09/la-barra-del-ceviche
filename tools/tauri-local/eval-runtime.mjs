@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defaultSizes, products as seedProducts } from './seed-la-barra.mjs';
 
@@ -24,6 +25,7 @@ const apiClientSource = read('apps', 'pwa-cliente', 'src', 'api', 'client.ts');
 const authApiSource = read('apps', 'pwa-cliente', 'src', 'api', 'auth.api.ts');
 const toastSource = read('apps', 'pwa-cliente', 'src', 'components', 'ui', 'ToastProvider.tsx');
 const routerSource = read('apps', 'pwa-cliente', 'src', 'router', 'index.tsx');
+const bookCssSource = read('apps', 'pwa-cliente', 'src', 'screens', 'carta-publica', 'book-carta.css');
 const backupSource = read('apps', 'runtime-local', 'src', 'backup-manager.ts');
 const postgresSource = read('apps', 'runtime-local', 'src', 'postgres-runtime.ts');
 const supervisorSource = read('apps', 'runtime-local', 'src', 'process-supervisor.ts');
@@ -66,6 +68,9 @@ check('dependencias de ejecución de Prisma están instaladas', existsSync(join(
 check('cliente envía el access token como Bearer', apiClientSource.includes("headers.set('Authorization', `Bearer ${authToken}`)"));
 check('sesión restaurada reconstruye el Bearer antes del perfil', authApiSource.includes('await refreshAccessToken()') && authApiSource.includes("client.get<UserDto>('/identidad/auth/me')"));
 check('PWA funciona en HTTP LAN sin crypto.randomUUID', !toastSource.includes('crypto.randomUUID') && !routerSource.includes('crypto.randomUUID'));
+check('QR público abre la carta libro en escritorio', routerSource.includes("import('../screens/carta-publica/BookCartaScreen')") && routerSource.includes('<BookCartaScreen />'));
+check('carta libro conserva paleta monocromática de La Barra', bookCssSource.includes('--cb-accent: #f5f5f5') && !bookCssSource.includes('--cb-gold'));
+check('carta libro y logo incluidos en el runtime local', readdirSync(join(runtime, 'pwa', 'assets')).some((file) => /^BookCartaScreen-.*\.js$/.test(file)) && existsSync(join(runtime, 'pwa', 'logo.webp')));
 check('firewall permite la subred local aun con perfil público', installerHooks.includes('remoteip=localsubnet profile=any'));
 check('actualización detiene el servidor y la app antes de reemplazar binarios', installerHooks.includes('NSIS_HOOK_PREINSTALL') && installerHooks.includes('/local-admin/shutdown') && installerHooks.includes('la-barra-del-ceviche.exe'));
 check('instalador y runtime no dependen de mDNS', !installerHooks.includes('firewall add rule name=\\"La Barra del Ceviche - RestoApp mDNS') && !runtimeSource.includes('LOCAL_HOSTNAME'));
@@ -89,6 +94,11 @@ check('Carta y menú del día incorporan selector de tamaño', /<TamanosPlatoDra
 check('comandero comparte grupos de tamaño entre carta y menú del día', (comandero.match(/<ComanderoSizeGroups\b/g) ?? []).length >= 2);
 check('seed usa nombres base, presentaciones conocidas y precios válidos', seedProducts.length > 0 && seedProducts.every((product) => Number.isFinite(product.price) && product.price > 0 && (product.size === null || defaultSizes.some((size) => size.nombre === product.size)) && !/[·()]\s*(Personal|Mediana|Mediano|Grande|Familiar)/i.test(product.name)));
 check('seed conserva una identidad distinta por categoría, plato y tamaño', new Set(seedProducts.map((product) => JSON.stringify([product.category, product.name, product.size]))).size === seedProducts.length);
+check('seed listo dentro del instalador', existsSync(join(runtime, 'seed-la-barra.mjs')));
+check('seed no sobreescribe platos existentes', !read('tools', 'tauri-local', 'seed-la-barra.mjs').includes('UPDATE "productos"'));
+check('seed empaquetado coincide con la fuente', readFileSync(join(runtime, 'seed-la-barra.mjs')).equals(readFileSync(join(root, 'tools', 'tauri-local', 'seed-la-barra.mjs'))));
+const previewSeed = spawnSync(join(runtime, 'node', 'node.exe'), [join(runtime, 'seed-la-barra.mjs'), '--preview'], { encoding: 'utf8', timeout: 10_000 });
+check('seed inicia con el Node incluido y muestra 102 presentaciones sin tocar la base', previewSeed.status === 0 && /productos=102.*sin cambios/.test(previewSeed.stdout));
 for (const relativePath of [
   'apps/servicio-inventario/prisma/migrations/20260902120000_tamanos_plato/migration.sql',
   'apps/servicio-inventario/prisma/eval-tamanos.mjs',

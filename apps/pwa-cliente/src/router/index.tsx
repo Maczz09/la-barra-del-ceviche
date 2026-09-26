@@ -11,6 +11,7 @@ const InicioScreen = lazy(() => import('../screens/inicio/InicioScreen').then(m 
 const MesasScreen = lazy(() => import('../screens/ops/MesasScreen').then(m => ({ default: m.MesasScreen })));
 const PedidosScreen = lazy(() => import('../screens/ops/PedidosScreen').then(m => ({ default: m.PedidosScreen })));
 const CocinaScreen = lazy(() => import('../screens/ops/CocinaScreen').then(m => ({ default: m.CocinaScreen })));
+const KitchenPrintScreen = lazy(() => import('../screens/ops/KitchenPrintScreen').then(m => ({ default: m.KitchenPrintScreen })));
 const CajaScreen = lazy(() => import('../screens/caja/CajaScreen').then(m => ({ default: m.CajaScreen })));
 const HistorialCajaScreen = lazy(() => import('../screens/caja/HistorialCajaScreen').then(m => ({ default: m.HistorialCajaScreen })));
 const ReservasScreen = lazy(() => import('../screens/reservas/ReservasScreen').then(m => ({ default: m.ReservasScreen })));
@@ -29,7 +30,7 @@ const ConfiguracionInicialScreen = lazy(() => import('../screens/admin/Configura
 const TicketPrintPage = lazy(() => import('../screens/print/TicketPrintPage').then(m => ({ default: m.TicketPrintPage })));
 const ComprobantePrintPage = lazy(() => import('../screens/print/ComprobantePrintPage').then(m => ({ default: m.ComprobantePrintPage })));
 const ZTicketPrintPage = lazy(() => import('../screens/print/ZTicketPrintPage').then(m => ({ default: m.ZTicketPrintPage })));
-const PublicCartaScreen = lazy(() => import('../screens/carta-publica/PublicCartaScreen').then(m => ({ default: m.PublicCartaScreen })));
+const BookCartaScreen = lazy(() => import('../screens/carta-publica/BookCartaScreen').then(m => ({ default: m.BookCartaScreen })));
 import { Shell } from '../components/layout/Shell';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 
@@ -118,7 +119,7 @@ export function AppRouter() {
 
         {/* Carta pública/QR (T-XX): sin auth, sin Shell — cualquiera con el
             link o que escanee el QR de Inicio la ve. */}
-        <Route path="/carta/:sedeId" element={<Suspense fallback={null}><PublicCartaScreen /></Suspense>} />
+        <Route path="/carta/:sedeId" element={<Suspense fallback={null}><BookCartaScreen /></Suspense>} />
         <Route path="/configuracion-inicial" element={<Suspense fallback={<ScreenLoading />}><ConfiguracionInicialScreen /></Suspense>} />
 
         {/* Rutas públicas */}
@@ -133,6 +134,7 @@ export function AppRouter() {
           <Route path="mesas" element={<RutaPorRol ruta="mesas"><ScreenBoundary modulo="Mesas"><MesasScreen /></ScreenBoundary></RutaPorRol>} />
           <Route path="pedidos" element={<RutaPorRol ruta="pedidos"><ScreenBoundary modulo="Pedidos"><PedidosScreen /></ScreenBoundary></RutaPorRol>} />
           <Route path="cocina" element={<RutaPorRol ruta="cocina"><ScreenBoundary modulo="Cocina"><CocinaScreen /></ScreenBoundary></RutaPorRol>} />
+          <Route path="impresion-cocina" element={<RutaPorRol ruta="impresion-cocina"><ScreenBoundary modulo="Impresión de cocina"><KitchenPrintScreen /></ScreenBoundary></RutaPorRol>} />
           {/* "delivery" y "crear-pedido" se fusionaron en el hub Pedidos + Comandero */}
           <Route path="delivery" element={<Navigate to="/app/pedidos" replace />} />
           <Route path="crear-pedido" element={<Navigate to="/app/pedidos" replace />} />

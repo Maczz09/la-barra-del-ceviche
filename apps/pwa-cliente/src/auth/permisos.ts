@@ -15,6 +15,7 @@ export const TODAS_LAS_RUTAS = [
   'mesas',
   'pedidos',
   'cocina',
+  'impresion-cocina',
   'caja',
   'historial-caja',
   'reservas',
@@ -52,7 +53,7 @@ export const ACCESO_POR_ROL: Record<RolUsuario, AccesoRol> = {
   // T-50: `inventario` para el almacén de cocina (registrar consumos y mermas
   // de insumos). Aterriza en la pestaña de almacén: la de productos de venta no
   // se le muestra, porque el backend le rechaza toda mutación sobre ellos.
-  COCINA: { home: 'cocina', rutas: ['cocina', 'carta', 'inventario'] },
+  COCINA: { home: 'cocina', rutas: ['cocina', 'impresion-cocina', 'carta', 'inventario'] },
   MESERO: { home: 'mesas', rutas: ['mesas', 'pedidos', 'reservas'] },
   RECEPCION: { home: 'reservas', rutas: ['reservas', 'mesas'] },
 };

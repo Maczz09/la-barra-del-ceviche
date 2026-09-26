@@ -50,7 +50,7 @@ export function CartaQrPanel() {
   };
 
   return (
-    <section className="panel">
+    <section className="panel" data-guide="home-qr">
       <div className="panel-h"><h3>Carta pública</h3></div>
       <div style={{ padding: '14px 16px' }}>
         {loading && <div className="muted" style={{ fontSize: 13 }}>Cargando sede…</div>}

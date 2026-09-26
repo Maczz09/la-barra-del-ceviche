@@ -21,6 +21,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'mesas', label: 'Mesas', shortLabel: 'Mesas', icon: 'Mesas', priority: 1 },
       { key: 'pedidos', label: 'Pedidos', shortLabel: 'Pedidos', icon: 'Pedidos', priority: 2 },
       { key: 'cocina', label: 'Cocina', shortLabel: 'Cocina', icon: 'Cocina', priority: 3 },
+      { key: 'impresion-cocina', label: 'Impresión cocina', shortLabel: 'Imprimir', icon: 'Print', priority: 3.5 },
       { key: 'caja', label: 'Caja', shortLabel: 'Caja', icon: 'Caja', priority: 4 },
       { key: 'reservas', label: 'Reservas', shortLabel: 'Reservas', icon: 'Reservas', priority: 5 },
     ],

@@ -84,7 +84,7 @@ export function UsuariosScreen() {
     ? usuarios.find((u) => u.id === editando.id) ?? editando
     : null;
 
-  const { sedes } = useSedesQuery();
+  const { sedes } = useSedesQuery({ enabled: puedeGestionar });
   const sedeNombrePorId = useMemo(() => new Map(sedes.map((s) => [s.id, s.nombre])), [sedes]);
   const sedeRequerida = form.rol !== 'ADMIN';
 

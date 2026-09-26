@@ -17,6 +17,7 @@ import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { applyThemeColor, isTheme, nextTheme, type Theme } from '../../utils/theme';
 import { Icons } from '../ui/icons';
 import { SedeSwitcher } from './SedeSwitcher';
+import { GuideCenter } from '../../tour/GuideCenter';
 
 const THEME_LABEL: Record<Theme, string> = {
   light: 'Claro',
@@ -132,6 +133,8 @@ export function Header() {
         <span className="conn-dot" aria-hidden="true" />
         <span className="desktop-only" aria-hidden="true">{connLabel}</span>
       </span>
+
+      <GuideCenter />
 
       {/* Accesibilidad / vista */}
       <div style={{ position: 'relative' }}>

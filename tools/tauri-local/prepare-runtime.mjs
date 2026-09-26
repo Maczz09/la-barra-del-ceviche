@@ -100,6 +100,7 @@ async function main() {
 
   cpSync(join(root, 'dist/apps/runtime-local'), join(resources, 'runtime-local'), { recursive: true });
   cpSync(join(root, 'apps/pwa-cliente/dist'), join(resources, 'pwa'), { recursive: true });
+  cpSync(join(import.meta.dirname, 'seed-la-barra.mjs'), join(resources, 'seed-la-barra.mjs'));
   for (const name of services) {
     cpSync(join(root, 'dist/apps', name), join(resources, 'services', name), { recursive: true });
     cpSync(join(root, 'apps', name, 'prisma', 'migrations'), join(resources, 'migrations', name, 'migrations'), { recursive: true });

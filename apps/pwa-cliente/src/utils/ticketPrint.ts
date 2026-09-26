@@ -9,11 +9,11 @@
 // auth: todo lo que necesita ya lo tiene quien abre la pestaña.
 
 import type { TicketContentProps } from '../components/caja/TicketContent';
+import { abrirRutaDeImpresion } from './printNavigation';
 
 export const TICKET_PRINT_KEY = 'restoapp.ticket_print_payload';
 export const TICKET_PRINT_ROUTE = '/imprimir/boleta';
 
 export function abrirTicketParaImprimir(payload: TicketContentProps): void {
-  localStorage.setItem(TICKET_PRINT_KEY, JSON.stringify(payload));
-  globalThis.open(TICKET_PRINT_ROUTE, '_blank');
+  abrirRutaDeImpresion(TICKET_PRINT_KEY, payload, TICKET_PRINT_ROUTE);
 }

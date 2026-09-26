@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { TicketContent, type TicketContentProps } from '../../components/caja/TicketContent';
 import { TICKET_PRINT_KEY } from '../../utils/ticketPrint';
+import { volverDeImpresion } from '../../utils/printNavigation';
 
 export function TicketPrintPage() {
   const [payload, setPayload] = useState<TicketContentProps | null>(null);
@@ -34,7 +35,7 @@ export function TicketPrintPage() {
     if (!payload) return;
     // Pequeño margen para que el logo termine de cargar antes de imprimir.
     const timer = setTimeout(() => globalThis.print(), 300);
-    const cerrar = () => globalThis.close();
+    const cerrar = () => volverDeImpresion();
     globalThis.addEventListener('afterprint', cerrar);
     return () => {
       clearTimeout(timer);

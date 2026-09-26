@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ZTicketContent, type ZTicketContentProps } from '../../components/caja/ZTicketContent';
 import { Z_TICKET_PRINT_KEY } from '../../utils/zTicketPrint';
+import { volverDeImpresion } from '../../utils/printNavigation';
 
 export function ZTicketPrintPage() {
   const [payload, setPayload] = useState<ZTicketContentProps | null>(null);
@@ -36,7 +37,7 @@ export function ZTicketPrintPage() {
     if (!payload) return;
     // Pequeño margen para que el logo termine de cargar antes de imprimir.
     const timer = setTimeout(() => globalThis.print(), 300);
-    const cerrar = () => globalThis.close();
+    const cerrar = () => volverDeImpresion();
     globalThis.addEventListener('afterprint', cerrar);
     return () => {
       clearTimeout(timer);
